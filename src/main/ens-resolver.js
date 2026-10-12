@@ -521,10 +521,19 @@ function isProviderError(err) {
   // CALL_EXCEPTION can mean contract reverted OR RPC provider failed.
   // Check for RPC internal errors (-32603) which indicate provider issues.
   if (code === 'CALL_EXCEPTION') {
-    const rpcErrorCode = err.info?.error?.code;
-    const rpcErrorMsg = err.info?.error?.message || '';
+    const rpcError = err.info?.error;
+    const rpcErrorCode = rpcError?.code;
+    const rpcErrorMsg = rpcError?.message || '';
     // -32603 = JSON-RPC internal error, "no response" = provider didn't respond
     if (rpcErrorCode === -32603 || /no response/i.test(rpcErrorMsg)) {
+      return true;
+    }
+    // A JSON-RPC error that carries no revert data and isn't a revert is the
+    // node failing, not the contract answering: "header not found" (the
+    // pinned block isn't available), "missing trie node", rate limits
+    // (-32005). Counting it as NO_CONTENTHASH let two such failures agree
+    // into a verified not-found for a name that has content.
+    if (rpcError && err.data == null && !/revert/i.test(rpcErrorMsg)) {
       return true;
     }
   }

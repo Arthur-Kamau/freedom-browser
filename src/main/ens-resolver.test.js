@@ -619,6 +619,44 @@ describe('ens-resolver', () => {
       expect(result.trust.agreed.length).toBeGreaterThanOrEqual(2);
     });
 
+    // ethers' shape for a JSON-RPC error on eth_call: CALL_EXCEPTION, no
+    // revert data, the node's error in info.error.
+    const nodeCallError = (code, message) =>
+      Object.assign(new Error(`missing revert data (${message})`), {
+        code: 'CALL_EXCEPTION',
+        data: null,
+        info: { error: { code, message } },
+      });
+
+    test.each([
+      [-32000, 'header not found'],
+      [-32000, 'missing trie node 0xabc (path ) <nil>'],
+      [-32005, 'daily request count exceeded, request rate limited'],
+    ])('node failures (%i %s) never agree into a verified not-found', async (code, message) => {
+      const goodBytes = urReturnsBytes(ipfsContenthashFor(IPFS_V0));
+      routeByProvider(new Map([
+        [TEST_PROVIDERS[0], { kind: 'reject', payload: nodeCallError(code, message) }],
+        [TEST_PROVIDERS[1], { kind: 'reject', payload: nodeCallError(code, message) }],
+        [TEST_PROVIDERS[2], { kind: 'data', payload: goodBytes }],
+      ]));
+
+      const result = await resolveEnsContent(`node-failure-${-code}.box`);
+
+      expect(result.type).toBe('ok');
+      expect(result.uri).toBe(`ipfs://${IPFS_V0}`);
+      expect(result.trust.level).not.toBe('verified');
+    });
+
+    test('a revert without data still counts as no contenthash', async () => {
+      routeByProvider(new Map(TEST_PROVIDERS.map((url) => [
+        url, { kind: 'reject', payload: nodeCallError(-32000, 'execution reverted') },
+      ])));
+
+      const result = await resolveEnsContent('reverting.box');
+
+      expect(result).toMatchObject({ type: 'not_found', reason: 'NO_CONTENTHASH' });
+    });
+
     test('caches successful resolutions (warm resolution skips RPC entirely)', async () => {
       mockUrResolve.mockResolvedValue(urReturnsBytes(ipfsContenthashFor(IPFS_V0)));
 
