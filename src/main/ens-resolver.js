@@ -509,6 +509,21 @@ function invalidateCachedProvider() {
 }
 
 // Check if an error is a provider/network error that warrants retry
+// EIP-1474: resource not found, resource unavailable, limit exceeded.
+const NODE_FAILURE_CODES = new Set([-32001, -32002, -32005]);
+const NODE_FAILURE_MESSAGE =
+  /header not found|missing trie node|unknown block|block not found|historical state|state (?:is )?not available|pruned|rate.?limit|limit exceeded|too many requests|request count exceeded/i;
+
+// A JSON-RPC error with no revert data in either place ethers keeps it
+// (err.data, or the envelope's own data for legacy formats), no mention of a
+// revert, and a node-failure code or message.
+function isNodeFailure(err, rpcError) {
+  if (!rpcError || err.data != null || rpcError.data != null) return false;
+  const message = String(rpcError.message || '');
+  if (/revert/i.test(message)) return false;
+  return NODE_FAILURE_CODES.has(rpcError.code) || NODE_FAILURE_MESSAGE.test(message);
+}
+
 function isProviderError(err) {
   const message = err.message || '';
   const code = err.code || '';
@@ -528,12 +543,14 @@ function isProviderError(err) {
     if (rpcErrorCode === -32603 || /no response/i.test(rpcErrorMsg)) {
       return true;
     }
-    // A JSON-RPC error that carries no revert data and isn't a revert is the
-    // node failing, not the contract answering: "header not found" (the
-    // pinned block isn't available), "missing trie node", rate limits
-    // (-32005). Counting it as NO_CONTENTHASH let two such failures agree
-    // into a verified not-found for a name that has content.
-    if (rpcError && err.data == null && !/revert/i.test(rpcErrorMsg)) {
+    // The node failing, not the contract answering: it couldn't run the call
+    // against the pinned state, or refused it. Counting these as
+    // NO_CONTENTHASH let two such failures agree into a verified not-found
+    // for a name that has content. Only known node failures qualify: an
+    // execution outcome (a revert with or without data, out of gas, an
+    // invalid opcode, a legacy "VM execution error" envelope) stays a
+    // semantic answer, and never quarantines an honest endpoint.
+    if (isNodeFailure(err, rpcError)) {
       return true;
     }
   }
