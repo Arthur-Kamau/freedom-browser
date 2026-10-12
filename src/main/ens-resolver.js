@@ -514,19 +514,26 @@ function invalidateCachedProvider() {
 // per-minute limits (-32007, -32008), Alchemy's 429 compute-units error.
 const NODE_FAILURE_CODES = new Set([-32001, -32002, -32005, -32007, -32008, 429]);
 const NODE_FAILURE_MESSAGE =
-  /header not found|missing trie node|unknown block|block not found|historical state|state (?:is )?not available|pruned|rate.?limit|limit exceeded|request limit reached|too many requests|request count exceeded|compute units|capacity/i;
+  /header not found|missing trie node|unknown block|block not found|historical state|state (?:is )?not available|pruned|rate.?limit|limit exceeded|request limit reached|too many requests|request count exceeded|compute units/i;
+// Execution outcomes by code, whatever the message: Geth's revert (3) and
+// the OpenEthereum/Nethermind "VM execution error" (-32015).
+const EXECUTION_CODES = new Set([3, -32015]);
 
-// Revert evidence: return data as hex, or a legacy "Reverted 0x…" text.
-// A diagnostic object attached to a node failure is not.
+// Revert evidence: return data as even-length hex, or a legacy
+// "Reverted 0x…" text. A diagnostic object attached to a node failure is
+// not. (One character class, no nested quantifier: linear on large data.)
 function isRevertData(data) {
-  return typeof data === 'string' && (/^0x[0-9a-f]*$/i.test(data) || /^reverted\b/i.test(data));
+  if (typeof data !== 'string') return false;
+  const hex = data.startsWith('Reverted ') ? data.slice('Reverted '.length) : data;
+  return hex.length % 2 === 0 && /^0x[0-9a-f]*$/i.test(hex);
 }
 
 // A JSON-RPC error with no revert evidence in either place ethers keeps
 // data (err.data, or the envelope's own for legacy formats), no mention of a
 // revert, and a node-failure code or message.
 function isNodeFailure(err, rpcError) {
-  if (!rpcError || isRevertData(err.data) || isRevertData(rpcError.data)) return false;
+  if (!rpcError || EXECUTION_CODES.has(rpcError.code)) return false;
+  if (isRevertData(err.data) || isRevertData(rpcError.data)) return false;
   const message = String(rpcError.message || '');
   if (/revert/i.test(message)) return false;
   return NODE_FAILURE_CODES.has(rpcError.code) || NODE_FAILURE_MESSAGE.test(message);

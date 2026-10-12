@@ -667,6 +667,9 @@ describe('ens-resolver', () => {
       ['out of gas', { code: -32000, message: 'out of gas' }],
       ['an invalid opcode', { code: -32000, message: 'invalid opcode: INVALID' }],
       ['a legacy empty revert', { code: -32015, message: 'VM execution error.', data: 'Reverted 0x' }],
+      // Code 3 is an execution revert whatever its message says.
+      ['a code-3 revert whose reason mentions capacity', { code: 3, message: 'capacity exceeded' }],
+      ['a code-3 revert whose reason mentions compute units', { code: 3, message: 'compute units exhausted' }],
     ])('%s stays an execution outcome and quarantines no endpoint', async (_label, rpcError) => {
       routeByProvider(new Map(TEST_PROVIDERS.map((url) => [url, { kind: 'reject', payload: rpcCallError(rpcError) }])));
       const failing = await resolveEnsContent(`execution-${rpcError.message.length}-${-rpcError.code}.box`);
