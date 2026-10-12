@@ -509,16 +509,24 @@ function invalidateCachedProvider() {
 }
 
 // Check if an error is a provider/network error that warrants retry
-// EIP-1474: resource not found, resource unavailable, limit exceeded.
-const NODE_FAILURE_CODES = new Set([-32001, -32002, -32005]);
+// EIP-1474: resource not found, resource unavailable, limit exceeded; and
+// providers' rate limits in JSON-RPC bodies: QuickNode's per-second and
+// per-minute limits (-32007, -32008), Alchemy's 429 compute-units error.
+const NODE_FAILURE_CODES = new Set([-32001, -32002, -32005, -32007, -32008, 429]);
 const NODE_FAILURE_MESSAGE =
-  /header not found|missing trie node|unknown block|block not found|historical state|state (?:is )?not available|pruned|rate.?limit|limit exceeded|too many requests|request count exceeded/i;
+  /header not found|missing trie node|unknown block|block not found|historical state|state (?:is )?not available|pruned|rate.?limit|limit exceeded|request limit reached|too many requests|request count exceeded|compute units|capacity/i;
 
-// A JSON-RPC error with no revert data in either place ethers keeps it
-// (err.data, or the envelope's own data for legacy formats), no mention of a
+// Revert evidence: return data as hex, or a legacy "Reverted 0x…" text.
+// A diagnostic object attached to a node failure is not.
+function isRevertData(data) {
+  return typeof data === 'string' && (/^0x[0-9a-f]*$/i.test(data) || /^reverted\b/i.test(data));
+}
+
+// A JSON-RPC error with no revert evidence in either place ethers keeps
+// data (err.data, or the envelope's own for legacy formats), no mention of a
 // revert, and a node-failure code or message.
 function isNodeFailure(err, rpcError) {
-  if (!rpcError || err.data != null || rpcError.data != null) return false;
+  if (!rpcError || isRevertData(err.data) || isRevertData(rpcError.data)) return false;
   const message = String(rpcError.message || '');
   if (/revert/i.test(message)) return false;
   return NODE_FAILURE_CODES.has(rpcError.code) || NODE_FAILURE_MESSAGE.test(message);

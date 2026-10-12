@@ -633,19 +633,29 @@ describe('ens-resolver', () => {
     };
 
     test.each([
-      [-32000, 'header not found'],
-      [-32000, 'missing trie node 0xabc (path ) <nil>'],
-      [-32005, 'daily request count exceeded, request rate limited'],
-      [-32001, 'resource not found'],
-    ])('node failures (%i %s) never agree into a verified not-found', async (code, message) => {
+      // Every row has three values: a shorter one would hand jest's `done`
+      // to the third parameter.
+      [-32000, 'header not found', undefined],
+      [-32000, 'missing trie node 0xabc (path ) <nil>', undefined],
+      [-32005, 'daily request count exceeded, request rate limited', undefined],
+      [-32001, 'resource not found', undefined],
+      // Diagnostic objects aren't revert data.
+      [-32001, 'resource not found', { detail: 'block unavailable' }],
+      [-32005, 'limit exceeded', { see: 'https://example.com/limits' }],
+      // Providers' rate limits in the JSON-RPC body.
+      [-32007, 'Per-second request limit reached', undefined],
+      [-32008, 'Per-minute request limit reached', undefined],
+      [429, 'Your app has exceeded its compute units per second capacity.', undefined],
+    ])('node failures (%i %s) never agree into a verified not-found', async (code, message, data) => {
       const goodBytes = urReturnsBytes(ipfsContenthashFor(IPFS_V0));
+      const failure = () => rpcCallError(data === undefined ? { code, message } : { code, message, data });
       routeByProvider(new Map([
-        [TEST_PROVIDERS[0], { kind: 'reject', payload: rpcCallError({ code, message }) }],
-        [TEST_PROVIDERS[1], { kind: 'reject', payload: rpcCallError({ code, message }) }],
+        [TEST_PROVIDERS[0], { kind: 'reject', payload: failure() }],
+        [TEST_PROVIDERS[1], { kind: 'reject', payload: failure() }],
         [TEST_PROVIDERS[2], { kind: 'data', payload: goodBytes }],
       ]));
 
-      const result = await resolveEnsContent(`node-failure-${-code}-${message.length}.box`);
+      const result = await resolveEnsContent(`node-failure-${Math.abs(code)}-${message.length}-${data ? 'd' : 'n'}.box`);
 
       expect(result.type).toBe('ok');
       expect(result.uri).toBe(`ipfs://${IPFS_V0}`);
