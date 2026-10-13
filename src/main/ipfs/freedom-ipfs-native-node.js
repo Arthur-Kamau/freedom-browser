@@ -579,6 +579,10 @@ class FreedomIpfsNativeNode {
         new Error(this.failureError || 'freedom-ipfs native node is unavailable')
       );
     }
+    // Aborted already (say, while its name resolved): start nothing.
+    if (signal?.aborted) {
+      return Promise.reject(new Error('freedom-ipfs native request aborted'));
+    }
     const requestId = this.nextRequestId++;
     const requestJson = JSON.stringify({
       method,
@@ -592,7 +596,8 @@ class FreedomIpfsNativeNode {
       return Promise.reject(new Error('freedom-ipfs native request could not be started'));
     }
     const controller = new NativeGatewayController(this, handle, method, signal);
-    this.requests.set(controller.handleKey, controller);
+    // One that ended while it was built has freed its handle already.
+    if (!controller.terminated) this.requests.set(controller.handleKey, controller);
     return controller.responsePromise;
   }
 

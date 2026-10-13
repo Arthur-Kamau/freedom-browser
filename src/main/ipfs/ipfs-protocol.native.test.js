@@ -293,6 +293,21 @@ describe('ipfs: native mode cancel', () => {
     expect(error?.message).toBe('freedom-ipfs native request cancelled');
   });
 
+  // A request aborted before it reaches the node (say, while its name
+  // resolved) starts no native request at all, and nothing stays registered.
+  test('a request aborted before it starts starts nothing and leaves nothing registered', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const res = await ipfs('/x', { signal: controller.signal });
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ code: 502, message: 'freedom-ipfs native request aborted' });
+    expect(fake.addon.gatewayRequestStart).not.toHaveBeenCalled();
+    expect(fake.requests).toHaveLength(0);
+    expect(stack.stats().active_native_handles).toBe(0);
+  });
+
   // An abort before the headers settles the request at once and frees its
   // handle; it no longer waits for the 30 s deadline.
   test('aborting before the headers cancels, settles and frees at once', async () => {
