@@ -258,8 +258,9 @@ describe('ipfs: native mode cancel', () => {
   // controller stays in `node.requests` and the native request stays
   // allocated until the node stops (freedom-ipfs-native-node.js: `drain`,
   // `hasStreamDemand`, `cancel`). Every body its consumer cancels leaks one
-  // handle — which, if Electron cancels the stream when Chromium drops a
-  // request (a media seek, a page closed mid-load), happens routinely.
+  // handle, and that is the usual way a request ends early: an abort on
+  // Chromium's side cancels the handler's body stream (the bzz: equivalent is
+  // shown in __tests__/integration/dweb-range-electron.test.js).
   test('BUG: cancelling the body cancels the native request but never frees its handle', async () => {
     fake.onRequest(endlessBody);
 
