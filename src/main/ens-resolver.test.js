@@ -620,11 +620,11 @@ describe('ens-resolver', () => {
     });
 
     // The exact error ethers raises for a JSON-RPC error answer to eth_call.
-    const rpcCallError = (rpcError) => {
+    const rpcCallError = (rpcError, calldata = '0x9061b923') => {
       const provider = new actualEthers.JsonRpcProvider('http://127.0.0.1:1', 1, { staticNetwork: true });
       try {
         return provider.getRpcError(
-          { method: 'eth_call', params: [{ to: '0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe', data: '0x9061b923' }, 'latest'], id: 1, jsonrpc: '2.0' },
+          { method: 'eth_call', params: [{ to: '0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe', data: calldata }, 'latest'], id: 1, jsonrpc: '2.0' },
           { id: 1, jsonrpc: '2.0', error: rpcError }
         );
       } finally {
@@ -681,6 +681,42 @@ describe('ens-resolver', () => {
       const healthy = await resolveEnsContent(`healthy-after-${rpcError.message.length}-${-rpcError.code}.box`);
       expect(healthy.trust).toMatchObject({ level: 'verified' });
       expect(healthy.trust.queried).toHaveLength(TEST_PROVIDERS.length);
+    });
+
+    // ethers' CALL_EXCEPTION message embeds the request calldata, so the
+    // HTTP-status check must not read hex digits as a 429/5xx status.
+    test.each(['429', '502', '503', '504'])(
+      'a data-less revert whose calldata contains %s stays an execution outcome',
+      async (status) => {
+        const calldata = `0x9061b923${'00'.repeat(4)}${status}0${'ab'.repeat(8)}`;
+        const revert = () => rpcCallError({ code: -32000, message: 'execution reverted' }, calldata);
+        expect(revert().message).toContain(status);
+        routeByProvider(new Map(TEST_PROVIDERS.map((url) => [url, { kind: 'reject', payload: revert() }])));
+        const failing = await resolveEnsContent(`calldata-${status}.box`);
+        expect(failing).toMatchObject({ type: 'not_found', reason: 'NO_CONTENTHASH' });
+
+        const goodBytes = urReturnsBytes(ipfsContenthashFor(IPFS_V0));
+        routeByProvider(new Map(TEST_PROVIDERS.map((url) => [url, { kind: 'data', payload: goodBytes }])));
+        const healthy = await resolveEnsContent(`healthy-after-calldata-${status}.box`);
+        expect(healthy.trust).toMatchObject({ level: 'verified' });
+        expect(healthy.trust.queried).toHaveLength(TEST_PROVIDERS.length);
+      }
+    );
+
+    test('an HTTP 503 in the error message is still a provider error', async () => {
+      const goodBytes = urReturnsBytes(ipfsContenthashFor(IPFS_V0));
+      const unavailable = () => new Error('bad response (status=503, statusText="Service Unavailable")');
+      routeByProvider(new Map([
+        [TEST_PROVIDERS[0], { kind: 'reject', payload: unavailable() }],
+        [TEST_PROVIDERS[1], { kind: 'reject', payload: unavailable() }],
+        [TEST_PROVIDERS[2], { kind: 'data', payload: goodBytes }],
+      ]));
+
+      const result = await resolveEnsContent('http-503.box');
+
+      expect(result.type).toBe('ok');
+      expect(result.uri).toBe(`ipfs://${IPFS_V0}`);
+      expect(result.trust.level).not.toBe('verified');
     });
 
     test('caches successful resolutions (warm resolution skips RPC entirely)', async () => {

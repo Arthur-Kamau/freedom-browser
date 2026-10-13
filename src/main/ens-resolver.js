@@ -539,6 +539,12 @@ function isNodeFailure(err, rpcError) {
   return NODE_FAILURE_CODES.has(rpcError.code) || NODE_FAILURE_MESSAGE.test(message);
 }
 
+const HTTP_FAILURE_MESSAGE = /(?<!\d)(?:502|503|504|429)(?!\d)|timeout|ECONNREFUSED|ENOTFOUND|ETIMEDOUT/i;
+
+function stripHexRuns(text) {
+  return String(text).replace(/0x[0-9a-f]*/gi, '0x');
+}
+
 function isProviderError(err) {
   const message = err.message || '';
   const code = err.code || '';
@@ -570,8 +576,11 @@ function isProviderError(err) {
     }
   }
 
-  // Common HTTP error patterns
-  if (/502|503|504|429|timeout|ECONNREFUSED|ENOTFOUND|ETIMEDOUT/i.test(message)) {
+  // Common HTTP error patterns, matched on the message with hex runs
+  // removed: ethers' CALL_EXCEPTION message embeds the request's calldata
+  // and address, and a name whose calldata happens to contain "429" or
+  // "503" must not turn an honest data-less revert into a provider error.
+  if (HTTP_FAILURE_MESSAGE.test(stripHexRuns(message))) {
     return true;
   }
 
