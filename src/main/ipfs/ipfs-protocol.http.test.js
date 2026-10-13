@@ -19,6 +19,7 @@ const {
   closedLoopbackPort,
   nextTurn,
   rangeResponder,
+  readUntilError,
   startFakeHttpNode,
   streamBody,
   waitFor,
@@ -113,19 +114,6 @@ let gateway;
 let stack;
 
 const ipfs = (path, init) => stack.ipfs(new Request(`ipfs://${CID}${path}`, init));
-
-async function readUntilError(reader) {
-  let bytes = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) return { bytes, error: null };
-      bytes += value.byteLength;
-    }
-  } catch (error) {
-    return { bytes, error };
-  }
-}
 
 beforeEach(async () => {
   gateway = await startFakeHttpNode({ prelude: answerProbe });

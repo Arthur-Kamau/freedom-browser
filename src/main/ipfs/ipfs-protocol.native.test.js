@@ -17,7 +17,12 @@ const path = require('path');
 const timers = require('timers');
 const { loadMainModule } = require('../../../test/helpers/main-process-test-utils');
 const { createFakeFreedomIpfsAddon } = require('../../../test/helpers/fake-freedom-ipfs-addon');
-const { nextTurn, readAll, waitFor } = require('../../../test/helpers/fake-http-node');
+const {
+  nextTurn,
+  readAll,
+  readUntilError,
+  waitFor,
+} = require('../../../test/helpers/fake-http-node');
 
 const CID = 'bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi';
 const CONTENT = Buffer.from(Array.from({ length: 1000 }, (_, i) => i % 251));
@@ -98,19 +103,6 @@ const ipfs = (urlPath, init) => stack.ipfs(new Request(`ipfs://${CID}${urlPath}`
 
 function useFakeClock() {
   jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
-}
-
-async function readUntilError(reader) {
-  let bytes = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) return { bytes, error: null };
-      bytes += value.byteLength;
-    }
-  } catch (error) {
-    return { bytes, error };
-  }
 }
 
 // An endless body: every read pulls a fresh 64 KiB chunk from the add-on.

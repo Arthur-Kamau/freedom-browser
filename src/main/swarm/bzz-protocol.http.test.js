@@ -37,6 +37,7 @@ const {
   nextTurn,
   rangeResponder,
   readAll,
+  readUntilError,
   startFakeHttpNode,
   streamBody,
   waitFor,
@@ -93,20 +94,6 @@ async function expectNextAttemptAfter(attempts, count, delay) {
   expect(attempts.calls).toHaveLength(count);
   await jest.advanceTimersByTimeAsync(1);
   expect(attempts.calls).toHaveLength(count + 1);
-}
-
-// Read until the stream ends or errors; report the bytes and the error.
-async function readUntilError(reader) {
-  let bytes = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) return { bytes, error: null };
-      bytes += value.byteLength;
-    }
-  } catch (error) {
-    return { bytes, error };
-  }
 }
 
 const rangeOrigin = rangeResponder({ content: CONTENT, etag: ETAG, contentType: 'video/mp4' });

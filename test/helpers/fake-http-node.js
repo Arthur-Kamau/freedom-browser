@@ -234,12 +234,27 @@ async function readAll(streamOrReader) {
   }
 }
 
+/** Read until the stream ends or errors; report the byte count and the error (or null). */
+async function readUntilError(reader) {
+  let bytes = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return { bytes, error: null };
+      bytes += value.byteLength;
+    }
+  } catch (error) {
+    return { bytes, error };
+  }
+}
+
 module.exports = {
   CHUNK_BYTES,
   closedLoopbackPort,
   nextTurn,
   rangeResponder,
   readAll,
+  readUntilError,
   startFakeHttpNode,
   streamBody,
   waitFor,
