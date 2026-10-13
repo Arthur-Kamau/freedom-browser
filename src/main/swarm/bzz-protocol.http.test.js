@@ -134,6 +134,7 @@ describe('bzz: Range and conditional requests over HTTP', () => {
   test.each([
     ['an open-ended range', 'bytes=990-', 'bytes 990-999/1000', [990, 1000]],
     ['a suffix range', 'bytes=-10', 'bytes 990-999/1000', [990, 1000]],
+    ['a suffix longer than the content', 'bytes=-2000', 'bytes 0-999/1000', [0, 1000]],
     [
       'a range past the end, clamped by the node',
       'bytes=995-5000',
@@ -146,6 +147,7 @@ describe('bzz: Range and conditional requests over HTTP', () => {
     expect(ant.requests[0].headers.range).toBe(range);
     expect(res.status).toBe(206);
     expect(res.headers.get('content-range')).toBe(contentRange);
+    expect(res.headers.get('content-length')).toBe(String(slice[1] - slice[0]));
     expect(Buffer.from(await res.arrayBuffer())).toEqual(CONTENT.subarray(...slice));
   });
 
@@ -184,10 +186,21 @@ describe('bzz: Range and conditional requests over HTTP', () => {
     expect(res.status).toBe(206);
     expect(res.headers.get('content-type')).toBe('multipart/byteranges; boundary=BOUNDARY');
     const body = Buffer.from(await res.arrayBuffer());
-    expect(body.toString('latin1')).toContain('Content-Range: bytes 0-9/1000');
-    expect(body.toString('latin1')).toContain('Content-Range: bytes 20-29/1000');
-    expect(body.includes(CONTENT.subarray(20, 30))).toBe(true);
-    expect(Number(res.headers.get('content-length'))).toBe(body.length);
+    // The whole multipart body, built here independently of the fake.
+    const part = (start, end) => [
+      Buffer.from(
+        `--BOUNDARY\r\nContent-Type: video/mp4\r\nContent-Range: bytes ${start}-${end}/1000\r\n\r\n`
+      ),
+      CONTENT.subarray(start, end + 1),
+      Buffer.from('\r\n'),
+    ];
+    const expected = Buffer.concat([
+      ...part(0, 9),
+      ...part(20, 29),
+      Buffer.from('--BOUNDARY--\r\n'),
+    ]);
+    expect(body.equals(expected)).toBe(true);
+    expect(Number(res.headers.get('content-length'))).toBe(expected.length);
   });
 
   test('passes a 304 for a matching If-None-Match through with no body', async () => {

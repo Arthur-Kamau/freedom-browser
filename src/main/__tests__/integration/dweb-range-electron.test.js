@@ -32,7 +32,9 @@ function electronBinaryPath() {
     // Outside an Electron process `require('electron')` resolves to the
     // installed binary's path.
     const resolved = jest.requireActual('electron');
-    return typeof resolved === 'string' ? resolved : null;
+    // ELECTRON_OVERRIDE_DIST_PATH can name a path that doesn't exist: a
+    // path is installed only if the executable is there.
+    return typeof resolved === 'string' && fs.existsSync(resolved) ? resolved : null;
   } catch {
     return null;
   }

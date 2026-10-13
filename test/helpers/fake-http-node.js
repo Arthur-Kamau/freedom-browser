@@ -142,7 +142,8 @@ function rangeResponder({ content, etag, contentType = 'application/octet-stream
       .split(',')
       .map((spec) => {
         const [, from, to] = spec.trim().match(/^(\d*)-(\d*)$/);
-        if (from === '') return [size - Number(to), size - 1];
+        // A suffix longer than the content covers all of it (RFC 9110 14.1.2).
+        if (from === '') return [Math.max(0, size - Number(to)), size - 1];
         return [Number(from), to === '' ? size - 1 : Math.min(Number(to), size - 1)];
       });
     if (parts.some(([start, end]) => start >= size || start > end)) {
