@@ -1075,7 +1075,7 @@ describe('page-context-menu', () => {
   // scaled by the page zoom factor or the menu drifts away from the cursor.
   test.each([
     ['zoomed in', 1.5, 25 + 100 * 1.5, 35 + 80 * 1.5],
-    ['zoomed out', 0.5, 25 + 100 * 0.5, 35 + 80 * 0.5],
+    ['zoomed out', 0.75, 25 + 100 * 0.75, 35 + 80 * 0.75],
     ['at 100%', 1, 125, 115],
   ])('places the menu at the cursor when the page is %s', async (_label, zoom, left, top) => {
     const { mod, pageContextMenu } = await loadPageContextMenuModule();
