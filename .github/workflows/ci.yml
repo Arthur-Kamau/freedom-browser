@@ -236,8 +236,10 @@ jobs:
 
   # freedom-ipfs native addon smoke for every desktop addon target currently
   # published in the pinned prebuilt manifest. This downloads the real release
-  # artifact, loads it in Node, starts native freedom-ipfs, and retrieves a real
-  # IPNS page through the native request API.
+  # artifact, loads it in Node, starts native freedom-ipfs, serves the identity
+  # CID bafkqaaa locally (no network), and fetches an immutable /ipfs/<cid>
+  # through the native request API (no IPNS lookup; network-only failures of
+  # that live leg are a ::warning::, see #747).
   freedom-ipfs-native-addon:
     needs: code-changed
     if: ${{ !cancelled() && needs.code-changed.outputs.code != 'false' }}
@@ -287,8 +289,9 @@ jobs:
         run: npm run ipfs:native:smoke
         env:
           FREEDOM_IPFS_NATIVE_SMOKE_TARGET: ${{ matrix.target }}
-          FREEDOM_IPFS_NATIVE_SMOKE_PATH: /ipns/ipfs.tech/
-          FREEDOM_IPFS_NATIVE_SMOKE_EXPECT: ipfs
+          # The live-network leg fetches an immutable /ipfs/<cid> and turns a
+          # network-only failure into a ::warning:: (see the script header and
+          # #747); load/start/local-content failures still fail the job.
 
       - name: Smoke test issue #102 high-fanout IPFS page
         if: matrix.target == 'linux-x64'
@@ -296,6 +299,9 @@ jobs:
         env:
           FREEDOM_IPFS_NATIVE_SMOKE_TARGET: ${{ matrix.target }}
           FREEDOM_IPFS_NATIVE_SMOKE_LIVE: '0'
+          # `1` = warn mode: the root page fetch retries and turns network
+          # weather into a ::warning:: like the live leg; gateway_busy during
+          # the fan-out still fails the job (#747).
           FREEDOM_IPFS_NATIVE_SMOKE_ISSUE_102: '1'
 
   # libradicle is the ONLY Radicle runtime — there is no executable fallback —
