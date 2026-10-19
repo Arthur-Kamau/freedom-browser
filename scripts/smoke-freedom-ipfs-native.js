@@ -1,14 +1,57 @@
 #!/usr/bin/env node
 
+// Smoke test for the freedom-ipfs native addon (`npm run ipfs:native:smoke`,
+// run per shipped target by ci.yml's freedom-ipfs-native-addon job).
+//
+// Hard failures (always exit 1): the addon doesn't load or reports the wrong
+// target, the node doesn't start or isn't healthy, the diagnostics snapshots
+// aren't valid, or the local gateway can't serve the empty identity CID
+// `bafkqaaa` (content inlined in the CID itself, so no network is involved).
+//
+// The live-network leg fetches an immutable, widely provided /ipfs/<cid> (no
+// IPNS lookup) and retries HTTP 5xx/429 and timeouts with backoff inside a
+// bounded budget. If the network still can't be reached, it prints a GitHub
+// Actions ::warning:: annotation and passes, unless strict mode is set. Any
+// other live-leg failure (a 4xx, an empty or wrong body, a request error, the
+// node going unhealthy) still fails the run. See issue #747.
+//
+// Environment:
+//   FREEDOM_IPFS_NATIVE_SMOKE_TARGET     expected `<platform>-<arch>`; fail on mismatch.
+//   FREEDOM_IPFS_NATIVE_SMOKE_LIVE       live leg mode: unset/`1`/`warn` (default) =
+//                                        network failure is a warning; `strict` = it
+//                                        fails the run; `0`/`off` = skip the live leg.
+//   FREEDOM_IPFS_NATIVE_SMOKE_PATH       gateway path for the live leg
+//                                        (default: DEFAULT_LIVE_PATH below).
+//   FREEDOM_IPFS_NATIVE_SMOKE_EXPECT     text the live body must contain (case-insensitive;
+//                                        empty = only require a non-empty body). Defaults
+//                                        to DEFAULT_LIVE_EXPECT when PATH is not overridden.
+//   FREEDOM_IPFS_NATIVE_SMOKE_ATTEMPTS   max live attempts (default 5).
+//   FREEDOM_IPFS_NATIVE_SMOKE_BUDGET_MS  total live-leg budget incl. backoff (default 180000).
+//   FREEDOM_IPFS_NATIVE_SMOKE_ISSUE_102  `1` = also run the issue #102 high-fanout check.
+
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { FreedomIpfsNativeNode } = require('../src/main/ipfs/freedom-ipfs-native-node');
 
-const DEFAULT_LIVE_PATH = '/ipns/ipfs.tech/';
-const DEFAULT_LIVE_EXPECT = 'ipfs';
-const DEFAULT_LIVE_ATTEMPTS = 3;
+// The IPFS public-gateway-checker's test CID: immutable and pinned by many
+// gateways and providers, so it needs no IPNS resolution (ipfs.tech's IPNS
+// name timed out with HTTP 504 often enough to fail CI, see #747).
+const DEFAULT_LIVE_PATH = '/ipfs/bafybeifx7yeb55armcsxwwitkymga5xf53dxiarykms3ygqic223w5sk3m/';
+const DEFAULT_LIVE_EXPECT = 'Hello from IPFS Gateway Checker';
+const DEFAULT_LIVE_ATTEMPTS = 5;
+const DEFAULT_LIVE_BUDGET_MS = 180_000;
 const LIVE_TIMEOUT_MS = 45_000;
+const LIVE_BACKOFF_BASE_MS = 2_000;
+const LIVE_BACKOFF_MAX_MS = 30_000;
+// The empty identity CID: its (zero) bytes are inlined in the CID itself, so
+// the local gateway answers it without touching the network. It is also the
+// fingerprint the app's own IPFS gateway probes use. (As of 2026-10-19, the
+// v0.4.6 addon answers this one locally but 504s non-empty identity CIDs, so
+// don't swap in a CID with content without re-checking.)
+const LOCAL_TEXT = '';
+const LOCAL_PATH = '/ipfs/bafkqaaa';
+const LOCAL_TIMEOUT_MS = 30_000;
 const ISSUE_102_PATH =
   '/ipfs/bafybeiccfclkdtucu6y4yc5cpr6y3yuinr67svmii46v5cfcrkp47ihehy/frontend/pages/QXBvbGxvIDEyIE1hZ2F6aW5lIDUwL1E=.html';
 const ISSUE_102_CONCURRENCY = 48;
@@ -98,63 +141,148 @@ async function requestText(node, gatewayPath, { signal } = {}) {
   return { response, body };
 }
 
-async function loadLivePage(node) {
-  if (process.env.FREEDOM_IPFS_NATIVE_SMOKE_LIVE === '0') return null;
+function liveMode() {
+  const raw = (process.env.FREEDOM_IPFS_NATIVE_SMOKE_LIVE ?? '').trim().toLowerCase();
+  if (['', '1', 'on', 'true', 'yes', 'warn'].includes(raw)) return 'warn';
+  if (['0', 'off', 'false', 'no'].includes(raw)) return 'off';
+  if (raw === 'strict') return 'strict';
+  throw new Error(
+    `FREEDOM_IPFS_NATIVE_SMOKE_LIVE=${JSON.stringify(raw)} is not one of warn, strict, 0`
+  );
+}
 
-  const smokePath = process.env.FREEDOM_IPFS_NATIVE_SMOKE_PATH || DEFAULT_LIVE_PATH;
-  const expectedText = process.env.FREEDOM_IPFS_NATIVE_SMOKE_EXPECT || DEFAULT_LIVE_EXPECT;
+// Escape per the GitHub Actions workflow-command format.
+function annotationEscape(value) {
+  return String(value).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+}
+
+// A failure the network, not the addon, can explain: the attempt timed out,
+// or the gateway answered 5xx/429 (provider lookup or retrieval timed out).
+class LiveNetworkError extends Error {}
+
+async function loadLocalContent(node) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), LOCAL_TIMEOUT_MS);
+  try {
+    const { response, body } = await requestText(node, LOCAL_PATH, {
+      signal: controller.signal,
+    });
+    assert(response.status === 200, `local identity CID returned HTTP ${response.status}`);
+    assert(
+      body === LOCAL_TEXT,
+      `local identity CID body was ${JSON.stringify(body.slice(0, 200))}, expected ${JSON.stringify(LOCAL_TEXT)}`
+    );
+    return { path: LOCAL_PATH, status: response.status, bytes: body.length };
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new Error(`local identity CID did not answer within ${LOCAL_TIMEOUT_MS}ms`, {
+        cause: err,
+      });
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function liveAttempt(node, smokePath, expectedText, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let result;
+  try {
+    result = await requestText(node, smokePath, { signal: controller.signal });
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new LiveNetworkError(`live page timed out after ${timeoutMs}ms`, { cause: err });
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  const { response, body } = result;
+  if (response.status >= 500 || response.status === 429) {
+    const code = response.headers.get('x-freedom-ipfs-error-code');
+    throw new LiveNetworkError(
+      `live page returned HTTP ${response.status}${code ? ` (${code})` : ''}`
+    );
+  }
+  assert(
+    response.status >= 200 && response.status < 400,
+    `live page returned HTTP ${response.status}`
+  );
+  assert(body.length > 0, 'live page body is empty');
+  if (expectedText) {
+    assert(
+      body.toLowerCase().includes(expectedText.toLowerCase()),
+      `live page did not contain expected text: ${expectedText}`
+    );
+  }
+  return { status: response.status, bytes: body.length, title: extractTitle(body) };
+}
+
+async function loadLivePage(node) {
+  const mode = liveMode();
+  if (mode === 'off') return null;
+
+  const customPath = process.env.FREEDOM_IPFS_NATIVE_SMOKE_PATH;
+  const smokePath = customPath || DEFAULT_LIVE_PATH;
+  const expectedText =
+    process.env.FREEDOM_IPFS_NATIVE_SMOKE_EXPECT ?? (customPath ? '' : DEFAULT_LIVE_EXPECT);
   const attempts = parsePositiveInt(
     process.env.FREEDOM_IPFS_NATIVE_SMOKE_ATTEMPTS,
     DEFAULT_LIVE_ATTEMPTS
   );
+  const budgetMs = parsePositiveInt(
+    process.env.FREEDOM_IPFS_NATIVE_SMOKE_BUDGET_MS,
+    DEFAULT_LIVE_BUDGET_MS
+  );
 
-  let lastError;
+  const legStartedAt = Date.now();
+  const deadline = legStartedAt + budgetMs;
+  const failures = [];
   for (let attempt = 1; attempt <= attempts; attempt++) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
     const startedAt = Date.now();
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), LIVE_TIMEOUT_MS);
-
     try {
-      const { response, body } = await requestText(node, smokePath, {
-        signal: controller.signal,
-      });
-      const title = extractTitle(body);
-
-      assert(
-        response.status >= 200 && response.status < 400,
-        `live page returned HTTP ${response.status}`
+      const page = await liveAttempt(
+        node,
+        smokePath,
+        expectedText,
+        Math.min(LIVE_TIMEOUT_MS, remaining)
       );
-      assert(body.length > 0, 'live page body is empty');
-      if (expectedText) {
-        assert(
-          body.toLowerCase().includes(expectedText.toLowerCase()),
-          `live page did not contain expected text: ${expectedText}`
-        );
-      }
-
-      return {
-        path: smokePath,
-        status: response.status,
-        bytes: body.length,
-        title,
-        ms: Date.now() - startedAt,
-        attempt,
-      };
+      return { path: smokePath, mode, ...page, ms: Date.now() - startedAt, attempt };
     } catch (err) {
-      lastError = err;
-      if (attempt < attempts) {
-        const delayMs = 1000 * attempt;
+      // Anything the network can't explain is the addon's fault: fail now.
+      if (!(err instanceof LiveNetworkError)) throw err;
+      failures.push(`#${attempt}: ${err.message}`);
+      // A node that fell over while we waited is a real failure too.
+      assert(node.isHealthy(), `native node became unhealthy during the live leg (${err.message})`);
+      const delayMs = Math.min(LIVE_BACKOFF_BASE_MS * 2 ** (attempt - 1), LIVE_BACKOFF_MAX_MS);
+      if (attempt < attempts && Date.now() + delayMs < deadline) {
         console.warn(
           `[freedom-ipfs-native-smoke] live page attempt ${attempt} failed (${err.message}); retrying in ${delayMs}ms...`
         );
         await sleep(delayMs);
+      } else {
+        break;
       }
-    } finally {
-      clearTimeout(timeout);
     }
   }
 
-  throw lastError;
+  const summary =
+    `live-network leg could not fetch ${smokePath} after ${failures.length} attempt(s) ` +
+    `in ${Date.now() - legStartedAt}ms: ${failures.join('; ')}`;
+  if (mode === 'strict') {
+    throw new Error(`${summary} (FREEDOM_IPFS_NATIVE_SMOKE_LIVE=strict)`);
+  }
+  console.log(
+    `::warning title=freedom-ipfs live-network leg skipped::${annotationEscape(
+      `${summary}. The addon loaded, started and served local content; treating this as network weather (set FREEDOM_IPFS_NATIVE_SMOKE_LIVE=strict to fail instead).`
+    )}`
+  );
+  return { path: smokePath, mode, skipped: true, failures };
 }
 
 async function loadIssue102Fanout(node) {
@@ -239,6 +367,7 @@ async function loadIssue102Fanout(node) {
 }
 
 async function main() {
+  liveMode(); // reject a bad FREEDOM_IPFS_NATIVE_SMOKE_LIVE before starting anything
   const expectedTarget = process.env.FREEDOM_IPFS_NATIVE_SMOKE_TARGET;
   const actualTarget = `${process.platform}-${process.arch}`;
 
@@ -266,6 +395,7 @@ async function main() {
 
     const progress = parseJson('progress snapshot', node.progressSnapshotJson());
     const stats = parseJson('native gateway stats', node.nativeGatewayStatsJson());
+    const localContent = await loadLocalContent(node);
     const livePage = await loadLivePage(node);
     const issue102Fanout = await loadIssue102Fanout(node);
 
@@ -279,6 +409,7 @@ async function main() {
           version,
           buildInfo,
           dataDir,
+          localContent,
           livePage,
           issue102Fanout,
           statsKeys: Object.keys(stats).sort(),

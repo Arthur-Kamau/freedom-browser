@@ -287,8 +287,9 @@ jobs:
         run: npm run ipfs:native:smoke
         env:
           FREEDOM_IPFS_NATIVE_SMOKE_TARGET: ${{ matrix.target }}
-          FREEDOM_IPFS_NATIVE_SMOKE_PATH: /ipns/ipfs.tech/
-          FREEDOM_IPFS_NATIVE_SMOKE_EXPECT: ipfs
+          # The live-network leg fetches an immutable /ipfs/<cid> and turns a
+          # network-only failure into a ::warning:: (see the script header and
+          # #747); load/start/local-content failures still fail the job.
 
       - name: Smoke test issue #102 high-fanout IPFS page
         if: matrix.target == 'linux-x64'
