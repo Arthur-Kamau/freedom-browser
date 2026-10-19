@@ -42,6 +42,8 @@ const { getOriginEntry, getFeed, setFeed, updateFeedReference, hasFeedGrant, get
 const {
   publishChunk,
   readChunk,
+  readDataRoot,
+  readData,
   writeSingleOwnerChunk,
   readSingleOwnerChunk,
   getSignerAddress,
@@ -145,6 +147,7 @@ const KNOWN_METHODS = [
   'swarm_listFeeds',
   'swarm_publishChunk',
   'swarm_readChunk',
+  'swarm_readData',
   'swarm_writeSingleOwnerChunk',
   'swarm_readSingleOwnerChunk',
   'swarm_getSigningIdentity',
@@ -295,13 +298,29 @@ function consumePermissionFreeReadBudget(origin, { requests = 0, bytes = 0 } = {
   permissionFreeReadBuckets.set(origin, bucket);
 
   if (bucket.requests > budget.maxRequests || bucket.bytes > budget.maxBytes) {
-    return invalidParams('Permission-free read budget exceeded', 'rate_limited', {
-      windowMs: budget.windowMs,
-      maxRequests: budget.maxRequests,
-      maxBytes: budget.maxBytes,
-    });
+    return readBudgetExceeded(budget);
   }
   return null;
+}
+
+function readBudgetExceeded(budget) {
+  return invalidParams('Permission-free read budget exceeded', 'rate_limited', {
+    windowMs: budget.windowMs,
+    maxRequests: budget.maxRequests,
+    maxBytes: budget.maxBytes,
+  });
+}
+
+/**
+ * The bytes still left in the origin's current read window, without
+ * consuming any. Lets a blob read refuse before downloading what the budget
+ * would refuse after the fact anyway.
+ */
+function remainingPermissionFreeReadBytes(origin) {
+  const budget = getReadBudget(origin);
+  const bucket = permissionFreeReadBuckets.get(origin);
+  if (!bucket || Date.now() - bucket.startedAt >= budget.windowMs) return budget.maxBytes;
+  return budget.maxBytes - bucket.bytes;
 }
 
 /**
@@ -338,6 +357,10 @@ async function executeSwarmMethod(method, params, origin, meta) {
 
     if (method === 'swarm_readChunk') {
       return handleReadChunk(params, normalizedOrigin);
+    }
+
+    if (method === 'swarm_readData') {
+      return handleReadData(params, normalizedOrigin);
     }
 
     if (method === 'swarm_readSingleOwnerChunk') {
@@ -857,6 +880,64 @@ async function handleReadChunk(params, origin) {
     return { result };
   } catch (err) {
     log.error(`[SwarmProvider] readChunk failed for ${origin}:`, err.message);
+    return mapChunkReadError(err);
+  }
+}
+
+/**
+ * Handle swarm_readData: permission-free read of a whole blob, joined by the
+ * node. One request against the read budget, like swarm_readChunk, and the
+ * returned bytes count against it the same way. A blob larger than the
+ * origin's whole byte budget can never be returned, so it is refused with
+ * data_too_large from its root chunk's span, before the node joins it; one
+ * that only overruns what is left of the current window is rate_limited,
+ * also before the download.
+ */
+async function handleReadData(params, origin) {
+  if (!params || typeof params !== 'object') {
+    return invalidParams('params is required');
+  }
+
+  const optionsError = validateEmptyOptions(params.options);
+  if (optionsError) return optionsError;
+
+  // 32 bytes only: an encrypted reference (64 bytes, 128 hex) is refused here
+  // too, as Freedom does not decrypt blobs for pages yet.
+  const referenceError = validateHexString(params.reference, 32, 'invalid_reference', 'reference');
+  if (referenceError) return referenceError;
+
+  const budgetError = consumePermissionFreeReadBudget(origin, { requests: 1 });
+  if (budgetError) return budgetError;
+
+  const reachable = await checkBeeReachable();
+  if (!reachable.ok) {
+    return { error: { ...ERRORS.NODE_UNAVAILABLE, message: `Node not available: ${reachable.reason}`, data: { reason: reachable.reason } } };
+  }
+
+  try {
+    const root = await readDataRoot(params.reference);
+
+    const budget = getReadBudget(origin);
+    if (root.size > BigInt(budget.maxBytes)) {
+      const actual = root.size <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(root.size) : root.size;
+      return invalidParams(
+        `Data exceeds the maximum read size of ${budget.maxBytes} bytes`,
+        'data_too_large',
+        { limit: budget.maxBytes, actual }
+      );
+    }
+    if (Number(root.size) > remainingPermissionFreeReadBytes(origin)) {
+      return readBudgetExceeded(budget);
+    }
+
+    const result = await readData(params.reference, root);
+    const byteBudgetError = consumePermissionFreeReadBudget(origin, {
+      bytes: Buffer.byteLength(result.data, 'base64'),
+    });
+    if (byteBudgetError) return byteBudgetError;
+    return { result };
+  } catch (err) {
+    log.error(`[SwarmProvider] readData failed for ${origin}:`, err.message);
     return mapChunkReadError(err);
   }
 }

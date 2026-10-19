@@ -95,12 +95,16 @@ jest.mock('./feed-service', () => ({
 
 const mockPublishChunk = jest.fn();
 const mockReadChunk = jest.fn();
+const mockReadDataRoot = jest.fn();
+const mockReadData = jest.fn();
 const mockWriteSingleOwnerChunk = jest.fn();
 const mockReadSingleOwnerChunk = jest.fn();
 const mockGetSignerAddress = jest.fn();
 jest.mock('./chunk-service', () => ({
   publishChunk: mockPublishChunk,
   readChunk: mockReadChunk,
+  readDataRoot: mockReadDataRoot,
+  readData: mockReadData,
   writeSingleOwnerChunk: mockWriteSingleOwnerChunk,
   readSingleOwnerChunk: mockReadSingleOwnerChunk,
   getSignerAddress: mockGetSignerAddress,
@@ -980,6 +984,215 @@ describe('swarm-provider-ipc', () => {
 
       expect(result.error.code).toBe(-32602);
       expect(result.error.data.reason).toBe('invalid_reference');
+    });
+
+    describe('swarm_readData', () => {
+      const KIB = 1024;
+      const MIB = 1024 * KIB;
+
+      // Several reads per test, each with its own reachability probe.
+      beforeEach(() => {
+        mockGetBeeApiUrl.mockReturnValue('http://127.0.0.1:1633');
+        global.fetch.mockResolvedValue({ ok: true, json: async () => ({ beeMode: 'light' }) });
+      });
+      afterEach(() => {
+        global.fetch.mockReset();
+      });
+
+      // A blob of `size` bytes: the root read reports its size, the join
+      // returns that many bytes.
+      function mockBlob(size) {
+        mockReadDataRoot.mockResolvedValue({ size: BigInt(size), payload: Buffer.alloc(0) });
+        mockReadData.mockResolvedValue({
+          data: Buffer.alloc(size, 0x61).toString('base64'),
+          encoding: 'base64',
+        });
+      }
+
+      test('reads a whole blob without connection permission', async () => {
+        mockGetPermission.mockReturnValue(null);
+        const root = { size: 9000n, payload: Buffer.alloc(64) };
+        mockReadDataRoot.mockResolvedValue(root);
+        mockReadData.mockResolvedValue({
+          data: Buffer.alloc(9000, 0x61).toString('base64'),
+          encoding: 'base64',
+        });
+
+        const result = await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth');
+
+        expect(result.result).toEqual({
+          data: Buffer.alloc(9000, 0x61).toString('base64'),
+          encoding: 'base64',
+        });
+        expect(mockReadDataRoot).toHaveBeenCalledWith(VALID_REF);
+        // The join is handed the root that was already read and size-checked.
+        expect(mockReadData).toHaveBeenCalledWith(VALID_REF, root);
+      });
+
+      test('is one request against the read budget, whatever the blob size', async () => {
+        mockGetPermission.mockReturnValue(null);
+        mockBlob(10);
+
+        // Anonymous budget: 120 requests per window.
+        for (let i = 0; i < 120; i++) {
+          const ok = await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth');
+          expect(ok.result).toBeDefined();
+        }
+        const refused = await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth');
+
+        expect(refused.error.code).toBe(-32602);
+        expect(refused.error.data).toMatchObject({ reason: 'rate_limited', maxRequests: 120 });
+      });
+
+      test('counts returned bytes against the budget shared with swarm_readChunk', async () => {
+        mockGetPermission.mockReturnValue(null);
+        mockBlob(300 * KIB);
+
+        const first = await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth');
+        expect(first.result).toBeDefined();
+
+        // 300 KiB of the anonymous 512 KiB are spent; a 4 KiB chunk still fits…
+        mockReadChunk.mockResolvedValue({
+          data: Buffer.alloc(4 * KIB).toString('base64'),
+          encoding: 'base64',
+          span: 4 * KIB,
+        });
+        const chunk = await invokeProvider('swarm_readChunk', { reference: VALID_REF }, 'unknown.eth');
+        expect(chunk.result).toBeDefined();
+
+        // …but a second 300 KiB blob does not, and is refused before the join.
+        mockReadData.mockClear();
+        const second = await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth');
+
+        expect(second.error.code).toBe(-32602);
+        expect(second.error.data).toMatchObject({ reason: 'rate_limited', maxBytes: 512 * KIB });
+        expect(mockReadData).not.toHaveBeenCalled();
+      });
+
+      test('a refused blob does not spend the byte budget', async () => {
+        mockGetPermission.mockReturnValue(null);
+        mockBlob(400 * KIB);
+        expect((await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth')).result).toBeDefined();
+        expect((await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth')).error.data.reason)
+          .toBe('rate_limited');
+
+        // The 400 KiB that were refused were never returned, so 112 KiB remain.
+        mockBlob(100 * KIB);
+        expect((await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth')).result).toBeDefined();
+      });
+
+      test('refuses past the byte budget after the join, like swarm_readChunk', async () => {
+        mockGetPermission.mockReturnValue(null);
+        // The root claims 100 KiB, but a concurrent read could fill the window
+        // between the size check and the join: the bytes actually returned
+        // are what count.
+        mockReadDataRoot.mockResolvedValue({ size: 100n * BigInt(KIB), payload: Buffer.alloc(0) });
+        mockReadData.mockResolvedValue({
+          data: Buffer.alloc(600 * KIB).toString('base64'),
+          encoding: 'base64',
+        });
+
+        const result = await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth');
+
+        expect(result.error.code).toBe(-32602);
+        expect(result.error.data.reason).toBe('rate_limited');
+      });
+
+      test('refuses a blob larger than the anonymous byte budget without downloading it', async () => {
+        mockGetPermission.mockReturnValue(null);
+        mockReadDataRoot.mockResolvedValue({ size: BigInt(512 * KIB + 1), payload: Buffer.alloc(0) });
+
+        const result = await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth');
+
+        expect(result.error.code).toBe(-32602);
+        expect(result.error.data).toEqual({
+          reason: 'data_too_large',
+          limit: 512 * KIB,
+          actual: 512 * KIB + 1,
+        });
+        expect(mockReadData).not.toHaveBeenCalled();
+      });
+
+      test('the cap follows the origin tier: a connected origin may read up to 5 MiB', async () => {
+        mockGetPermission.mockReturnValue({ origin: 'myapp.eth' });
+        mockBlob(5 * MIB);
+
+        const ok = await invokeProvider('swarm_readData', { reference: VALID_REF }, 'myapp.eth');
+        expect(ok.result).toBeDefined();
+
+        clearPermissionFreeReadBudgets();
+        mockReadData.mockClear();
+        mockReadDataRoot.mockResolvedValue({ size: BigInt(5 * MIB + 1), payload: Buffer.alloc(0) });
+        const tooLarge = await invokeProvider('swarm_readData', { reference: VALID_REF }, 'myapp.eth');
+
+        expect(tooLarge.error.data).toMatchObject({ reason: 'data_too_large', limit: 5 * MIB });
+        expect(mockReadData).not.toHaveBeenCalled();
+      });
+
+      test('reports a size beyond Number.MAX_SAFE_INTEGER as a BigInt', async () => {
+        mockGetPermission.mockReturnValue(null);
+        mockReadDataRoot.mockResolvedValue({ size: 1n << 60n, payload: Buffer.alloc(0) });
+
+        const result = await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth');
+
+        expect(result.error.data).toMatchObject({ reason: 'data_too_large', actual: 1n << 60n });
+        expect(mockReadData).not.toHaveBeenCalled();
+      });
+
+      test.each([
+        ['root read', () => mockReadDataRoot],
+        ['join', () => mockReadData],
+      ])('maps a missing chunk in the %s to chunk_not_found', async (_label, getMock) => {
+        mockGetPermission.mockReturnValue(null);
+        mockBlob(9000);
+        const err = new Error('Data not found');
+        err.reason = 'chunk_not_found';
+        getMock().mockRejectedValue(err);
+
+        const result = await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth');
+
+        expect(result.error.code).toBe(-32602);
+        expect(result.error.data.reason).toBe('chunk_not_found');
+      });
+
+      test('keeps transient read errors internal', async () => {
+        mockGetPermission.mockReturnValue(null);
+        mockBlob(9000);
+        mockReadData.mockRejectedValue(new Error('Bee gateway timed out'));
+
+        const result = await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth');
+
+        expect(result.error.code).toBe(-32603);
+        expect(result.error.message).toBe('Bee gateway timed out');
+      });
+
+      test.each([
+        ['not hex', 'not-hex'],
+        ['short', 'ab'.repeat(31)],
+        ['0x-prefixed', `0x${VALID_REF}`],
+        ['encrypted (128 hex)', 'ab'.repeat(64)],
+        ['missing', undefined],
+      ])('rejects a %s reference without touching the node', async (_label, reference) => {
+        mockGetPermission.mockReturnValue(null);
+
+        const result = await invokeProvider('swarm_readData', { reference }, 'unknown.eth');
+
+        expect(result.error.code).toBe(-32602);
+        expect(result.error.data.reason).toBe('invalid_reference');
+        expect(mockReadDataRoot).not.toHaveBeenCalled();
+      });
+
+      test('rejects unsupported options', async () => {
+        mockGetPermission.mockReturnValue(null);
+
+        const result = await invokeProvider('swarm_readData', {
+          reference: VALID_REF,
+          options: { redundancyStrategy: 1 },
+        }, 'unknown.eth');
+
+        expect(result.error.data.reason).toBe('unsupported_option');
+        expect(mockReadDataRoot).not.toHaveBeenCalled();
+      });
     });
 
     test('writes an SOC with feed signing identity', async () => {

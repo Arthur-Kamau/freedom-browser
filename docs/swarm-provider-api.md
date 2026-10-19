@@ -12,7 +12,9 @@ on) are blocked, and `bzz://` pages are read-only (`GET`/`HEAD`). Raw Bee
 routes such as `fetch('/chunks/<ref>')` are not exposed on desktop; use
 `swarm_readChunk` / `swarm_readSingleOwnerChunk` instead. Both verify the
 downloaded bytes against the requested address before returning them (see
-[#178](https://github.com/solardev-xyz/freedom-browser/issues/178)).
+[#178](https://github.com/solardev-xyz/freedom-browser/issues/178)). For a
+whole blob (the counterpart of `GET /bytes/<ref>`), use `swarm_readData`: the
+node joins it and checks every chunk it fetches.
 
 This document describes the code as it is. The sources of truth are:
 
@@ -76,7 +78,8 @@ The shim rejects a request that has had no answer with
 - **300 s** for `swarm_publish*`, `swarm_send*`, `swarm_createFeed`,
   `swarm_updateFeed`, `swarm_writeFeedEntry`, `swarm_writeSingleOwnerChunk`,
   `swarm_getSigningIdentity`, `swarm_getMessagingIdentity` and
-  `swarm_subscribe` (these may wait on a consent prompt or a node write);
+  `swarm_subscribe` (these may wait on a consent prompt or a node write),
+  and `swarm_readData` (a blob of several MiB fetched from the network);
 - **60 s** for everything else, including `swarm_requestAccess` and any
   other call that has to wait on a consent prompt: the connect prompt, or
   the [permission manifest](#permission-manifests) sheet, which any
@@ -198,7 +201,7 @@ an ENS name.
 
 | Tier           | Methods                                                                                                            | Grant                        | Prompt                                                                                                                             |
 | -------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| **Public**     | `swarm_getCapabilities`, `swarm_readChunk`, `swarm_readSingleOwnerChunk`, `swarm_readFeedEntry`, `swarm_listFeeds` | none                         | never                                                                                                                              |
+| **Public**     | `swarm_getCapabilities`, `swarm_readChunk`, `swarm_readData`, `swarm_readSingleOwnerChunk`, `swarm_readFeedEntry`, `swarm_listFeeds` | none                         | never                                                                                                                              |
 | **Connection** | `swarm_requestAccess`                                                                                              | —                            | once per origin                                                                                                                    |
 |                | `swarm_getUploadStatus`                                                                                            | connection                   | never                                                                                                                              |
 | **Publish**    | `swarm_publishData`, `swarm_publishFiles`, `swarm_publishChunk`                                                    | connection                   | every call, unless "always allow" (`autoApprove.publish`)                                                                          |
@@ -363,11 +366,14 @@ Not reported there:
 
 - **Permission-free read budget**, per origin over a fixed 60 s window that
   starts at the first read and resets 60 s later (not a rolling window),
-  shared by `swarm_readChunk`, `swarm_readSingleOwnerChunk`,
+  shared by `swarm_readChunk`, `swarm_readData`, `swarm_readSingleOwnerChunk`,
   `swarm_readFeedEntry` and `swarm_listFeeds`: 600 requests / 5 MiB when the
   origin is connected, 120 requests / 512 KiB when it is not. Exceeding it is
   `-32602 rate_limited`; a read that crosses the byte budget is refused after
-  the fact, so its data is not returned.
+  the fact, so its data is not returned. `swarm_readData` is one request
+  whatever the blob's size, and knows the size before downloading, so it
+  refuses a blob that would cross the byte budget up front; a blob larger
+  than the whole byte budget is `data_too_large` instead (see the method).
 - **New GSOC topics**: 16 per origin per 60 s (only topics that have to be
   mined count; cached topics are free). Exceeding it is `-32602 rate_limited`
   with `retryAfterMs`.
@@ -473,6 +479,26 @@ number, or a `BigInt` above `Number.MAX_SAFE_INTEGER`. Errors:
 `invalid_reference`, `chunk_not_found`, `chunk_type_mismatch` (the bytes are
 not a valid CAC for that address, e.g. it is a SOC), `rate_limited`. This is
 the supported route for verified raw chunk reads.
+
+#### `swarm_readData { reference, options? }` → `{ data, encoding: 'base64' }` (public)
+
+Downloads a whole blob, as published by `swarm_publishData` or uploaded to
+`/bytes`, by its root reference. The node joins it (`GET /bytes/<ref>`): it
+checks every chunk it fetches against its address, recovers erasure-coded
+content from parity and falls back to the root chunk's replicas, so the page
+needs no tree or coding code of its own. `data` is the blob's bytes, not a
+manifest's file: a `bzz://` site reference returns the manifest's own bytes.
+
+Freedom first reads the root chunk, verifies it against `reference` and takes
+the blob's size from its span (with the redundancy level cleared from the
+span's top byte). A blob larger than the origin's byte budget
+([Limits](#limits): 5 MiB connected, 512 KiB not) is refused with
+`data_too_large` (`data.limit`, `data.actual` in bytes) before the rest is
+downloaded. Only unencrypted 32-byte references are accepted for now; an
+encrypted 64-byte one is `invalid_reference`. Errors: `invalid_reference`,
+`chunk_not_found` (the root or a chunk under it), `chunk_type_mismatch` (the
+root is not a CAC for that address), `data_too_large`, `rate_limited`. The
+page shim allows it 300 s (see [Timeouts](#timeouts)).
 
 #### `swarm_writeSingleOwnerChunk { identifier, data, span?, options? }` → `{ reference, owner, identifier }` (signing tier)
 
