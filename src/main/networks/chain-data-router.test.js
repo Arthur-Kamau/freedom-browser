@@ -625,6 +625,27 @@ describe('chain-data-router', () => {
         maxPriorityFeePerGas: GWEI.toString(),
         maxFeePerGas: (5n * GWEI).toString(),
         source: 'myotis',
+        // The base fee is another source's read: named, and the quote is
+        // only as verified as that read.
+        baseFeeSource: 'colibri',
+        verified: true,
+      });
+    });
+
+    test('a Myotis quote priced from an unverified block is not reported verified', async () => {
+      mockRegistry.getNetwork.mockReturnValue({
+        access: { readOrder: ['myotis', 'direct'] },
+        quorum: { k: 3, m: 2, timeoutMs: 1000 },
+      });
+      mockRegistry.getEndpoints.mockReturnValue(['https://primary.example']);
+      mockMyotis.feeEstimate.mockResolvedValue({ gasPriceWei: (3n * GWEI).toString() });
+      fakeRpc({ eth_getBlockByNumber: { baseFeePerGas: hex(2n * GWEI) } });
+
+      await expect(getFeeQuote(1)).resolves.toMatchObject({
+        type: 'eip1559',
+        source: 'myotis',
+        baseFeeSource: 'direct',
+        verified: false,
       });
     });
 

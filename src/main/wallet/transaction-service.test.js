@@ -6,6 +6,13 @@ jest.mock('../networks/chain-data-router', () => ({
   request: (...args) => mockChainRequest(...args),
   getFeeQuote: (...args) => mockGetFeeQuote(...args),
   broadcastRawTransaction: (...args) => mockBroadcastRawTransaction(...args),
+  SOURCE_CAPABILITIES: {
+    myotis: { unsupported: new Set() },
+    colibri: { unsupported: new Set(['eth_getLogs']) },
+    quorum: { unsupported: new Set() },
+    direct: { unsupported: new Set() },
+    blockscout: { unsupported: new Set(['eth_getTransactionReceipt', 'eth_getTransactionCount']) },
+  },
 }));
 const {
   estimateGas,
@@ -302,11 +309,21 @@ describe('getTransactionStatus', () => {
     mockChainRequest.mockReset();
   });
 
-  function chain(answers) {
-    mockChainRequest.mockImplementation(async (_chainId, method) => {
+  // Each read answers from `source`, unless the caller excluded it: then the
+  // next source in [myotis, colibri, quorum, direct] that is left answers.
+  function chain(answers, { sourceFor = () => 'direct' } = {}) {
+    mockChainRequest.mockImplementation(async (_chainId, method, _params, opts = {}) => {
       const queue = answers[method];
       if (!queue || queue.length === 0) throw new Error(`unexpected ${method}`);
-      return { result: queue.shift(), source: 'direct' };
+      const excluded = new Set(opts.excludeSources || []);
+      const preferred = sourceFor(method);
+      const source = excluded.has(preferred)
+        ? ['myotis', 'colibri', 'quorum', 'direct'].find((s) => !excluded.has(s))
+        : preferred;
+      if (!source) throw new Error(`No chain source left for ${method}`);
+      const next = queue.shift();
+      const result = typeof next === 'function' ? next(source) : next;
+      return { result, source };
     });
   }
 
@@ -321,7 +338,12 @@ describe('getTransactionStatus', () => {
       hash: HASH,
       nonce: 0,
     });
-    expect(mockChainRequest).toHaveBeenCalledWith(1, 'eth_getTransactionCount', [FROM, 'latest']);
+    expect(mockChainRequest).toHaveBeenCalledWith(
+      1,
+      'eth_getTransactionCount',
+      [FROM, 'latest'],
+      expect.objectContaining({ excludeSources: expect.arrayContaining(['myotis']) })
+    );
   });
 
   test('stays pending while the sender\'s mined nonce has not reached it', async () => {
@@ -340,6 +362,59 @@ describe('getTransactionStatus', () => {
     chain({
       eth_getTransactionReceipt: [null, { status: '0x1', blockNumber: '0xa', gasUsed: '0x5208' }],
       eth_getTransactionCount: ['0x1'],
+    });
+
+    await expect(getTransactionStatus(HASH, 1, { from: FROM, nonce: 0 })).resolves.toMatchObject({
+      status: 'pending',
+    });
+  });
+
+  test('a source ahead of the receipt source never decides dropped (Myotis nonce, lagging receipts)', async () => {
+    // The chain as each source sees it: Myotis has the block that mined this
+    // transaction (nonce 1); Colibri, which would answer receipts, does not
+    // yet. Routed independently that reads as "nonce taken, no receipt".
+    const view = {
+      myotis: { count: '0x1', receipt: undefined },
+      colibri: { count: '0x0', receipt: null },
+    };
+    chain(
+      {
+        eth_getTransactionReceipt: [null, (source) => view[source].receipt],
+        eth_getTransactionCount: [(source) => view[source].count],
+      },
+      { sourceFor: (method) => (method === 'eth_getTransactionCount' ? 'myotis' : 'colibri') }
+    );
+
+    await expect(getTransactionStatus(HASH, 1, { from: FROM, nonce: 0 })).resolves.toMatchObject({
+      status: 'pending',
+    });
+  });
+
+  test('the receipt re-check is pinned to the source that answered the nonce', async () => {
+    chain(
+      {
+        eth_getTransactionReceipt: [null, null],
+        eth_getTransactionCount: ['0x1'],
+      },
+      { sourceFor: () => 'quorum' }
+    );
+
+    await expect(getTransactionStatus(HASH, 1, { from: FROM, nonce: 0 })).resolves.toMatchObject({
+      status: 'dropped',
+    });
+    const recheck = mockChainRequest.mock.calls[2];
+    expect(recheck[1]).toBe('eth_getTransactionReceipt');
+    expect(new Set(recheck[3].excludeSources)).toEqual(
+      new Set(['myotis', 'colibri', 'direct', 'blockscout'])
+    );
+  });
+
+  test('a receipt answer from any other source does not decide dropped', async () => {
+    // The pinned source is gone from the order; a router answering from
+    // elsewhere anyway must not be trusted for a final status.
+    mockChainRequest.mockImplementation(async (_chainId, method) => {
+      if (method === 'eth_getTransactionCount') return { result: '0x1', source: 'quorum' };
+      return { result: null, source: 'direct' };
     });
 
     await expect(getTransactionStatus(HASH, 1, { from: FROM, nonce: 0 })).resolves.toMatchObject({

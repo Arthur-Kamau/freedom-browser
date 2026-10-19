@@ -485,18 +485,34 @@ function removeById(id) {
  *
  * Exposed as an explicit function (not auto-run on open) so callers can
  * trigger it once the provider stack is up: `index.js` at boot, and
- * tx-recorder whenever one of its transactions resolves. A call while a
- * sweep is running joins that sweep.
+ * tx-recorder whenever one of its transactions resolves.
+ *
+ * A call while a sweep is running cannot just join it: that sweep may have
+ * read (or already checked) a row before the chain moved, e.g. before the
+ * re-send that leaves the row 'dropped' was mined. So it queues one more
+ * sweep to start once the running one ends, and resolves with that. Every
+ * call made during one sweep shares the same queued sweep, so a burst of
+ * settled transactions still polls each row at most twice.
  *
  * @param {(txHash:string, chainId:number, sent:{from?:string, nonce?:number}) => Promise<{status:string, gasUsed?:string, gasPrice?:string}>} getStatusFn
  * @returns {Promise<{ resolved:number, stillPending:number, errors:number }>}
  */
 let repollInFlight = null;
+let repollQueued = null;
 function repollPending(getStatusFn) {
   if (!repollInFlight) {
     repollInFlight = repollPendingOnce(getStatusFn).finally(() => { repollInFlight = null; });
+    return repollInFlight;
   }
-  return repollInFlight;
+  if (!repollQueued) {
+    repollQueued = repollInFlight
+      .catch(() => { /* the caller of that sweep sees its error */ })
+      .then(() => {
+        repollQueued = null;
+        return repollPending(getStatusFn);
+      });
+  }
+  return repollQueued;
 }
 
 function sentFields(row) {

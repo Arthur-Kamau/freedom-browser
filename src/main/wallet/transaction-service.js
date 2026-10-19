@@ -457,13 +457,51 @@ async function getTransactionStatus(txHash, chainId, { from, nonce } = {}) {
  * it: some other transaction took that nonce (a re-send, a replacement, or
  * this one dropped and the slot reused). Re-check the receipt after reading
  * the nonce, since this transaction may itself be what moved it in between.
+ *
+ * 'dropped' is final, so the nonce and the receipt that decide it must come
+ * from one source's view of the chain. Routed independently, a source whose
+ * head is ahead (Myotis serves the nonce but no receipts) could report the
+ * nonce moved by this very transaction while a lagging source still has no
+ * receipt for it, marking a mined transaction dropped. So the nonce is read
+ * from a source that also serves receipts, and the receipt re-check is
+ * pinned to that same source; if it cannot answer, nothing is decided.
  */
 async function nonceTakenByAnotherTransaction(txHash, chainId, from, nonce) {
   if (typeof from !== 'string' || !Number.isSafeInteger(nonce) || nonce < 0) return false;
-  const { result: count } = await chainData.request(chainId, 'eth_getTransactionCount', [from, 'latest']);
+  const { result: count, source } = await chainData.request(
+    chainId,
+    'eth_getTransactionCount',
+    [from, 'latest'],
+    { excludeSources: sourcesWithoutReceipts() }
+  );
   if (BigInt(count) <= BigInt(nonce)) return false;
-  const { result: receipt } = await chainData.request(chainId, 'eth_getTransactionReceipt', [txHash]);
+  if (typeof source !== 'string') return false;
+  const { result: receipt, source: receiptSource } = await chainData.request(
+    chainId,
+    'eth_getTransactionReceipt',
+    [txHash],
+    { excludeSources: allSourcesBut(source) }
+  );
+  // Defensive: the router honours excludeSources, but a different source's
+  // empty answer must never decide a final status.
+  if (receiptSource !== source) return false;
   return !receipt;
+}
+
+function knownSources() {
+  return Object.keys(chainData.SOURCE_CAPABILITIES || {});
+}
+
+// Myotis answers account reads from its verified head but serves no receipts.
+function sourcesWithoutReceipts() {
+  return ['myotis', ...knownSources().filter((source) =>
+    source !== 'myotis' &&
+    chainData.SOURCE_CAPABILITIES[source]?.unsupported?.has?.('eth_getTransactionReceipt')
+  )];
+}
+
+function allSourcesBut(source) {
+  return knownSources().filter((other) => other !== source);
 }
 
 /**

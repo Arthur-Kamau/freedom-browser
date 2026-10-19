@@ -415,17 +415,34 @@ describe('payment-history (sqlite)', () => {
       expect(fn).toHaveBeenCalledWith('0xa', 1, { from: undefined, nonce: undefined });
     });
 
-    test('a call during a sweep joins it rather than polling every row twice', async () => {
+    test('a call during a sweep queues one more sweep after it, shared by every caller', async () => {
       mod.append({ kind: 'wallet-send', chainId: 1, txHash: '0xa', amount: '1' });
-      let release;
-      const fn = jest.fn(() => new Promise((resolve) => { release = resolve; }));
+      const releases = [];
+      const fn = jest.fn(() => new Promise((resolve) => { releases.push(resolve); }));
       const first = mod.repollPending(fn);
       const second = mod.repollPending(fn);
-      expect(second).toBe(first);
+      const third = mod.repollPending(fn);
+      expect(second).not.toBe(first);
+      expect(third).toBe(second);
       await new Promise((resolve) => setImmediate(resolve));
-      release({ status: 'confirmed' });
-      await first;
       expect(fn).toHaveBeenCalledTimes(1);
+      // The running sweep read the row before the chain moved.
+      releases[0]({ status: 'pending' });
+      await expect(first).resolves.toMatchObject({ resolved: 0, stillPending: 1 });
+      await new Promise((resolve) => setImmediate(resolve));
+      // The queued sweep re-reads it, now that the nonce has moved.
+      expect(fn).toHaveBeenCalledTimes(2);
+      releases[1]({ status: 'dropped' });
+      await expect(second).resolves.toMatchObject({ resolved: 1, stillPending: 0 });
+      expect(fn).toHaveBeenCalledTimes(2);
+    });
+
+    test('a queued sweep still runs when the sweep before it fails', async () => {
+      mod.append({ kind: 'wallet-send', chainId: 1, txHash: '0xa', amount: '1' });
+      const first = mod.repollPending(() => { throw new Error('boom'); });
+      const second = mod.repollPending(async () => ({ status: 'confirmed' }));
+      await first;
+      await expect(second).resolves.toMatchObject({ resolved: 1 });
     });
 
     test('pending rows with no txHash are skipped, not polled', async () => {

@@ -853,7 +853,10 @@ async function feeQuote(source, gasPriceValue, priorityValue = null, getBlock = 
   // A provider can implement both methods yet return fee hints that cannot
   // form a valid type-2 transaction (Colibri's verified priority fee is
   // 1 gwei while mainnet's gas price is a fraction of that). Never combine
-  // the hint with another provider's gas price.
+  // the hint with another provider's gas price. The block that prices an
+  // unusable hint comes from `getBlock`: the same source for Colibri and
+  // Direct, but the router's other sources for Myotis, which serves no
+  // blocks (see getFeeQuote).
   if (priority != null && priority >= 0n && priority <= gasPrice) {
     return eip1559Quote(gasPrice - priority, priority, metadata);
   }
@@ -2170,10 +2173,26 @@ async function getFeeQuote(chainId) {
           'maxPriorityFeePerGasWei',
           'maxPriorityFeePerGas'
         );
-        // Myotis serves no blocks; the router's own read path does.
-        return await feeQuote(source, gasPrice, priority, async () =>
-          (await request(chainId, 'eth_getBlockByNumber', ['latest', false])).result
-        );
+        // Myotis serves no blocks, so this is the one source whose quote can
+        // mix providers: Myotis's gas price with a base fee read through the
+        // router's other sources (Colibri, quorum, Direct). That is safe to
+        // sign: maxFeePerGas = 2 * baseFee + tip covers the base fee doubling,
+        // so a block a little behind or ahead of Myotis's head still prices a
+        // transaction that can be included; only the tip derives from Myotis.
+        // A complete Myotis quote (priority within gas price) uses no block.
+        // When one is used, the quote names the source that read it and is
+        // only as verified as that read.
+        let blockRead = null;
+        const quote = await feeQuote(source, gasPrice, priority, async () => {
+          blockRead = await request(chainId, 'eth_getBlockByNumber', ['latest', false]);
+          return blockRead.result;
+        });
+        if (!blockRead) return quote;
+        return {
+          ...quote,
+          baseFeeSource: blockRead.source,
+          verified: quote.verified && blockRead.verified === true,
+        };
       }
 
       if (source === 'direct') return await requestDirectFeeQuote(chainId);
