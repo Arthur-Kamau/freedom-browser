@@ -34,11 +34,19 @@
        click toggles their menu shut;
      - hint tooltips paint above the popover they belong to, because they
        escape its overflow clip; a side flyout paints above its parent menu;
+       the GitHub-bridge panel (github-bridge.css) also uses this tier, one
+       above the other popovers, so moving it moves that panel too;
      - the title-bar strip holds the profile menu, which has to cover the
        toolbar's own lifted menu buttons.
-     The sidebar's dropdowns and modals (50-200) and the 1-3 layers inside
-     the tab strip and toolbar stack within their own panes and stay plain
-     numbers in their own sheets. */
+     Every other z-index stays a plain number below the tier, in its own
+     sheet: the chrome <dialog> modals (modal.css, 100; shown with
+     showModal(), so the top layer is what actually puts them over
+     everything), the fullscreen exit hint (fullscreen.css, 50), the
+     sidebar's sub-screen modals and dropdowns (sidebar.css, 50-200), the
+     onboarding card's close button and loading overlay (onboarding.css, 1
+     and 10), and the 1-3 layers inside the tab strip, toolbar, find bar
+     and link-status bubble (tabs.css, toolbar.css, find-bar.css,
+     link-status.css). */
   --z-menu-backdrop: 9999;
   --z-popover: 10000;
   --z-over-backdrop: 10001;

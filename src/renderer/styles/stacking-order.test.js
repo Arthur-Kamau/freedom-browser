@@ -77,6 +77,11 @@ describe('menu-tier stacking order (#66)', () => {
     expect(ruleBody(sheet('toolbar.css'), '.trust-popover-tooltip')).toMatch(
       /z-index:\s*var\(--z-over-popover\)/
     );
+    // Named in variables.css's scale comment as the one popover on the
+    // over-popover tier; keep the comment and the sheet in step.
+    expect(ruleBody(sheet('github-bridge.css'), '.github-bridge-panel')).toMatch(
+      /z-index:\s*var\(--z-over-popover\)/
+    );
   });
 
   test('no chrome sheet hard-codes a menu-tier z-index', () => {
