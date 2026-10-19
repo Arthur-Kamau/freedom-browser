@@ -187,6 +187,8 @@ describe('colibri worker host', () => {
     jest.advanceTimersByTime(500 + host.STUCK_PROBE_MS);
     expect(stuck.worker.terminate).toHaveBeenCalledTimes(1);
     await expect(stuck.promise).rejects.toThrow(/verification still running after its deadline/);
+    // The request that overran is the culprit, not a bystander.
+    await expect(stuck.promise).rejects.not.toHaveProperty('colibriBystander');
     expect(mockLogWarn).toHaveBeenCalledWith(
       '[colibri] chain 1 worker replaced (verification still running after its deadline); ' +
       '1 request(s) failed, 1 sent to the new worker'
@@ -237,8 +239,38 @@ describe('colibri worker host', () => {
     jest.advanceTimersByTime(500 + host.STUCK_PROBE_MS);
     await expect(stuck.promise).rejects.toThrow(/still running/);
     await expect(bystander.promise).rejects.toThrow(/Colibri worker replaced/);
+    await expect(bystander.promise).rejects.toHaveProperty('colibriBystander', true);
     await flush();
     expect(Worker).toHaveBeenCalledTimes(1);
+  });
+
+  // The router's per-method fault backoff skips an error marked this way: an
+  // eth_call that only queued behind an unknown-hash lookup did not fault.
+  test('a bystander already past its own deadline fails, marked as a bystander', async () => {
+    const client = host.createClient(CONFIG);
+    const stuck = await startRequest(client, { method: 'eth_getTransactionReceipt' }, { deadlineMs: 2000 });
+    jest.advanceTimersByTime(1500);
+    const overdue = await startRequest(client, { method: 'eth_call' }, { deadlineMs: 1000 });
+    // Its own deadline (2500) passes; the stuck request's probe (3000) kills
+    // the worker before its own (3500) would.
+    jest.advanceTimersByTime(500 + host.STUCK_PROBE_MS);
+    expect(stuck.worker.terminate).toHaveBeenCalledTimes(1);
+    await expect(stuck.promise).rejects.not.toHaveProperty('colibriBystander');
+    await expect(overdue.promise).rejects.toThrow(/Colibri worker replaced/);
+    await expect(overdue.promise).rejects.toHaveProperty('colibriBystander', true);
+    expect(mockLogWarn).toHaveBeenCalledWith(
+      '[colibri] chain 1 worker replaced (verification still running after its deadline); ' +
+      '2 request(s) failed'
+    );
+  });
+
+  test('a worker replaced with no culprit marks nobody as a bystander', async () => {
+    const client = host.createClient(CONFIG);
+    const a = await startRequest(client, { method: 'eth_call' });
+    const b = await startRequest(client, { method: 'eth_chainId' });
+    a.worker.emit('exit', 1);
+    await expect(a.promise).rejects.not.toHaveProperty('colibriBystander');
+    await expect(b.promise).rejects.not.toHaveProperty('colibriBystander');
   });
 
   test('after a trap, a request the retired instance refused is retried once on a fresh worker', async () => {
@@ -253,6 +285,7 @@ describe('colibri worker host', () => {
       error: { name: 'ProviderRpcError', message: 'memory access out of bounds', code: -32603 },
     });
     await expect(a.promise).rejects.toThrow(/memory access out of bounds/);
+    await expect(a.promise).rejects.not.toHaveProperty('colibriBystander');
     const refused = {
       name: 'ProviderRpcError',
       message: 'Colibri WASM runtime was retired after a trap; refusing execute()',
@@ -271,6 +304,7 @@ describe('colibri worker host', () => {
     fresh.emit('message', { type: 'trap', message: 'memory access out of bounds' });
     fresh.emit('message', { type: 'result', id: resent.id, ok: false, error: refused, retry: true });
     await expect(b.promise).rejects.toThrow(/retired after a trap/);
+    await expect(b.promise).rejects.toHaveProperty('colibriBystander', true);
     await flush();
     expect(Worker).toHaveBeenCalledTimes(2);
   });

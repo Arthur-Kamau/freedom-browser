@@ -29,6 +29,11 @@
 //   (the worker reports those as `retry`; colibri-runtime.js).
 // The request that trapped or overran is not retried, nor is a bystander a
 // second time, nor one whose client was destroyed meanwhile.
+//
+// A bystander that still fails (overdue itself, already resent, or refused
+// by the retired instance with no deadline left) carries `colibriBystander`
+// on its error: the router's per-method verifier-fault backoff must not count
+// a fault another request caused against the bystander's own method.
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
 const log = require('../logger');
@@ -105,18 +110,25 @@ function resend(request) {
   dispatch(request).catch(request.reject);
 }
 
+function bystanderError(err) {
+  err.colibriBystander = true;
+  return err;
+}
+
 // Fail everything on this worker and stop it. Idempotent: 'error', 'exit' and
-// the watchdog can all race here. With `{ resendBystanders }` (the stuck-worker
-// watchdog), requests that did not cause the replacement are sent once more.
-function replace(entry, reason, { resendBystanders = false } = {}) {
+// the watchdog can all race here. `culpritId` names the request whose deadline
+// led to the replacement, when one did; every other request is a bystander.
+// With `{ resendBystanders }` (the stuck-worker watchdog), requests that did
+// not cause the replacement are sent once more.
+function replace(entry, reason, { resendBystanders = false, culpritId = null } = {}) {
   const wasLive = !entry.terminated;
   entry.readyReject?.(new ColibriWorkerError(`Colibri worker failed to start: ${reason}`));
   terminate(entry);
-  const pending = [...entry.pending.values()];
+  const pending = [...entry.pending.entries()];
   entry.pending.clear();
   let failed = 0;
   let resent = 0;
-  for (const request of pending) {
+  for (const [id, request] of pending) {
     clearTimeout(request.timer);
     if (resendBystanders && canResend(request)) {
       resent += 1;
@@ -124,7 +136,8 @@ function replace(entry, reason, { resendBystanders = false } = {}) {
       continue;
     }
     failed += 1;
-    request.reject(new ColibriWorkerError(`Colibri worker replaced: ${reason}`));
+    const err = new ColibriWorkerError(`Colibri worker replaced: ${reason}`);
+    request.reject(culpritId !== null && id !== culpritId ? bystanderError(err) : err);
   }
   if (wasLive && pending.length) {
     log.warn(`[colibri] chain ${entry.chainId} worker replaced (${reason}); ` +
@@ -181,6 +194,7 @@ function spawn(chainId) {
         settle(entry, message.id, (pending) => {
           if (message.ok) pending.resolve(message.result);
           else if (message.retry && canResend(pending)) resend(pending);
+          else if (message.retry) pending.reject(bystanderError(reviveError(message.error)));
           else pending.reject(reviveError(message.error));
         });
         return;
@@ -234,7 +248,10 @@ function onDeadline(entry, id) {
   const probeId = nextRequestId++;
   entry.probes.set(probeId, setTimeout(() => {
     entry.probes.delete(probeId);
-    replace(entry, 'verification still running after its deadline', { resendBystanders: true });
+    replace(entry, 'verification still running after its deadline', {
+      resendBystanders: true,
+      culpritId: id,
+    });
   }, STUCK_PROBE_MS));
   try {
     entry.worker.postMessage({ type: 'ping', id: probeId });
@@ -243,7 +260,9 @@ function onDeadline(entry, id) {
     return;
   }
   pending.timer = setTimeout(() => {
-    if (entry.pending.has(id)) replace(entry, 'request abandoned after its deadline');
+    if (entry.pending.has(id)) {
+      replace(entry, 'request abandoned after its deadline', { culpritId: id });
+    }
   }, ABANDONED_MS);
 }
 

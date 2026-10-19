@@ -178,7 +178,7 @@ const MAX_COLIBRI_IN_FLIGHT_PER_ROUTE = 2;
 // the host kills the worker and every request on it, verifiable or not. So
 // these lookups ask the RPC sources after Colibri first, and only a
 // transaction they report as mined goes on to Colibri for its proof (see
-// requestTxLookup).
+// txLookupNeedsProof and request()).
 const TX_LOOKUP_METHODS = new Set(['eth_getTransactionReceipt', 'eth_getTransactionByHash']);
 // Per (chain, method) backoff from the verifier itself faulting (a WASM trap,
 // or its worker replaced under the request), whoever asked: wallet-internal
@@ -1096,7 +1096,11 @@ function colibriCallerError(err, chainId, method) {
 
 const colibriFaultKey = (chainId, method) => `${Number(chainId)} ${method}`;
 
+// A request the worker host failed only because another one trapped or
+// overran on its worker (colibri-worker-host.js marks it) is no fault of its
+// own method's.
 function isColibriFault(err) {
+  if (err?.colibriBystander) return false;
   return err?.name === 'RuntimeError' ||
     COLIBRI_FAULT_PATTERN.test(String(err?.message || ''));
 }
@@ -1986,56 +1990,30 @@ async function checkLogTruncation(source, chainId, method, params, result, optio
   }
 }
 
-// A transaction lookup Colibri is in the read order for (TX_LOOKUP_METHODS).
-// The sources after Colibri answer first. Nothing proves an absence or a
-// pending transaction, so their null (not found) or pending (no block yet)
-// answer is final, labelled with the source that gave it. A mined
-// transaction is then asked of Colibri, whose proof replaces that answer; if
-// Colibri fails, the answer already in hand is returned instead of asking the
-// later sources a second time. Only when every later source failed is
-// Colibri asked on its own, as the last source left.
+// A transaction lookup Colibri is in the read order for (TX_LOOKUP_METHODS)
+// moves Colibri to the end of the order (see request()), so the sources after
+// it answer first. Nothing proves an absence or a pending transaction, so
+// their null (not found) or pending (no block yet) answer is final, labelled
+// with the source that gave it. A mined transaction is then asked of Colibri,
+// whose proof replaces that answer; if Colibri fails, the answer already in
+// hand is returned instead of asking the later sources a second time. When
+// every later source failed, Colibri is simply the last source left.
+//
+// Trust model (#750): before, Colibri answered first and a null it could not
+// prove fell through to the RPCs anyway (after a 4-10 s trap). A null or
+// pending answer is now whatever the first later source to answer says. From
+// the quorum that is m-of-k agreement; from Direct it is one endpoint's word,
+// labelled `verified: false`, so with the quorum unavailable a lagging Direct
+// endpoint can report a mined transaction as unknown until it catches up,
+// where Colibri used to prove the receipt. A caller polling for a receipt
+// (the usual reason to ask) gets it on a later poll; one that must not act on
+// an unverified absence checks `verified`.
 function txLookupNeedsProof(method, result) {
   if (result === null || result === undefined) return false;
   if (method === 'eth_getTransactionByHash') {
     return result.blockNumber != null && result.blockHash != null;
   }
   return true;
-}
-
-async function requestTxLookup(chainId, method, params, {
-  routeKey, includeTrust, signal, interactive, askLaterSources,
-}) {
-  let unverified = null;
-  let laterError = null;
-  try {
-    unverified = await askLaterSources();
-  } catch (err) {
-    signal?.throwIfAborted();
-    laterError = err;
-  }
-  if (unverified && !txLookupNeedsProof(method, unverified.result)) return unverified;
-  signal?.throwIfAborted();
-  try {
-    const sourceResult = await requestSource('colibri', chainId, method, params, {
-      includeTrust,
-      routeKey,
-      deadlineMs: sourceDeadlineMs(chainId, { interactive, hasFallbackSource: unverified !== null }),
-    });
-    signal?.throwIfAborted();
-    recordAdaptiveSuccess(routeKey);
-    return {
-      result: includeTrust ? sourceResult.result : sourceResult,
-      source: 'colibri',
-      verified: true,
-      ...(includeTrust && sourceResult.trust ? { trust: sourceResult.trust } : {}),
-    };
-  } catch (err) {
-    signal?.throwIfAborted();
-    recordAdaptiveFailure(routeKey, err);
-    log.verbose(`[chain-data] ${chainId} ${method} via colibri failed: ${safeErrorMessage(err)}`);
-    if (unverified) return unverified;
-    throw laterError;
-  }
 }
 
 async function request(
@@ -2118,6 +2096,9 @@ async function request(
   let directAttemptedUrls = [];
   let directUnansweredUrls = [];
   const keeper = createErrorKeeper(rankError);
+  // A transaction lookup's deferred Colibri, and the unproven answer of a
+  // later source waiting for its proof (see txLookupNeedsProof).
+  const txLookup = { colibriDeferred: false, unverified: null };
   for (let sourceIndex = 0; sourceIndex < order.length; sourceIndex += 1) {
     signal?.throwIfAborted();
     const source = order[sourceIndex];
@@ -2128,25 +2109,18 @@ async function request(
       failures.push(`${source}: temporarily bypassed for this app workload`);
       continue;
     }
-    if (source === 'colibri' && TX_LOOKUP_METHODS.has(method) && sourceIndex + 1 < order.length) {
-      return requestTxLookup(Number(chainId), method, params, {
-        routeKey,
-        includeTrust,
-        signal,
-        interactive,
-        // The same request, from the sources after Colibri only.
-        askLaterSources: () => request(chainId, method, params, {
-          includeTrust,
-          routingContext,
-          signal,
-          background,
-          directTimeoutMs,
-          quorumTimeoutMs,
-          rankError,
-          excludeSources: [...excludeSources, ...order.slice(0, sourceIndex + 1)],
-          includeSources,
-        }),
-      });
+    if (
+      source === 'colibri' && TX_LOOKUP_METHODS.has(method) &&
+      !txLookup.colibriDeferred && sourceIndex + 1 < order.length
+    ) {
+      // Ask the later sources first; Colibri is asked last (see
+      // txLookupNeedsProof), and every failure lands in this one request's
+      // report.
+      txLookup.colibriDeferred = true;
+      order.splice(sourceIndex, 1);
+      order.push('colibri');
+      sourceIndex -= 1;
+      continue;
     }
     const directAnsweredBy = {};
     try {
@@ -2170,11 +2144,26 @@ async function request(
         allowDirectFallback: source === 'quorum' && order[sourceIndex + 1] === 'direct',
         deadlineMs: sourceDeadlineMs(Number(chainId), {
           interactive,
-          hasFallbackSource: sourceIndex + 1 < order.length,
+          hasFallbackSource: sourceIndex + 1 < order.length || txLookup.unverified !== null,
         }),
       });
       signal?.throwIfAborted();
       const result = includeTrust ? sourceResult.result : sourceResult;
+      if (
+        txLookup.colibriDeferred && source !== 'colibri' &&
+        txLookupNeedsProof(method, result)
+      ) {
+        // Mined: hold this answer and go straight to Colibri for its proof.
+        recordAdaptiveSuccess(routeKey);
+        txLookup.unverified = {
+          result,
+          source,
+          verified: ['myotis', 'colibri', 'quorum', 'blockscout'].includes(source),
+          ...(includeTrust && sourceResult.trust ? { trust: sourceResult.trust } : {}),
+        };
+        sourceIndex = order.length - 2;
+        continue;
+      }
       if (SOURCE_CAPABILITIES[source]?.logResults === 'may-truncate') {
         await checkLogTruncation(source, Number(chainId), method, params, result, {
           signal,
@@ -2215,7 +2204,14 @@ async function request(
       recordAdaptiveFailure(routeKey, err);
       const message = safeErrorMessage(err);
       failures.push(`${source}: ${message}`);
-      if (!(err instanceof SourceUnavailableError)) lastRpcError = err;
+      // A deferred Colibri keeps the precedence it had when it was asked
+      // first: a later source's own error is what the caller sees.
+      if (
+        !(err instanceof SourceUnavailableError) &&
+        !(source === 'colibri' && txLookup.colibriDeferred && lastRpcError)
+      ) {
+        lastRpcError = err;
+      }
       // Quorum already reported each member's failure; its own aggregate is
       // not an upstream error. The blockscout source's failures say nothing
       // about the caller's query (requestLogIndex): the quorum after it
@@ -2232,6 +2228,8 @@ async function request(
       if (keeper.final && !(directFallback && order[sourceIndex + 1] === 'direct')) break;
     }
   }
+  // Colibri could not prove the mined transaction a later source reported.
+  if (txLookup.unverified) return txLookup.unverified;
   if (keeper.error) throw keeper.error;
   if (lastRpcError) throw lastRpcError;
   throw new Error(
