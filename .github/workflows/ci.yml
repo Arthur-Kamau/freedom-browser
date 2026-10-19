@@ -297,6 +297,9 @@ jobs:
         env:
           FREEDOM_IPFS_NATIVE_SMOKE_TARGET: ${{ matrix.target }}
           FREEDOM_IPFS_NATIVE_SMOKE_LIVE: '0'
+          # `1` = warn mode: the root page fetch retries and turns network
+          # weather into a ::warning:: like the live leg; gateway_busy during
+          # the fan-out still fails the job (#747).
           FREEDOM_IPFS_NATIVE_SMOKE_ISSUE_102: '1'
 
   # libradicle is the ONLY Radicle runtime — there is no executable fallback —
