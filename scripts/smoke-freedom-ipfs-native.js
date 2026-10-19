@@ -269,14 +269,17 @@ async function fetchLiveWithRetry(node, { smokePath, expectedText, label, attemp
   const failures = [];
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const remaining = deadline - Date.now();
-    if (remaining <= 0) break;
+    // Attempt 1 always runs, with at least LIVE_MIN_ATTEMPT_MS, however small
+    // the budget: a pass (or a warn-mode skip) must never rest on zero
+    // requests. The budget only decides whether to retry.
+    if (attempt > 1 && remaining <= 0) break;
     const startedAt = Date.now();
     try {
       const page = await liveAttempt(
         node,
         smokePath,
         expectedText,
-        Math.min(LIVE_TIMEOUT_MS, remaining),
+        Math.min(LIVE_TIMEOUT_MS, Math.max(remaining, LIVE_MIN_ATTEMPT_MS)),
         label
       );
       return { page: { ...page, ms: Date.now() - startedAt, attempt } };
@@ -507,7 +510,11 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(`[freedom-ipfs-native-smoke] ${err.stack || err.message}`);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(`[freedom-ipfs-native-smoke] ${err.stack || err.message}`);
+    process.exit(1);
+  });
+}
+
+module.exports = { fetchLiveWithRetry, LiveNetworkError };
