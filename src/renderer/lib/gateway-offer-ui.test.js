@@ -26,6 +26,7 @@ import {
   closeGatewayOfferPopover,
   getActiveOffer,
   looksLikeGatewayUrl,
+  isSameGatewayService,
   describeOffer,
   noteUserNavigation,
   _resetForTests,
@@ -56,6 +57,25 @@ const CID_OFFER = {
 };
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe('isSameGatewayService (which redirect landings borrow the start)', () => {
+  test.each([
+    [CID_URL, FORBIDDEN, true],
+    [CID_URL, 'http://bzz.link./forbidden', true],
+    ['https://vitalik.eth.limo/', 'https://eth.limo/error', true],
+    ['https://vitalik.eth.limo/', 'https://www.eth.limo/', true],
+    ['https://evil.eth.limo/', 'https://bank.example/login', false],
+    ['https://evil.eth.limo/', 'https://bzz.link/forbidden', false],
+    ['https://evil.eth.link/', 'https://eth.limo/', false],
+    [CID_URL, 'https://evilbzz.link/', false],
+    [CID_URL, 'https://bzz.link.example/', false],
+    [CID_URL, 'ftp://bzz.link/', false],
+    ['https://example.com/', 'https://example.com/x', false],
+    ['not a url', FORBIDDEN, false],
+  ])('%s -> %s: %s', (started, landed, expected) => {
+    expect(isSameGatewayService(started, landed)).toBe(expected);
+  });
+});
 
 describe('looksLikeGatewayUrl (the IPC pre-filter)', () => {
   test.each([
@@ -265,6 +285,24 @@ describe('gateway-offer-ui', () => {
       start(tabA, CID_URL); // never commits
       start(tabA, 'https://example.com/');
       commit(tabA, 'https://example.com/');
+      await flush();
+      expect(api.getGatewayOffer).not.toHaveBeenCalled();
+      expect(pillShown()).toBe(false);
+    });
+
+    // R1-M1 on #739: a gateway-served site's own redirect (an IPFS
+    // `_redirects` 302) off the gateway's domain is not the gateway refusing
+    // the address, so the unrelated page it lands on gets no offer.
+    test('a gateway site redirecting off the gateway domain gets no offer', async () => {
+      api.getGatewayOffer.mockImplementation(async () => OFFER);
+      start(tabA, 'https://evil.eth.limo/');
+      commit(tabA, 'https://bank.example/login');
+      await flush();
+      expect(api.getGatewayOffer).not.toHaveBeenCalled();
+      expect(pillShown()).toBe(false);
+      // Nor onto a look-alike that only ends in the apex's text.
+      start(tabA, CID_URL);
+      commit(tabA, 'https://evilbzz.link/forbidden');
       await flush();
       expect(api.getGatewayOffer).not.toHaveBeenCalled();
       expect(pillShown()).toBe(false);

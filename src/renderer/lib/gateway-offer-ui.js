@@ -18,10 +18,14 @@
  * clicked inside a page all get it the same way, once the gateway page has
  * committed. Nothing intercepts the click. A gateway can also answer by
  * sending the navigation elsewhere: bzz.link redirects any `<cid>.bzz.link`
- * not on its allowlist to `https://bzz.link/forbidden?hash=…`. Then the
+ * not on its allowlist to `https://bzz.link/forbidden?hash=…`. When it
+ * lands on a page of the gateway's own domain like that, the
  * offer is worked out for the address the navigation *started* at (with its
  * own path, query and fragment) and shown on the page it ended on, since
- * that is exactly where opening natively helps. Only for that navigation:
+ * that is exactly where opening natively helps. A redirect off the
+ * gateway's domain (a site's own `_redirects` rule pointing at some other
+ * site) gets no offer: that page is not the native version's stand-in.
+ * Only for that navigation:
  * the next page the tab moves to gets its own offer or none.
  *
  * "Always open without gateway" (the `openWithoutGateway` setting, off by
@@ -48,6 +52,33 @@ import { boundPopoverToViewport } from './popover-bounds.js';
 const GATEWAY_HOST = /^https?:\/\/[^/?#]+\.(?:eth\.limo|eth\.link|bzz\.link)\.?(?:[/?#]|$)/i;
 
 export const looksLikeGatewayUrl = (url) => typeof url === 'string' && GATEWAY_HOST.test(url);
+
+const GATEWAY_APEXES = ['eth.limo', 'eth.link', 'bzz.link'];
+
+const hostOf = (url) => {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return '';
+    return parsed.hostname.toLowerCase().replace(/\.$/, '');
+  } catch {
+    return '';
+  }
+};
+
+/**
+ * Whether `landedUrl` is a page of the same gateway service `startedUrl` was
+ * on: its apex (`bzz.link`, as in bzz.link's forbidden page) or a host under
+ * it. A gateway-served site can redirect anywhere (an IPFS `_redirects` 302
+ * to an unrelated site), and that page is not the gateway refusing the
+ * address, so it must not be offered the started address's native version.
+ */
+export const isSameGatewayService = (startedUrl, landedUrl) => {
+  const started = hostOf(startedUrl);
+  const landed = hostOf(landedUrl);
+  if (!started || !landed) return false;
+  const apex = GATEWAY_APEXES.find((a) => started.endsWith(`.${a}`));
+  return !!apex && (landed === apex || landed.endsWith(`.${apex}`));
+};
 
 const PROTOCOL_NAMES = { ipfs: 'IPFS', ipns: 'IPNS', bzz: 'Swarm' };
 
@@ -281,11 +312,16 @@ const onCommitted = (webview, url, { inPage = false } = {}) => {
   const hadOffer = !!st.offer;
   st.offer = null;
   if (hadOffer && activeWebview() === webview) refresh();
-  // A gateway address the server redirected somewhere that is not itself a
-  // gateway page: offer the address that was asked for.
+  // A gateway address the gateway itself redirected to one of its own pages
+  // that is not a gateway address (bzz.link's forbidden page): offer the
+  // address that was asked for. A redirect off the gateway's domain is the
+  // site sending the user elsewhere, which gets no offer from it.
   const offerFor = looksLikeGatewayUrl(url)
     ? url
-    : startedAt && startedAt !== url && looksLikeGatewayUrl(startedAt)
+    : startedAt &&
+        startedAt !== url &&
+        looksLikeGatewayUrl(startedAt) &&
+        isSameGatewayService(startedAt, url)
       ? startedAt
       : '';
   if (!offerFor) return;
