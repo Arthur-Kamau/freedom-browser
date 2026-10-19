@@ -1,3 +1,4 @@
+const { execFileSync } = require('node:child_process');
 const mockRegistry = {
   getNetwork: jest.fn(),
   getEndpoints: jest.fn(),
@@ -39,7 +40,8 @@ jest.mock('../myotis/myotis-manager', () => mockMyotis);
 jest.mock('../ens/colibri-resolver', () => ({
   requestViaColibri: (...args) => mockRequestViaColibri(...args),
 }));
-jest.mock('../logger', () => ({ verbose: jest.fn() }));
+jest.mock('../logger', () => ({ verbose: jest.fn(), warn: jest.fn() }));
+const mockLog = require('../logger');
 
 const {
   request,
@@ -1526,6 +1528,197 @@ describe('chain-data-router', () => {
       'All chain sources failed'
     );
     expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  // #681: the Colibri SDK's transport errors carry the prover URL and the
+  // request payload. A caller of the router gets a fixed message instead; the
+  // detail goes to the verbose log only, with its URLs redacted.
+  describe('Colibri error text reaching callers (#681)', () => {
+    // Every line the router logged, at any level.
+    const logged = () => [...mockLog.verbose.mock.calls, ...mockLog.warn.mock.calls]
+      .map((args) => args.join(' '))
+      .join('\n');
+
+    const PROVER = 'https://user:secret@prover.example/key/abc';
+    // The shape Colibri's request() throws for a fetch failure:
+    // ProviderRpcError.createError wraps it with its catch-all -32603.
+    function transportError(code = -32603) {
+      const err = new Error(
+        'Error in rpc call eth_call[{"to":"0xabc","data":"0x1234"},"latest"] : ' +
+        `Request to ${PROVER}/proof with payload {"method":"eth_call"} failed: fetch failed`
+      );
+      err.name = 'ProviderRpcError';
+      if (code !== null) err.code = code;
+      return err;
+    }
+
+    function onlyColibri(extraSources = []) {
+      mockRegistry.getNetwork.mockReturnValue({
+        access: { readOrder: ['colibri', ...extraSources] },
+        quorum: { k: 3, m: 2, timeoutMs: 1000 },
+      });
+      // No RPC endpoint: Direct fails as unavailable, so Colibri's error is
+      // the router's last real error and the one the caller gets.
+      mockRegistry.getEndpoints.mockImplementation((_chainId, role) =>
+        role === 'prover' ? [PROVER] : []
+      );
+    }
+
+    async function rejection(promise) {
+      try {
+        await promise;
+      } catch (err) {
+        return err;
+      }
+      throw new Error('expected a rejection');
+    }
+
+    test.each([
+      ['the catch-all -32603', -32603],
+      ['no code (the worker host\'s own errors)', null],
+    ])('replaces a transport error with %s', async (_label, code) => {
+      onlyColibri(['direct']);
+      mockRequestViaColibri.mockRejectedValue(transportError(code));
+
+      const err = await rejection(
+        request(1, 'eth_call', [{ to: '0xabc', data: '0x1234' }, 'latest'])
+      );
+
+      expect(err.message).toBe('Colibri request failed');
+      expect(err.code).toBe(code === null ? undefined : code);
+      expect(err.data).toBeUndefined();
+      expect(JSON.stringify({ message: err.message, code: err.code }))
+        .not.toMatch(/prover|secret|payload|https?:/);
+      // Nothing about it reaches the on-disk log (warn and up), and the
+      // verbose detail keeps the shape but none of the URL or its secret.
+      expect(mockLog.warn).not.toHaveBeenCalled();
+      expect(mockLog.verbose).toHaveBeenCalledWith(
+        expect.stringContaining('colibri error replaced for the caller: Error in rpc call eth_call')
+      );
+      expect(mockLog.verbose).toHaveBeenCalledWith(expect.stringContaining('Request to <url> with'));
+      expect(logged()).not.toMatch(/secret|user:|prover\.example|https?:/);
+    });
+
+    test('caps the logged detail of a huge error', async () => {
+      onlyColibri(['direct']);
+      const huge = transportError();
+      huge.message += ` ${'calldata '.repeat(2000)}0x${'ab'.repeat(5000)}`;
+      mockRequestViaColibri.mockRejectedValue(huge);
+
+      await rejection(request(1, 'eth_call', [{ to: '0xabc' }, 'latest']));
+
+      const line = mockLog.verbose.mock.calls
+        .map(([text]) => text)
+        .find((text) => text.includes('colibri error replaced'));
+      expect(line.length).toBeLessThan(600);
+      expect(line).not.toMatch(/secret|https?:/);
+    });
+
+    // Pins the shape the router keys on against the installed SDK, as the
+    // worker serializes it (colibri-worker.js#serializeError) for the host to
+    // revive. Every server points at a closed local port: nothing leaves the
+    // machine. A child process because Jest cannot load the WASM runtime.
+    test('replaces the error the real Colibri SDK throws for an unreachable prover', async () => {
+      const dead = 'http://127.0.0.1:9/secret-api-key';
+      const child = `
+        const { Colibri, Strategy } = require(${JSON.stringify(require.resolve('../ens/colibri-runtime'))});
+        const { serializeError } = require(${JSON.stringify(require.resolve('../ens/colibri-worker'))});
+        const dead = ${JSON.stringify(dead)};
+        new Colibri({
+          chainId: 1, prover: [dead], rpcs: [dead], beacon_apis: [dead], checkpointz: [dead],
+          proofStrategy: Strategy.VerifiedOnly, privacy_mode: 'basic',
+        }).request({
+          method: 'eth_getBalance',
+          params: ['0x00000000000000000000000000000000000000aa', 'latest'],
+        }).then(
+          () => { console.log('null'); process.exit(0); },
+          (err) => { console.log(JSON.stringify(serializeError(err))); process.exit(0); },
+        );
+      `;
+      const serialized = JSON.parse(execFileSync(process.execPath, ['-e', child], {
+        encoding: 'utf8',
+        timeout: 60_000,
+      }).trim().split('\n').pop());
+      expect(serialized).toMatchObject({ code: -32603 });
+      expect(serialized.data).toBeUndefined();
+      expect(serialized.message).toContain(dead);
+
+      onlyColibri(['direct']);
+      mockRequestViaColibri.mockRejectedValue(
+        Object.assign(new Error(serialized.message), { name: serialized.name, code: serialized.code })
+      );
+      const err = await rejection(request(1, 'eth_getBalance', ['0xabc', 'latest']));
+
+      expect(err).toMatchObject({ message: 'Colibri request failed', code: -32603 });
+      expect(mockLog.warn).not.toHaveBeenCalled();
+      expect(logged()).not.toContain('secret-api-key');
+      expect(logged()).toContain('<url>');
+    }, 60_000);
+
+    test('keeps the 4900 an HTTP error gets but not its text', async () => {
+      onlyColibri();
+      const raw = new Error(
+        `Error in rpc call eth_chainId[] : HTTP error! Status: 401, Details: bad key for ${PROVER}`
+      );
+      raw.code = 4900;
+      mockRequestViaColibri.mockRejectedValue(raw);
+
+      const err = await rejection(request(1, 'eth_getBalance', ['0xabc', 'latest']));
+
+      expect(err).toMatchObject({ message: 'Colibri request failed', code: 4900 });
+    });
+
+    test('replaces it in a fee quote too', async () => {
+      onlyColibri();
+      mockRequestViaColibri.mockRejectedValue(transportError());
+
+      const err = await rejection(getFeeQuote(1));
+
+      expect(err.message).toBe('Colibri request failed');
+    });
+
+    test.each([
+      ['a verified revert (code 3 + data)', () =>
+        Object.assign(new Error('execution reverted'), { code: 3, data: '0x08c379a0' })],
+      ['an unsupported method (4200)', () =>
+        Object.assign(new Error('Method eth_foo is not supported'), { code: 4200 })],
+      ['a node error carrying revert data under the catch-all code', () =>
+        Object.assign(new Error('Error in rpc call eth_call[] : execution reverted'), {
+          code: -32603,
+          data: '0x556f1830',
+        })],
+    ])('passes %s through unchanged', async (_label, makeError) => {
+      onlyColibri(['direct']);
+      const coded = makeError();
+      mockRequestViaColibri.mockRejectedValue(coded);
+
+      const err = await rejection(request(1, 'eth_call', [{ to: '0xabc' }, 'latest']));
+
+      expect(err).toBe(coded);
+      expect(mockLog.verbose).not.toHaveBeenCalledWith(
+        expect.stringContaining('colibri error replaced')
+      );
+    });
+
+    test('still demotes Colibri for a route whose replaced error was an execution limit', async () => {
+      mockRegistry.getNetwork.mockReturnValue({
+        access: { readOrder: ['colibri', 'direct'] },
+        quorum: { timeoutMs: 5000 },
+      });
+      mockRequestViaColibri.mockRejectedValue(new Error('prover execution failed: Out of gas'));
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ result: '0xrpc' }),
+      });
+      const target = [{ to: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', data: '0x1234' }, 'latest'];
+      const app = { routingContext: { origin: 'https://swap.example' } };
+
+      await expect(request(1, 'eth_call', target, app)).resolves.toMatchObject({ source: 'direct' });
+      await expect(request(1, 'eth_call', target, app)).resolves.toMatchObject({ source: 'direct' });
+
+      expect(mockLog.verbose).toHaveBeenCalledWith(expect.stringContaining('Out of gas'));
+      expect(mockRequestViaColibri).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
