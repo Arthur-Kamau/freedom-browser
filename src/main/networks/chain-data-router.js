@@ -806,7 +806,66 @@ function optionalNativeResult(payload, ...keys) {
   return null;
 }
 
-function feeQuote(source, gasPriceValue, priorityValue = null) {
+// The smallest tip a quote signs with. A tip of a few thousand wei is no
+// reason for a builder to include a transaction, and a quote whose fee cap
+// sits on the base fee is dropped as soon as the base fee rises (#749).
+// 0.05 gwei is far below what a congested mainnet asks and still a real tip.
+const MIN_PRIORITY_FEE_WEI = 50_000_000n;
+// A legacy gasPrice is paid in full, so it gets a smaller margin than the 2x
+// base-fee cap of a type-2 quote: 25% covers two blocks of maximum EIP-1559
+// base-fee growth (1.125^2), or a market move on a chain without one.
+const LEGACY_GAS_PRICE_HEADROOM_PERCENT = 125n;
+
+function maxBigInt(a, b) {
+  return a > b ? a : b;
+}
+
+// The block's base fee, or null when the block has none (a chain without
+// EIP-1559). Anything else is an invalid answer, not a missing feature.
+function blockBaseFee(block) {
+  if (!block || typeof block !== 'object') {
+    throw new SourceUnavailableError('latest block is missing');
+  }
+  if (block.baseFeePerGas == null) return null;
+  const baseFee = BigInt(block.baseFeePerGas);
+  if (baseFee < 0n) throw new SourceUnavailableError('latest block has a negative base fee');
+  return baseFee;
+}
+
+function eip1559Quote(baseFee, priority, metadata) {
+  const tip = maxBigInt(priority, MIN_PRIORITY_FEE_WEI);
+  return {
+    type: 'eip1559',
+    baseFee: baseFee.toString(),
+    maxPriorityFeePerGas: tip.toString(),
+    // The base fee can rise 12.5% per block between quoting and inclusion, so
+    // the signed cap needs headroom the quoted gas price does not have. Two
+    // full blocks of growth is the market preset the wallet has always used.
+    maxFeePerGas: (baseFee * 2n + tip).toString(),
+    effectiveGasPrice: (baseFee + tip).toString(),
+    ...metadata,
+  };
+}
+
+function legacyQuote(gasPrice, metadata) {
+  const signed = gasPrice * LEGACY_GAS_PRICE_HEADROOM_PERCENT / 100n + MIN_PRIORITY_FEE_WEI;
+  return {
+    type: 'legacy',
+    gasPrice: signed.toString(),
+    // A legacy transaction pays its whole gasPrice, headroom included.
+    effectiveGasPrice: signed.toString(),
+    ...metadata,
+  };
+}
+
+// Builds a fee quote from one source's answers. `getBlock` is asked for that
+// source's latest block only when the priority-fee hint is missing or cannot
+// form a valid type-2 transaction: the block's base fee then prices a type-2
+// quote itself, and only a block without one (a chain without EIP-1559) makes
+// the quote legacy. A legacy quote always carries headroom; signing the raw
+// eth_gasPrice put the fee cap on the base fee, and the transaction was
+// dropped the moment the base fee rose (#749).
+async function feeQuote(source, gasPriceValue, priorityValue = null, getBlock = null) {
   const gasPrice = BigInt(gasPriceValue);
   if (gasPrice <= 0n) throw new Error(`${source} returned a non-positive gas price`);
 
@@ -814,45 +873,42 @@ function feeQuote(source, gasPriceValue, priorityValue = null) {
     source,
     verified: source === 'myotis' || source === 'colibri' || source === 'quorum',
   };
-  if (priorityValue == null) {
-    return {
-      type: 'legacy',
-      gasPrice: gasPrice.toString(),
-      effectiveGasPrice: gasPrice.toString(),
-      ...metadata,
-    };
-  }
 
-  const priority = BigInt(priorityValue);
+  const priority = priorityValue == null ? null : BigInt(priorityValue);
   // A provider can implement both methods yet return fee hints that cannot
-  // form a valid type-2 transaction. Keep the usable gas price from that same
-  // source and fall back to a legacy transaction instead of combining it with
-  // another provider's priority fee.
-  if (priority < 0n || priority > gasPrice) {
+  // form a valid type-2 transaction (Colibri's verified priority fee is
+  // 1 gwei while mainnet's gas price is a fraction of that). Never combine
+  // the hint with another provider's gas price. The block that prices an
+  // unusable hint comes from `getBlock`: the same source for Colibri and
+  // Direct, but the router's other sources for Myotis, which serves no
+  // blocks (see getFeeQuote).
+  if (priority != null && priority >= 0n && priority <= gasPrice) {
+    return eip1559Quote(gasPrice - priority, priority, metadata);
+  }
+  if (priority != null) {
     log.verbose(
       `[chain-data] ${source} returned an inconsistent fee quote ` +
-        `(gasPrice=${gasPrice}, priorityFee=${priority}); using legacy fees`
+        `(gasPrice=${gasPrice}, priorityFee=${priority}); pricing from the latest block`
     );
-    return {
-      type: 'legacy',
-      gasPrice: gasPrice.toString(),
-      effectiveGasPrice: gasPrice.toString(),
-      ...metadata,
-    };
   }
+  if (!getBlock) throw new SourceUnavailableError(`${source} has no priority fee and no block to price from`);
 
-  const baseFee = gasPrice - priority;
-  return {
-    type: 'eip1559',
-    baseFee: baseFee.toString(),
-    maxPriorityFeePerGas: priority.toString(),
-    // The base fee can rise 12.5% per block between quoting and inclusion, so
-    // the signed cap needs headroom the quoted gas price does not have. Two
-    // full blocks of growth is the market preset the wallet has always used.
-    maxFeePerGas: (baseFee * 2n + priority).toString(),
-    effectiveGasPrice: gasPrice.toString(),
-    ...metadata,
-  };
+  let baseFee;
+  try {
+    baseFee = blockBaseFee(await getBlock());
+  } catch (err) {
+    // Whether the chain has a base fee is unknown, so this is not a quote to
+    // prefer over another source's. The caller keeps it as the last resort.
+    const fallback = new SourceUnavailableError(
+      `${source} has no usable priority fee and its latest block failed: ${err.message}`
+    );
+    fallback.legacyFallback = legacyQuote(gasPrice, metadata);
+    throw fallback;
+  }
+  if (baseFee == null) return legacyQuote(gasPrice, metadata);
+  // The source's own gas price minus the base fee is its tip suggestion.
+  const suggested = gasPrice > baseFee ? gasPrice - baseFee : 0n;
+  return eip1559Quote(baseFee, suggested, metadata);
 }
 
 // Freedom requests Myotis account reads at the verified head. Although ABI 32
@@ -1835,6 +1891,7 @@ async function requestDirectFeeQuote(chainId) {
   const urls = registry.getEndpoints(chainId, 'rpc');
   if (!urls.length) throw new SourceUnavailableError('No RPC endpoint configured');
   let lastError;
+  let legacyFallback = null;
   for (const url of urls) {
     try {
       const gasPrice = await requestRpcUrl(url, 'eth_gasPrice', [], timeoutMs);
@@ -1847,11 +1904,15 @@ async function requestDirectFeeQuote(chainId) {
         // Legacy transactions remain valid when this endpoint does not expose
         // an EIP-1559 priority-fee hint.
       }
-      return feeQuote('direct', gasPrice, priority);
+      return await feeQuote('direct', gasPrice, priority, () =>
+        requestRpcUrl(url, 'eth_getBlockByNumber', ['latest', false], timeoutMs)
+      );
     } catch (err) {
       lastError = err;
+      legacyFallback ||= err.legacyFallback || null;
     }
   }
+  if (legacyFallback && lastError) lastError.legacyFallback ||= legacyFallback;
   throw lastError || new SourceUnavailableError('All RPC endpoints failed');
 }
 
@@ -2253,6 +2314,7 @@ async function getFeeQuote(chainId) {
       : DEFAULT_NON_MYOTIS_READ_ORDER);
   const failures = [];
   let lastRpcError = null;
+  let legacyFallback = null;
 
   for (const source of order) {
     try {
@@ -2265,7 +2327,26 @@ async function getFeeQuote(chainId) {
           'maxPriorityFeePerGasWei',
           'maxPriorityFeePerGas'
         );
-        return feeQuote(source, gasPrice, priority);
+        // Myotis serves no blocks, so this is the one source whose quote can
+        // mix providers: Myotis's gas price with a base fee read through the
+        // router's other sources (Colibri, quorum, Direct). That is safe to
+        // sign: maxFeePerGas = 2 * baseFee + tip covers the base fee doubling,
+        // so a block a little behind or ahead of Myotis's head still prices a
+        // transaction that can be included; only the tip derives from Myotis.
+        // A complete Myotis quote (priority within gas price) uses no block.
+        // When one is used, the quote names the source that read it and is
+        // only as verified as that read.
+        let blockRead = null;
+        const quote = await feeQuote(source, gasPrice, priority, async () => {
+          blockRead = await request(chainId, 'eth_getBlockByNumber', ['latest', false]);
+          return blockRead.result;
+        });
+        if (!blockRead) return quote;
+        return {
+          ...quote,
+          baseFeeSource: blockRead.source,
+          verified: quote.verified && blockRead.verified === true,
+        };
       }
 
       if (source === 'direct') return await requestDirectFeeQuote(chainId);
@@ -2275,11 +2356,16 @@ async function getFeeQuote(chainId) {
       try {
         priority = await requestSource(source, chainId, 'eth_maxPriorityFeePerGas', []);
       } catch {
-        // Preserve source coherence by using this source's gas price as a
-        // legacy quote rather than asking the next source for half a quote.
+        // Preserve source coherence: this source's own latest block prices
+        // the quote rather than the next source's half of one.
       }
-      return feeQuote(source, gasPrice, priority);
+      return await feeQuote(source, gasPrice, priority, () =>
+        requestSource(source, chainId, 'eth_getBlockByNumber', ['latest', false])
+      );
     } catch (err) {
+      // A source whose block could not be read leaves a headroomed legacy
+      // quote; it is used only if no source can price a type-2 one.
+      legacyFallback ||= err.legacyFallback || null;
       failures.push(`${source}: ${err.message}`);
       // Keep a real node error (with its JSON-RPC code/data) so the caller
       // sees it rather than a stringified aggregate — same as request().
@@ -2288,6 +2374,10 @@ async function getFeeQuote(chainId) {
     }
   }
 
+  if (legacyFallback) {
+    log.verbose(`[chain-data] ${chainId} fee quote fell back to legacy fees (${failures.join('; ')})`);
+    return legacyFallback;
+  }
   if (lastRpcError) throw lastRpcError;
   throw new Error(`All chain sources failed for fee quote (${failures.join('; ')})`);
 }

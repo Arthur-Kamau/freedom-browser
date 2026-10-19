@@ -481,73 +481,290 @@ describe('chain-data-router', () => {
     expect(mockMyotis.sendRawTransaction).toHaveBeenCalledWith('0xsigned', 100);
   });
 
-  test('uses one Myotis response for a complete fee quote', async () => {
-    mockMyotis.feeEstimate.mockResolvedValue({
-      gasPriceWei: '100',
-      maxPriorityFeePerGasWei: '2',
+  // #749: a fee quote must never sign the raw eth_gasPrice as a legacy fee
+  // cap on an EIP-1559 chain. The tip is floored, and a missing or unusable
+  // priority-fee hint is priced from the source's latest block instead.
+  describe('fee quotes', () => {
+    const GWEI = 1_000_000_000n;
+    const MIN_TIP = 50_000_000n; // 0.05 gwei
+    const hex = (value) => `0x${BigInt(value).toString(16)}`;
+
+    function onlySource(source) {
+      mockRegistry.getNetwork.mockReturnValue({
+        access: { readOrder: [source] },
+        quorum: { k: 3, m: 2, timeoutMs: 1000 },
+      });
+    }
+
+    // One fake RPC endpoint answering by method; `answers[method]` is a value,
+    // an Error to send back as a JSON-RPC error, or a function of the URL.
+    function fakeRpc(answers) {
+      global.fetch = jest.fn().mockImplementation(async (url, options) => {
+        const { method } = JSON.parse(options.body);
+        let answer = answers[method];
+        if (typeof answer === 'function') answer = answer(url);
+        if (answer instanceof Error) {
+          return { ok: true, json: async () => ({ error: { code: -32601, message: answer.message } }), url };
+        }
+        return { ok: true, json: async () => ({ result: answer }), url };
+      });
+    }
+
+    function fetchedMethods() {
+      return global.fetch.mock.calls.map(([url, options]) => [url, JSON.parse(options.body).method]);
+    }
+
+    test('uses one Myotis response for a complete fee quote', async () => {
+      mockMyotis.feeEstimate.mockResolvedValue({
+        gasPriceWei: (20n * GWEI).toString(),
+        maxPriorityFeePerGasWei: (2n * GWEI).toString(),
+      });
+
+      await expect(getFeeQuote(100)).resolves.toEqual({
+        type: 'eip1559',
+        baseFee: (18n * GWEI).toString(),
+        maxPriorityFeePerGas: (2n * GWEI).toString(),
+        // 2x base fee + priority fee: headroom for a base fee that rises
+        // between the quote and inclusion.
+        maxFeePerGas: (38n * GWEI).toString(),
+        effectiveGasPrice: (20n * GWEI).toString(),
+        source: 'myotis',
+        verified: true,
+      });
+      expect(mockMyotis.feeEstimate).toHaveBeenCalledTimes(1);
+      expect(mockMyotis.feeEstimate).toHaveBeenCalledWith(100);
     });
 
-    await expect(getFeeQuote(100)).resolves.toEqual({
-      type: 'eip1559',
-      baseFee: '98',
-      maxPriorityFeePerGas: '2',
-      // 2x base fee + priority fee: headroom for a base fee that rises
-      // between the quote and inclusion.
-      maxFeePerGas: '198',
-      effectiveGasPrice: '100',
-      source: 'myotis',
-      verified: true,
-    });
-    expect(mockMyotis.feeEstimate).toHaveBeenCalledTimes(1);
-    expect(mockMyotis.feeEstimate).toHaveBeenCalledWith(100);
-  });
+    test('floors a dust priority fee at the minimum tip', async () => {
+      // The #749 shape: a hint of a few thousand wei over the base fee gives
+      // a builder no reason to include the transaction.
+      mockMyotis.feeEstimate.mockResolvedValue({
+        gasPriceWei: '137168303',
+        maxPriorityFeePerGasWei: '3901',
+      });
 
-  test('downgrades an inconsistent fee quote instead of signing invalid EIP-1559 fees', async () => {
-    mockMyotis.feeEstimate.mockResolvedValue({
-      gasPriceWei: '3727',
-      maxPriorityFeePerGasWei: '1000000000',
-    });
-
-    await expect(getFeeQuote(100)).resolves.toEqual({
-      type: 'legacy',
-      gasPrice: '3727',
-      effectiveGasPrice: '3727',
-      source: 'myotis',
-      verified: true,
-    });
-  });
-
-  test('gets direct fee components from the same RPC endpoint', async () => {
-    mockRegistry.getNetwork.mockReturnValue({
-      access: { readOrder: ['direct'] },
-      quorum: { timeoutMs: 1000 },
-    });
-    mockRegistry.getEndpoints.mockReturnValue([
-      'https://primary.example',
-      'https://secondary.example',
-    ]);
-    global.fetch = jest.fn().mockImplementation(async (url, options) => {
-      const { method } = JSON.parse(options.body);
-      return {
-        ok: true,
-        json: async () => ({ result: method === 'eth_gasPrice' ? '0xebd' : '0x1' }),
-        url,
-      };
+      const quote = await getFeeQuote(100);
+      expect(quote).toMatchObject({
+        type: 'eip1559',
+        baseFee: '137164402',
+        maxPriorityFeePerGas: MIN_TIP.toString(),
+        maxFeePerGas: (137164402n * 2n + MIN_TIP).toString(),
+        effectiveGasPrice: (137164402n + MIN_TIP).toString(),
+      });
+      // The next block's base fee in #749 (139,083,121) no longer strands it.
+      expect(BigInt(quote.maxFeePerGas)).toBeGreaterThan(139083121n + MIN_TIP);
     });
 
-    await expect(getFeeQuote(100)).resolves.toMatchObject({
-      type: 'eip1559',
-      baseFee: '3772',
-      maxFeePerGas: '7545',
-      maxPriorityFeePerGas: '1',
-      effectiveGasPrice: '3773',
-      source: 'direct',
+    test('prices an inconsistent Colibri quote from its own verified latest block', async () => {
+      // Measured against mainnet's prover on 2026-10-19: Colibri verifies
+      // eth_maxPriorityFeePerGas as 1 gwei while eth_gasPrice is ~0.12 gwei,
+      // so the hint is larger than the price and cannot form a type-2 quote.
+      // This is why #749's quotes were all legacy.
+      onlySource('colibri');
+      mockRequestViaColibri.mockImplementation(async (_chainId, method) => ({
+        eth_gasPrice: hex(120_664_785n),
+        eth_maxPriorityFeePerGas: hex(GWEI),
+        eth_getBlockByNumber: { number: '0x1903a1b', baseFeePerGas: hex(125_664_220n) },
+      })[method]);
+
+      await expect(getFeeQuote(1)).resolves.toEqual({
+        type: 'eip1559',
+        baseFee: '125664220',
+        // The source's gas price is under the block's base fee, so it
+        // suggests no tip of its own: the minimum applies.
+        maxPriorityFeePerGas: MIN_TIP.toString(),
+        maxFeePerGas: (125_664_220n * 2n + MIN_TIP).toString(),
+        effectiveGasPrice: (125_664_220n + MIN_TIP).toString(),
+        source: 'colibri',
+        verified: true,
+      });
+      expect(mockRequestViaColibri.mock.calls.map(([, method, params]) => [method, params])).toEqual([
+        ['eth_gasPrice', []],
+        ['eth_maxPriorityFeePerGas', []],
+        ['eth_getBlockByNumber', ['latest', false]],
+      ]);
     });
-    expect(global.fetch).toHaveBeenCalledTimes(2);
-    expect(global.fetch.mock.calls.map(([url]) => url)).toEqual([
-      'https://primary.example',
-      'https://primary.example',
-    ]);
+
+    test('prices a source without eth_maxPriorityFeePerGas from its latest block', async () => {
+      onlySource('colibri');
+      mockRequestViaColibri.mockImplementation(async (_chainId, method) => {
+        if (method === 'eth_maxPriorityFeePerGas') {
+          throw Object.assign(new Error('Method not supported'), { code: 4200 });
+        }
+        return {
+          eth_gasPrice: hex(12n * GWEI),
+          eth_getBlockByNumber: { baseFeePerGas: hex(10n * GWEI) },
+        }[method];
+      });
+
+      await expect(getFeeQuote(1)).resolves.toMatchObject({
+        type: 'eip1559',
+        baseFee: (10n * GWEI).toString(),
+        // gasPrice - baseFee is the source's own tip suggestion.
+        maxPriorityFeePerGas: (2n * GWEI).toString(),
+        maxFeePerGas: (22n * GWEI).toString(),
+        effectiveGasPrice: (12n * GWEI).toString(),
+        source: 'colibri',
+      });
+    });
+
+    test('prices Myotis without a priority fee from the router read path', async () => {
+      mockRegistry.getNetwork.mockReturnValue({
+        access: { readOrder: ['myotis', 'colibri'] },
+        quorum: { k: 3, m: 2, timeoutMs: 1000 },
+      });
+      mockMyotis.feeEstimate.mockResolvedValue({ gasPriceWei: (3n * GWEI).toString() });
+      mockRequestViaColibri.mockImplementation(async (_chainId, method) => {
+        if (method !== 'eth_getBlockByNumber') throw new Error(`unexpected ${method}`);
+        return { baseFeePerGas: hex(2n * GWEI) };
+      });
+
+      await expect(getFeeQuote(1)).resolves.toMatchObject({
+        type: 'eip1559',
+        baseFee: (2n * GWEI).toString(),
+        maxPriorityFeePerGas: GWEI.toString(),
+        maxFeePerGas: (5n * GWEI).toString(),
+        source: 'myotis',
+        // The base fee is another source's read: named, and the quote is
+        // only as verified as that read.
+        baseFeeSource: 'colibri',
+        verified: true,
+      });
+    });
+
+    test('a Myotis quote priced from an unverified block is not reported verified', async () => {
+      mockRegistry.getNetwork.mockReturnValue({
+        access: { readOrder: ['myotis', 'direct'] },
+        quorum: { k: 3, m: 2, timeoutMs: 1000 },
+      });
+      mockRegistry.getEndpoints.mockReturnValue(['https://primary.example']);
+      mockMyotis.feeEstimate.mockResolvedValue({ gasPriceWei: (3n * GWEI).toString() });
+      fakeRpc({ eth_getBlockByNumber: { baseFeePerGas: hex(2n * GWEI) } });
+
+      await expect(getFeeQuote(1)).resolves.toMatchObject({
+        type: 'eip1559',
+        source: 'myotis',
+        baseFeeSource: 'direct',
+        verified: false,
+      });
+    });
+
+    test('gets direct fee components from the same RPC endpoint', async () => {
+      onlySource('direct');
+      mockRegistry.getEndpoints.mockReturnValue([
+        'https://primary.example',
+        'https://secondary.example',
+      ]);
+      fakeRpc({ eth_gasPrice: hex(3773n * 100_000n), eth_maxPriorityFeePerGas: hex(MIN_TIP) });
+
+      await expect(getFeeQuote(100)).resolves.toMatchObject({
+        type: 'eip1559',
+        baseFee: (3773n * 100_000n - MIN_TIP).toString(),
+        maxFeePerGas: ((3773n * 100_000n - MIN_TIP) * 2n + MIN_TIP).toString(),
+        maxPriorityFeePerGas: MIN_TIP.toString(),
+        effectiveGasPrice: (3773n * 100_000n).toString(),
+        source: 'direct',
+      });
+      expect(fetchedMethods()).toEqual([
+        ['https://primary.example', 'eth_gasPrice'],
+        ['https://primary.example', 'eth_maxPriorityFeePerGas'],
+      ]);
+    });
+
+    test('prices a direct endpoint without the priority hint from that endpoint\'s block', async () => {
+      onlySource('direct');
+      mockRegistry.getEndpoints.mockReturnValue(['https://primary.example', 'https://secondary.example']);
+      fakeRpc({
+        eth_gasPrice: hex(5n * GWEI),
+        eth_maxPriorityFeePerGas: new Error('the method eth_maxPriorityFeePerGas does not exist'),
+        eth_getBlockByNumber: { baseFeePerGas: hex(4n * GWEI) },
+      });
+
+      await expect(getFeeQuote(1)).resolves.toMatchObject({
+        type: 'eip1559',
+        baseFee: (4n * GWEI).toString(),
+        maxPriorityFeePerGas: GWEI.toString(),
+        maxFeePerGas: (9n * GWEI).toString(),
+        source: 'direct',
+      });
+      expect(fetchedMethods()).toEqual([
+        ['https://primary.example', 'eth_gasPrice'],
+        ['https://primary.example', 'eth_maxPriorityFeePerGas'],
+        ['https://primary.example', 'eth_getBlockByNumber'],
+      ]);
+    });
+
+    test('signs legacy with headroom only on a chain whose blocks carry no base fee', async () => {
+      onlySource('direct');
+      fakeRpc({
+        eth_gasPrice: hex(8n * GWEI),
+        eth_maxPriorityFeePerGas: new Error('the method eth_maxPriorityFeePerGas does not exist'),
+        eth_getBlockByNumber: { number: '0x10' }, // pre-London: no baseFeePerGas
+      });
+
+      await expect(getFeeQuote(1)).resolves.toEqual({
+        type: 'legacy',
+        // 125% of eth_gasPrice + the minimum tip, never the raw value.
+        gasPrice: (10n * GWEI + MIN_TIP).toString(),
+        effectiveGasPrice: (10n * GWEI + MIN_TIP).toString(),
+        source: 'direct',
+        verified: false,
+      });
+    });
+
+    test('prefers a later source\'s type-2 quote over a legacy one whose block failed', async () => {
+      mockRegistry.getNetwork.mockReturnValue({
+        access: { readOrder: ['colibri', 'direct'] },
+        quorum: { k: 3, m: 2, timeoutMs: 1000 },
+      });
+      mockRequestViaColibri.mockImplementation(async (_chainId, method) => {
+        if (method === 'eth_getBlockByNumber') throw new Error('proof failed');
+        return { eth_gasPrice: hex(GWEI), eth_maxPriorityFeePerGas: hex(2n * GWEI) }[method];
+      });
+      fakeRpc({
+        eth_gasPrice: hex(3n * GWEI),
+        eth_maxPriorityFeePerGas: hex(GWEI),
+      });
+
+      await expect(getFeeQuote(1)).resolves.toMatchObject({
+        type: 'eip1559',
+        baseFee: (2n * GWEI).toString(),
+        source: 'direct',
+      });
+    });
+
+    test('falls back to a headroomed legacy quote when no source can read a block', async () => {
+      onlySource('colibri');
+      mockRequestViaColibri.mockImplementation(async (_chainId, method) => {
+        if (method === 'eth_getBlockByNumber') throw new Error('proof failed');
+        if (method === 'eth_maxPriorityFeePerGas') throw new Error('proof failed');
+        return hex(4n * GWEI);
+      });
+
+      await expect(getFeeQuote(1)).resolves.toEqual({
+        type: 'legacy',
+        gasPrice: (5n * GWEI + MIN_TIP).toString(),
+        effectiveGasPrice: (5n * GWEI + MIN_TIP).toString(),
+        source: 'colibri',
+        verified: true,
+      });
+    });
+
+    test('keeps a direct endpoint\'s legacy fallback when a later endpoint fails outright', async () => {
+      onlySource('direct');
+      mockRegistry.getEndpoints.mockReturnValue(['https://primary.example', 'https://secondary.example']);
+      fakeRpc({
+        eth_gasPrice: (url) => (url === 'https://primary.example' ? hex(4n * GWEI) : new Error('down')),
+        eth_maxPriorityFeePerGas: new Error('the method eth_maxPriorityFeePerGas does not exist'),
+        eth_getBlockByNumber: new Error('block unavailable'),
+      });
+
+      await expect(getFeeQuote(1)).resolves.toMatchObject({
+        type: 'legacy',
+        gasPrice: (5n * GWEI + MIN_TIP).toString(),
+        source: 'direct',
+      });
+    });
   });
 
   test('keeps stateful dapp filters on one direct RPC endpoint', async () => {
