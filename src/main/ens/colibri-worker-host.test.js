@@ -181,14 +181,14 @@ describe('colibri worker host', () => {
     const client = host.createClient(CONFIG);
     const stuck = await startRequest(client, { method: 'eth_getTransactionReceipt' }, { deadlineMs: 2000 });
     jest.advanceTimersByTime(1500);
-    const bystander = await startRequest(client, { method: 'eth_getTransactionReceipt', params: ['0xmined'] },
+    const bystander = await startRequest(client, { method: 'eth_call', params: [{ to: '0xabc' }] },
       { deadlineMs: 2000 });
     expect(bystander.worker).toBe(stuck.worker);
     jest.advanceTimersByTime(500 + host.STUCK_PROBE_MS);
     expect(stuck.worker.terminate).toHaveBeenCalledTimes(1);
     await expect(stuck.promise).rejects.toThrow(/verification still running after its deadline/);
-    // Two requests were on the worker: whose deadline fired first says
-    // nothing about which one the verifier was spinning in.
+    // Two requests of different methods were on the worker: whose deadline
+    // fired first says nothing about which one the verifier was spinning in.
     await expect(stuck.promise).rejects.toHaveProperty('colibriBystander', true);
     expect(mockLogWarn).toHaveBeenCalledWith(
       '[colibri] chain 1 worker replaced (verification still running after its deadline); ' +
@@ -201,9 +201,9 @@ describe('colibri worker host', () => {
     fresh.emit('message', { type: 'ready' });
     await flush();
     const [resent] = sentRequests(fresh);
-    expect(resent).toMatchObject({ method: 'eth_getTransactionReceipt', params: ['0xmined'] });
-    fresh.emit('message', { type: 'result', id: resent.id, ok: true, result: { status: '0x1' } });
-    await expect(bystander.promise).resolves.toEqual({ status: '0x1' });
+    expect(resent).toMatchObject({ method: 'eth_call', params: [{ to: '0xabc' }] });
+    fresh.emit('message', { type: 'result', id: resent.id, ok: true, result: '0x01' });
+    await expect(bystander.promise).resolves.toBe('0x01');
   });
 
   test('a resent bystander keeps what is left of its deadline and is not resent twice', async () => {
@@ -330,6 +330,76 @@ describe('colibri worker host', () => {
     const [resent] = sentRequests(fresh);
     fresh.emit('message', { type: 'result', id: resent.id, ok: true, result: null });
     await expect(poll.promise).resolves.toBeNull();
+  });
+
+  // R4-M1: the same dApp poll, but posted a second after the spinner and so
+  // before the ping (1s poll, 2s deadline). Both are suspects; they share a
+  // method, and the router's fault backoff is per method, so the deadline
+  // holder is blamed. The poll, out of deadline as the probe expires, fails
+  // as a bystander: exactly one fault is counted.
+  test('suspects of a single method are attributed to it', async () => {
+    const client = host.createClient(CONFIG);
+    const spinner = await startRequest(client, { method: 'eth_getTransactionReceipt', params: ['0xpending'] },
+      { deadlineMs: 2000 });
+    jest.advanceTimersByTime(1000);
+    const poll = await startRequest(client, { method: 'eth_getTransactionReceipt', params: ['0xpending'] },
+      { deadlineMs: 2000 });
+    expect(poll.worker).toBe(spinner.worker);
+    jest.advanceTimersByTime(1000);
+    expect(spinner.worker.postMessage.mock.calls.some(([m]) => m.type === 'ping')).toBe(true);
+    jest.advanceTimersByTime(host.STUCK_PROBE_MS);
+    expect(spinner.worker.terminate).toHaveBeenCalledTimes(1);
+    await expect(spinner.promise).rejects.toThrow(/verification still running after its deadline/);
+    await expect(spinner.promise).rejects.not.toHaveProperty('colibriBystander');
+    await expect(poll.promise).rejects.toHaveProperty('colibriBystander', true);
+  });
+
+  test('of single-method suspects with deadline left, only the blamed one is not resent', async () => {
+    const client = host.createClient(CONFIG);
+    const spinner = await startRequest(client, { method: 'eth_getTransactionReceipt', params: ['0xpending'] },
+      { deadlineMs: 2000 });
+    jest.advanceTimersByTime(1000);
+    const poll = await startRequest(client, { method: 'eth_getTransactionReceipt', params: ['0xpending'] },
+      { deadlineMs: 5000 });
+    jest.advanceTimersByTime(1000 + host.STUCK_PROBE_MS);
+    await expect(spinner.promise).rejects.not.toHaveProperty('colibriBystander');
+    expect(mockLogWarn).toHaveBeenCalledWith(
+      '[colibri] chain 1 worker replaced (verification still running after its deadline); ' +
+      '1 request(s) failed, 1 sent to the new worker'
+    );
+    await flush();
+    const fresh = lastWorker();
+    fresh.emit('message', { type: 'ready' });
+    await flush();
+    const [resent] = sentRequests(fresh);
+    expect(resent).toMatchObject({ method: 'eth_getTransactionReceipt', params: ['0xpending'] });
+    fresh.emit('message', { type: 'result', id: resent.id, ok: true, result: null });
+    await expect(poll.promise).resolves.toBeNull();
+  });
+
+  // R4-M2: the deadline holder settles during the probe, so the worker then
+  // blocked in the one other suspect. That one is blamed and, although it has
+  // deadline left, failed rather than resent: it would spin again.
+  test('a suspect blamed for a stuck worker is failed, not resent', async () => {
+    const client = host.createClient(CONFIG);
+    const holder = await startRequest(client, { method: 'eth_call' }, { deadlineMs: 2000 });
+    jest.advanceTimersByTime(1000);
+    const blocker = await startRequest(client, { method: 'eth_getTransactionReceipt', params: ['0xunknown'] },
+      { deadlineMs: 5000 });
+    jest.advanceTimersByTime(1000);
+    expect(holder.worker.postMessage.mock.calls.some(([m]) => m.type === 'ping')).toBe(true);
+    holder.worker.emit('message', { type: 'result', id: holder.id, ok: true, result: '0x2' });
+    await expect(holder.promise).resolves.toBe('0x2');
+    jest.advanceTimersByTime(host.STUCK_PROBE_MS);
+    expect(holder.worker.terminate).toHaveBeenCalledTimes(1);
+    await expect(blocker.promise).rejects.toThrow(/verification still running after its deadline/);
+    await expect(blocker.promise).rejects.not.toHaveProperty('colibriBystander');
+    expect(mockLogWarn).toHaveBeenCalledWith(
+      '[colibri] chain 1 worker replaced (verification still running after its deadline); ' +
+      '1 request(s) failed'
+    );
+    await flush();
+    expect(Worker).toHaveBeenCalledTimes(1);
   });
 
   test('a worker replaced with no culprit marks nobody as a bystander', async () => {

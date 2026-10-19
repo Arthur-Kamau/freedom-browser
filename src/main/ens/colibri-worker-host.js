@@ -27,14 +27,20 @@
 //   itself reached its deadline. The host cannot see which request the
 //   verifier is spinning in, only whose deadline fired first. The suspects
 //   are the requests already posted when the liveness ping went out (one
-//   posted later never reached the stuck worker); with one suspect left it is
-//   blamed, with more nobody is: the overdue ones fail as bystanders, and the
-//   real culprit, resent, is caught alone (and blamed) on its next worker if
-//   it spins again;
+//   posted later never reached the stuck worker) and still pending when the
+//   probe expires. With one suspect left it is blamed. With several that all
+//   share one method (a dApp polling a pending receipt every second has its
+//   previous poll on the worker too) one of them is blamed, the deadline
+//   holder when it is still among them: the router's fault backoff is per
+//   method, so that names the right one whichever of them spins. With mixed
+//   methods nobody is: the overdue ones fail as bystanders, and the real
+//   culprit, resent, is caught (and blamed) on its next worker if it spins
+//   again, alone or among requests of its own method;
 // - after a trap, every draining request the retired WASM instance refused
 //   (the worker reports those as `retry`; colibri-runtime.js).
-// The request that trapped or overran is not retried, nor is a bystander a
-// second time, nor one whose client was destroyed meanwhile.
+// The request that trapped or overran, or was blamed for a stuck worker, is
+// not retried (even with deadline left: it would spin again), nor is a
+// bystander a second time, nor one whose client was destroyed meanwhile.
 //
 // A bystander that still fails (overdue itself, already resent, or refused
 // by the retired instance with no deadline left) carries `colibriBystander`
@@ -127,7 +133,8 @@ function bystanderError(err) {
 // `{ unattributed }` (a stuck worker with several suspects on it) marks every
 // request a bystander: one of them caused it, but which is unknown. With
 // `{ resendBystanders }` (the stuck-worker watchdog), requests that did not
-// cause the replacement, or may not have, are sent once more.
+// cause the replacement, or may not have, are sent once more; the culprit
+// never is.
 function replace(entry, reason, {
   resendBystanders = false,
   culpritId = null,
@@ -142,7 +149,7 @@ function replace(entry, reason, {
   let resent = 0;
   for (const [id, request] of pending) {
     clearTimeout(request.timer);
-    if (resendBystanders && canResend(request)) {
+    if (resendBystanders && id !== culpritId && canResend(request)) {
       resent += 1;
       resend(request);
       continue;
@@ -254,6 +261,16 @@ function ensureWorker(chainId) {
   return liveEntry(chainId).ready.then(() => undefined);
 }
 
+// The request to blame for a stuck worker, or null when it cannot be told.
+// `id` is the request whose deadline started the probe.
+function stuckCulprit(entry, id, suspects) {
+  const remaining = [...suspects].filter((suspect) => entry.pending.has(suspect));
+  if (remaining.length === 0) return null;
+  const { method } = entry.pending.get(remaining[0]);
+  if (!remaining.every((suspect) => entry.pending.get(suspect).method === method)) return null;
+  return remaining.includes(id) ? id : remaining[0];
+}
+
 function onDeadline(entry, id) {
   const pending = entry.pending.get(id);
   if (!pending || entry.terminated) return;
@@ -268,14 +285,14 @@ function onDeadline(entry, id) {
     entry.probes.delete(probeId);
     // The worker is stuck, but in whichever request it is verifying, not
     // necessarily this one: this request's deadline may simply have come
-    // first. Only a request alone among the suspects still on the worker is
-    // known to be the culprit; otherwise nobody is blamed (see the header).
-    const remaining = [...suspects].filter((suspect) => entry.pending.has(suspect));
-    const sole = remaining.length === 1;
+    // first. A request alone among the suspects still on the worker is known
+    // to be the culprit; among several of one method, one of them stands for
+    // that method; otherwise nobody is blamed (see the header).
+    const culpritId = stuckCulprit(entry, id, suspects);
     replace(entry, 'verification still running after its deadline', {
       resendBystanders: true,
-      culpritId: sole ? remaining[0] : null,
-      unattributed: !sole,
+      culpritId,
+      unattributed: culpritId === null,
     });
   }, STUCK_PROBE_MS));
   try {
