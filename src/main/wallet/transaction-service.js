@@ -465,6 +465,19 @@ async function getTransactionStatus(txHash, chainId, { from, nonce } = {}) {
  * receipt for it, marking a mined transaction dropped. So the nonce is read
  * from a source that also serves receipts, and the receipt re-check is
  * pinned to that same source; if it cannot answer, nothing is decided.
+ *
+ * "Serves receipts" means it can answer "no receipt" for a hash it has never
+ * seen. Colibri cannot: its verifier traps ('memory access out of bounds',
+ * colibri-stateless 3.0.2) on an unknown hash instead of returning null. The
+ * first receipt read above falls past that trap to the next source, but a
+ * re-check pinned to Colibri has nowhere to fall, so a dropped transaction
+ * could never be decided on a Colibri chain. Neither Myotis nor Colibri
+ * answers the nonce read for that reason.
+ *
+ * Even one source is not one consistent view: quorum members and Direct's
+ * URL list can answer the two reads from different endpoints, one lagging.
+ * So this verdict is only a sighting; payment-history marks a row dropped
+ * once a later sweep sees it again (see repollPending).
  */
 async function nonceTakenByAnotherTransaction(txHash, chainId, from, nonce) {
   if (typeof from !== 'string' || !Number.isSafeInteger(nonce) || nonce < 0) return false;
@@ -492,10 +505,12 @@ function knownSources() {
   return Object.keys(chainData.SOURCE_CAPABILITIES || {});
 }
 
-// Myotis answers account reads from its verified head but serves no receipts.
+// Myotis answers account reads from its verified head but serves no
+// receipts; Colibri throws rather than answering null for an unknown hash.
+const SOURCES_WITHOUT_NULL_RECEIPTS = ['myotis', 'colibri'];
 function sourcesWithoutReceipts() {
-  return ['myotis', ...knownSources().filter((source) =>
-    source !== 'myotis' &&
+  return [...SOURCES_WITHOUT_NULL_RECEIPTS, ...knownSources().filter((source) =>
+    !SOURCES_WITHOUT_NULL_RECEIPTS.includes(source) &&
     chainData.SOURCE_CAPABILITIES[source]?.unsupported?.has?.('eth_getTransactionReceipt')
   )];
 }

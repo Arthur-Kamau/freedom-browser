@@ -371,23 +371,48 @@ describe('getTransactionStatus', () => {
 
   test('a source ahead of the receipt source never decides dropped (Myotis nonce, lagging receipts)', async () => {
     // The chain as each source sees it: Myotis has the block that mined this
-    // transaction (nonce 1); Colibri, which would answer receipts, does not
+    // transaction (nonce 1); quorum, which would answer receipts, does not
     // yet. Routed independently that reads as "nonce taken, no receipt".
     const view = {
       myotis: { count: '0x1', receipt: undefined },
-      colibri: { count: '0x0', receipt: null },
+      quorum: { count: '0x0', receipt: null },
     };
     chain(
       {
         eth_getTransactionReceipt: [null, (source) => view[source].receipt],
         eth_getTransactionCount: [(source) => view[source].count],
       },
-      { sourceFor: (method) => (method === 'eth_getTransactionCount' ? 'myotis' : 'colibri') }
+      { sourceFor: (method) => (method === 'eth_getTransactionCount' ? 'myotis' : 'quorum') }
     );
 
     await expect(getTransactionStatus(HASH, 1, { from: FROM, nonce: 0 })).resolves.toMatchObject({
       status: 'pending',
     });
+  });
+
+  // Colibri traps on a receipt for a hash it has never seen instead of
+  // answering null (colibri-stateless 3.0.2, mainnet prover). A nonce read it
+  // answered would pin the re-check to it, which then always throws.
+  test('a dropped transaction is decided on a Colibri chain (Colibri never answers the nonce)', async () => {
+    const colibriTrap = (source) => {
+      if (source === 'colibri') throw new Error('memory access out of bounds');
+      return null;
+    };
+    chain(
+      {
+        eth_getTransactionReceipt: [null, colibriTrap],
+        eth_getTransactionCount: ['0x1'],
+      },
+      { sourceFor: () => 'colibri' }
+    );
+
+    await expect(getTransactionStatus(HASH, 1, { from: FROM, nonce: 0 })).resolves.toMatchObject({
+      status: 'dropped',
+    });
+    const nonceRead = mockChainRequest.mock.calls[1];
+    expect(nonceRead[1]).toBe('eth_getTransactionCount');
+    expect(nonceRead[3].excludeSources).toEqual(expect.arrayContaining(['myotis', 'colibri']));
+    expect(mockChainRequest.mock.calls[2][3].excludeSources).toContain('colibri');
   });
 
   test('the receipt re-check is pinned to the source that answered the nonce', async () => {

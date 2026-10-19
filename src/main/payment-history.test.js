@@ -368,10 +368,20 @@ describe('payment-history (sqlite)', () => {
       expect(mod.getById(row.id).status).toBe('pending');
     });
 
+    // The clock repollPending reads; tests step it past the confirm window.
+    let clock;
+    function useClock(start = 1_000_000) {
+      clock = start;
+      jest.spyOn(Date, 'now').mockImplementation(() => clock);
+    }
+    afterEach(() => { jest.restoreAllMocks(); });
+
     // #749: a dropped transaction never gets a receipt; once another
     // transaction takes its nonce the row resolves instead of staying
-    // pending forever.
+    // pending forever. One sighting is not enough: a later sweep, at least
+    // DROPPED_CONFIRM_MS on, must see it again.
     test('resolves a row whose nonce another transaction took as dropped', async () => {
+      useClock();
       const dropped = mod.append({
         kind: 'safe-send', chainId: 1, txHash: '0xdropped', amount: '1',
         metadata: { safeAddress: '0xsafe', txFrom: FROM_ADDR, txNonce: 0 },
@@ -384,10 +394,20 @@ describe('payment-history (sqlite)', () => {
         txHash === '0xresend' ? { status: 'confirmed', gasUsed: '21000' } : { status: 'dropped' }
       ));
 
-      const summary = await mod.repollPending(fakeStatus);
-
-      expect(summary).toEqual({ resolved: 2, stillPending: 0, errors: 0 });
+      await expect(mod.repollPending(fakeStatus)).resolves.toEqual({
+        resolved: 1, stillPending: 1, errors: 0,
+      });
       expect(fakeStatus).toHaveBeenCalledWith('0xdropped', 1, { from: FROM_ADDR, nonce: 0 });
+      expect(mod.getById(dropped.id)).toMatchObject({
+        status: 'pending',
+        metadata: { safeAddress: '0xsafe', txDroppedSeenAt: clock },
+      });
+      expect(mod.getById(resend.id).status).toBe('confirmed');
+
+      clock += mod.DROPPED_CONFIRM_MS;
+      await expect(mod.repollPending(fakeStatus)).resolves.toEqual({
+        resolved: 1, stillPending: 0, errors: 0,
+      });
       const row = mod.getById(dropped.id);
       expect(row.status).toBe('dropped');
       expect(row.confirmedAt).toEqual(expect.any(Number));
@@ -397,11 +417,65 @@ describe('payment-history (sqlite)', () => {
         txNonce: 0,
         failureReason: 'nonce used by another transaction',
       });
-      expect(mod.getById(resend.id).status).toBe('confirmed');
+    });
+
+    test('a second sighting inside the confirm window leaves the row pending', async () => {
+      useClock();
+      const row = mod.append({ kind: 'wallet-send', chainId: 1, txHash: '0xa', amount: '1' });
+      const fn = async () => ({ status: 'dropped' });
+      await mod.repollPending(fn);
+      const firstSeen = clock;
+      clock += mod.DROPPED_CONFIRM_MS - 1;
+      await expect(mod.repollPending(fn)).resolves.toMatchObject({ resolved: 0, stillPending: 1 });
+      // The window still counts from the first sighting.
+      expect(mod.getById(row.id)).toMatchObject({
+        status: 'pending', metadata: { txDroppedSeenAt: firstSeen },
+      });
+      clock += 1;
+      await expect(mod.repollPending(fn)).resolves.toMatchObject({ resolved: 1 });
+      expect(mod.getById(row.id).status).toBe('dropped');
+    });
+
+    // A lagging endpoint read a just-mined transaction as dropped once; the
+    // next read that sees it pending again must reset, not confirm, that.
+    test('a pending answer between sightings starts the window over', async () => {
+      useClock();
+      const row = mod.append({ kind: 'wallet-send', chainId: 1, txHash: '0xa', amount: '1' });
+      await mod.repollPending(async () => ({ status: 'dropped' }));
+      clock += 1000;
+      await mod.repollPending(async () => ({ status: 'pending' }));
+      expect(mod.getById(row.id).metadata?.txDroppedSeenAt).toBeUndefined();
+      clock += mod.DROPPED_CONFIRM_MS;
+      await mod.repollPending(async () => ({ status: 'dropped' }));
+      expect(mod.getById(row.id)).toMatchObject({
+        status: 'pending', metadata: { txDroppedSeenAt: clock },
+      });
+    });
+
+    test('a waiting sighting schedules its own confirming sweep', async () => {
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+      try {
+        const row = mod.append({ kind: 'wallet-send', chainId: 1, txHash: '0xa', amount: '1' });
+        const fn = jest.fn(async () => ({ status: 'dropped' }));
+        await mod.repollPending(fn);
+        expect(mod.getById(row.id).status).toBe('pending');
+        expect(fn).toHaveBeenCalledTimes(1);
+
+        jest.advanceTimersByTime(mod.DROPPED_CONFIRM_MS);
+        for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+        expect(fn).toHaveBeenCalledTimes(2);
+        expect(mod.getById(row.id).status).toBe('dropped');
+        expect(jest.getTimerCount()).toBe(0);
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     test('a dropped row is final and is not polled again', async () => {
+      useClock();
       mod.append({ kind: 'wallet-send', chainId: 1, txHash: '0xa', amount: '1' });
+      await mod.repollPending(async () => ({ status: 'dropped' }));
+      clock += mod.DROPPED_CONFIRM_MS;
       await mod.repollPending(async () => ({ status: 'dropped' }));
       const fn = jest.fn();
       await expect(mod.repollPending(fn)).resolves.toEqual({ resolved: 0, stillPending: 0, errors: 0 });
@@ -432,8 +506,28 @@ describe('payment-history (sqlite)', () => {
       await new Promise((resolve) => setImmediate(resolve));
       // The queued sweep re-reads it, now that the nonce has moved.
       expect(fn).toHaveBeenCalledTimes(2);
-      releases[1]({ status: 'dropped' });
+      releases[1]({ status: 'confirmed' });
       await expect(second).resolves.toMatchObject({ resolved: 1, stillPending: 0 });
+      expect(fn).toHaveBeenCalledTimes(2);
+    });
+
+    // The running sweep has settled but the queued one has not started yet:
+    // a caller in that gap joins the queued sweep instead of starting a third.
+    test('a call between a sweep settling and the queued one starting joins the queued one', async () => {
+      mod.append({ kind: 'wallet-send', chainId: 1, txHash: '0xa', amount: '1' });
+      const releases = [];
+      const fn = jest.fn(() => new Promise((resolve) => { releases.push(resolve); }));
+      const first = mod.repollPending(fn);
+      const second = mod.repollPending(fn);
+      await new Promise((resolve) => setImmediate(resolve));
+      releases[0]({ status: 'pending' });
+      await first;
+      const late = mod.repollPending(fn);
+      expect(late).toBe(second);
+      for (let i = 0; i < 3; i++) await new Promise((resolve) => setImmediate(resolve));
+      releases[1]({ status: 'confirmed' });
+      await second;
+      for (let i = 0; i < 3; i++) await new Promise((resolve) => setImmediate(resolve));
       expect(fn).toHaveBeenCalledTimes(2);
     });
 

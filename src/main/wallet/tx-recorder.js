@@ -97,7 +97,9 @@ async function signAndRecord(params, signer, context) {
     })
     // A mined transaction can be what makes an older row final: a re-send on
     // the same nonce leaves the original 'dropped' (#749). Sweep now rather
-    // than on next boot; this row too, if it timed out above.
+    // than on next boot; this row too, if it timed out above. The sweep
+    // records that first sighting and confirms it on a sweep it schedules
+    // itself DROPPED_CONFIRM_MS later (payment-history).
     .then(() => paymentHistory.repollPending(getTransactionStatus))
     .catch((err) => {
       log.warn(`[TxRecorder] payment-history repoll failed: ${err.message}`);
