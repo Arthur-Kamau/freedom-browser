@@ -25,10 +25,12 @@
 // once more, to the fresh worker, with whatever is left of its own deadline:
 // - when the worker is killed as stuck, every request on it that has not
 //   itself reached its deadline. The host cannot see which request the
-//   verifier is spinning in, only whose deadline fired first, so with more
-//   than one request on the worker nobody is blamed: the overdue ones fail
-//   as bystanders, and the real culprit, resent, is caught alone (and blamed)
-//   on its next worker if it spins again;
+//   verifier is spinning in, only whose deadline fired first. The suspects
+//   are the requests already posted when the liveness ping went out (one
+//   posted later never reached the stuck worker); with one suspect left it is
+//   blamed, with more nobody is: the overdue ones fail as bystanders, and the
+//   real culprit, resent, is caught alone (and blamed) on its next worker if
+//   it spins again;
 // - after a trap, every draining request the retired WASM instance refused
 //   (the worker reports those as `retry`; colibri-runtime.js).
 // The request that trapped or overran is not retried, nor is a bystander a
@@ -122,7 +124,7 @@ function bystanderError(err) {
 // Fail everything on this worker and stop it. Idempotent: 'error', 'exit' and
 // the watchdog can all race here. `culpritId` names the request known to have
 // led to the replacement, when one did; every other request is a bystander.
-// `{ unattributed }` (a stuck worker with several requests on it) marks every
+// `{ unattributed }` (a stuck worker with several suspects on it) marks every
 // request a bystander: one of them caused it, but which is unknown. With
 // `{ resendBystanders }` (the stuck-worker watchdog), requests that did not
 // cause the replacement, or may not have, are sent once more.
@@ -256,16 +258,23 @@ function onDeadline(entry, id) {
   const pending = entry.pending.get(id);
   if (!pending || entry.terminated) return;
   const probeId = nextRequestId++;
+  // Only a request already posted when the ping goes out can be the one the
+  // worker is stuck in. The worker answers a ping synchronously from its
+  // message handler and handles messages in order, so one posted after the
+  // ping (a dApp's next receipt poll queued behind the spinning lookup) was
+  // never even delivered to it if the pong does not come.
+  const suspects = new Set(entry.pending.keys());
   entry.probes.set(probeId, setTimeout(() => {
     entry.probes.delete(probeId);
     // The worker is stuck, but in whichever request it is verifying, not
     // necessarily this one: this request's deadline may simply have come
-    // first. Only a request alone on the worker is known to be the culprit;
-    // otherwise nobody is blamed (see the header).
-    const sole = entry.pending.size === 1;
+    // first. Only a request alone among the suspects still on the worker is
+    // known to be the culprit; otherwise nobody is blamed (see the header).
+    const remaining = [...suspects].filter((suspect) => entry.pending.has(suspect));
+    const sole = remaining.length === 1;
     replace(entry, 'verification still running after its deadline', {
       resendBystanders: true,
-      culpritId: sole ? id : null,
+      culpritId: sole ? remaining[0] : null,
       unattributed: !sole,
     });
   }, STUCK_PROBE_MS));

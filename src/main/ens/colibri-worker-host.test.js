@@ -298,6 +298,40 @@ describe('colibri worker host', () => {
     await expect(spinner.promise).rejects.not.toHaveProperty('colibriBystander');
   });
 
+  // R3-M1: a dApp polling a pending-tx receipt every second queues its next
+  // poll behind the spinning lookup during the 1s probe. That poll was posted
+  // after the ping, so it never reached the stuck worker: the spinner is still
+  // the only suspect, is blamed (counts toward the router's fault backoff),
+  // and the poll is resent.
+  test('a request posted after the liveness ping is not a suspect', async () => {
+    const client = host.createClient(CONFIG);
+    const spinner = await startRequest(client, { method: 'eth_getTransactionReceipt', params: ['0xunknown'] },
+      { deadlineMs: 2000 });
+    jest.advanceTimersByTime(2000);
+    expect(spinner.worker.postMessage.mock.calls.some(([m]) => m.type === 'ping')).toBe(true);
+    jest.advanceTimersByTime(500);
+    const poll = await startRequest(client, { method: 'eth_getTransactionReceipt', params: ['0xunknown'] },
+      { deadlineMs: 2000 });
+    expect(poll.worker).toBe(spinner.worker);
+    jest.advanceTimersByTime(host.STUCK_PROBE_MS - 500);
+    expect(spinner.worker.terminate).toHaveBeenCalledTimes(1);
+    await expect(spinner.promise).rejects.toThrow(/verification still running after its deadline/);
+    await expect(spinner.promise).rejects.not.toHaveProperty('colibriBystander');
+    expect(mockLogWarn).toHaveBeenCalledWith(
+      '[colibri] chain 1 worker replaced (verification still running after its deadline); ' +
+      '1 request(s) failed, 1 sent to the new worker'
+    );
+
+    await flush();
+    const fresh = lastWorker();
+    expect(fresh).not.toBe(spinner.worker);
+    fresh.emit('message', { type: 'ready' });
+    await flush();
+    const [resent] = sentRequests(fresh);
+    fresh.emit('message', { type: 'result', id: resent.id, ok: true, result: null });
+    await expect(poll.promise).resolves.toBeNull();
+  });
+
   test('a worker replaced with no culprit marks nobody as a bystander', async () => {
     const client = host.createClient(CONFIG);
     const a = await startRequest(client, { method: 'eth_call' });
