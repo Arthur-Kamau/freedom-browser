@@ -54,9 +54,13 @@
 // and the count cannot under-report if Chromium's coalescing above ever
 // changes.
 const pendingTraversals = new WeakMap();
+// Every traversal ever asked for, per webview; never lowered. See
+// `historyTraversalRequestCount`.
+const requestedTraversals = new WeakMap();
 
 const markTraversalPending = (webview) => {
   pendingTraversals.set(webview, (pendingTraversals.get(webview) || 0) + 1);
+  requestedTraversals.set(webview, (requestedTraversals.get(webview) || 0) + 1);
 };
 
 /**
@@ -147,22 +151,27 @@ export const clearHistoryTraversal = (webview) => {
 };
 
 /**
- * How many traversals are still waiting for their commit on `webview`,
- * without consuming any.
+ * How many traversals have ever been asked for on `webview`: a running total
+ * that only goes up. Neither a commit (`consumeHistoryTraversal`) nor a
+ * shell navigation (`clearHistoryTraversal`) lowers it.
  *
  * Read by the gateway offer (#70) from `did-start-navigation`: with "Always
  * open without gateway" on, a gateway page reached by Back must stay the
  * gateway page — redirecting it again would send the user straight forward
  * to where they just came from, and Back could never get past it.
  *
- * A count rather than a yes/no, because a mark can be left standing by a
- * traversal that resolved same-document (see `clearHistoryTraversal`): the
- * caller snapshots the count at each same-document commit and only treats a
- * start as a traversal when the count has grown past that snapshot, i.e. a
- * Back/Forward was asked for *after* the page last moved in place.
+ * A running total rather than the pending count above, because the caller
+ * needs to know whether a traversal was asked for *since it last looked*,
+ * and the pending count cannot say that: a mark left standing by a traversal
+ * that resolved same-document or never committed (see
+ * `clearHistoryTraversal`) looks the same as a fresh one, and a commit that
+ * spends a mark lowers the count by an amount that depends on which event
+ * the caller happens to see first. The caller keeps its own "seen up to"
+ * value and moves it forward as starts and same-document commits account
+ * for the requests (gateway-offer-ui.js, `seenTraversals`).
  *
  * @param {object|null} webview - guest `<webview>` element
  * @returns {number}
  */
-export const pendingHistoryTraversalCount = (webview) =>
-  (webview && pendingTraversals.get(webview)) || 0;
+export const historyTraversalRequestCount = (webview) =>
+  (webview && requestedTraversals.get(webview)) || 0;

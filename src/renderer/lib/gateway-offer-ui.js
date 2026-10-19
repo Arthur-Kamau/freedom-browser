@@ -31,7 +31,7 @@
  */
 
 import { getActiveTab, onWebviewCreated } from './tabs.js';
-import { pendingHistoryTraversalCount } from './history-traversal.js';
+import { historyTraversalRequestCount } from './history-traversal.js';
 import { isModalDialogOpen } from './modal-dialog.js';
 import { pushDebug } from './debug.js';
 import { boundPopoverToViewport } from './popover-bounds.js';
@@ -70,13 +70,19 @@ export const describeOffer = (offer) =>
 //                means the tab has moved on, and the guard is dropped, so a
 //                later visit to the same gateway URL — typed, bookmarked,
 //                linked an hour on — is redirected like any other.
-//   settledTraversals  the pending traversal count at the last main-frame
-//                same-document commit. A Back that resolves in place (an
-//                anchor, an SPA route) leaves its mark standing, since
-//                same-document commits never consume it (history-traversal
-//                .js); a start only counts as a traversal when the count has
-//                grown past this snapshot, i.e. a Back/Forward was asked for
-//                after the page last moved in place.
+//   seenTraversals  how many of this tab's Back/Forward requests
+//                (`historyTraversalRequestCount`, a running total) are already
+//                accounted for. A main-frame start is a traversal only when
+//                the total has grown past it, and every start then accounts
+//                for all of them (Chromium serves several pending requests
+//                with one navigation). A main-frame same-document commit
+//                accounts for at most *one*: a Back that resolved in place
+//                (an anchor, an SPA route) is one request, and a second Back
+//                already asked for by the time that commit is seen is still
+//                on its way. Requests never answered by a main-frame
+//                navigation at all (a Back that resolved in a subframe) keep
+//                the next start counted as a traversal, which only leaves the
+//                gateway page in place with the pill showing.
 let stateByWebview = new WeakMap();
 let alwaysOpen = false;
 let navigate = null;
@@ -102,7 +108,7 @@ const stateFor = (webview) => {
       startedUrl: '',
       redirectedFrom: '',
       redirectLanded: false,
-      settledTraversals: 0,
+      seenTraversals: 0,
     };
     stateByWebview.set(webview, st);
   }
@@ -232,8 +238,16 @@ const openOffer = async () => {
 const onCommitted = (webview, url, { inPage = false } = {}) => {
   const st = stateFor(webview);
   st.seq += 1;
-  if (inPage) st.settledTraversals = pendingHistoryTraversalCount(webview);
-  else st.settledTraversals = 0;
+  if (inPage) {
+    // At most one request per in-place move. The one way this errs: the page
+    // being left moving itself (`pushState`/`replaceState`) while a real Back
+    // is in flight accounts for that Back, so the gateway page it restores is
+    // redirected once. That goes forward to the native page, not back where
+    // the user came from, so it cannot loop; the same-document commit that
+    // would tell the two apart does not exist (see tabs.js,
+    // `did-navigate-in-page`).
+    st.seenTraversals = Math.min(historyTraversalRequestCount(webview), st.seenTraversals + 1);
+  }
   if (st.redirectedFrom && !looksLikeGatewayUrl(url)) st.redirectLanded = true;
   st.committedUrl = url || '';
   const hadOffer = !!st.offer;
@@ -253,16 +267,12 @@ const onCommitted = (webview, url, { inPage = false } = {}) => {
 const onStarted = (webview, url) => {
   const st = stateFor(webview);
   st.startedUrl = url || '';
-  // Read before anything returns, and reset: the snapshot only discounts a
-  // mark left standing *before* this start (see `settledTraversals`). The
-  // one way it errs: the page being left moving itself in place
-  // (`replaceState`) while a real Back is still in flight snapshots that
-  // Back's own mark, so the gateway page it restores is redirected once.
-  // That goes forward to the native page, not back where the user came
-  // from, so it cannot loop; the same-document commit that would tell the
-  // two apart does not exist (see tabs.js, `did-navigate-in-page`).
-  const traversal = pendingHistoryTraversalCount(webview) > st.settledTraversals;
-  st.settledTraversals = 0;
+  // Read before anything returns: this start accounts for every request
+  // made so far (see `seenTraversals`), whether or not it ever commits, so a
+  // Back onto a download cannot shield the next link click either.
+  const requested = historyTraversalRequestCount(webview);
+  const traversal = requested > st.seenTraversals;
+  st.seenTraversals = requested;
   if (st.redirectedFrom && st.redirectLanded && url !== st.redirectedFrom) {
     // The tab has left the page "always" sent it to: the guard is spent.
     st.redirectedFrom = '';

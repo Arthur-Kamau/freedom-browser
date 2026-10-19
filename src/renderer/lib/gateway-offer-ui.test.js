@@ -6,6 +6,7 @@
 // `var` (not let) avoids the TDZ under jest.mock hoisting.
 var mockActiveTab = null;
 var mockWebviewCreated = null;
+// The running total of Back/Forward requests (historyTraversalRequestCount).
 var mockTraversalPending = 0;
 jest.mock('./tabs.js', () => ({
   getActiveTab: jest.fn(() => mockActiveTab),
@@ -14,7 +15,7 @@ jest.mock('./tabs.js', () => ({
   }),
 }));
 jest.mock('./history-traversal.js', () => ({
-  pendingHistoryTraversalCount: jest.fn(() => mockTraversalPending),
+  historyTraversalRequestCount: jest.fn(() => mockTraversalPending),
 }));
 jest.mock('./modal-dialog.js', () => ({ isModalDialogOpen: jest.fn(() => false) }));
 jest.mock('./debug.js', () => ({ pushDebug: jest.fn() }));
@@ -431,6 +432,60 @@ describe('gateway-offer-ui', () => {
         isMainFrame: true,
       });
       mockTraversalPending = 2; // a second Back, cross-document this time
+      start(tabA, GATEWAY);
+      await flush();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    test('on: two Backs, the first resolving in place, still treat the second as a traversal (R2-M1)', async () => {
+      setAlways(true);
+      commit(tabA, 'https://example.com/a#b');
+      // Both Backs were asked for before the first one's in-place commit is seen.
+      mockTraversalPending = 2;
+      tabA.webview.dispatch('did-navigate-in-page', {
+        url: 'https://example.com/a#a',
+        isMainFrame: true,
+      });
+      start(tabA, GATEWAY);
+      await flush();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    test('on: a page moving itself in place with no Back pending accounts for nothing', async () => {
+      setAlways(true);
+      commit(tabA, 'https://example.com/a');
+      mockTraversalPending = 1;
+      start(tabA, 'https://example.com/b'); // cross-document Back, accounted for
+      commit(tabA, 'https://example.com/b');
+      for (let i = 0; i < 3; i++) {
+        tabA.webview.dispatch('did-navigate-in-page', {
+          url: `https://example.com/b#${i}`,
+          isMainFrame: true,
+        });
+      }
+      mockTraversalPending = 2; // a fresh Back onto a gateway page
+      start(tabA, GATEWAY);
+      await flush();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    test('on: a Back that never commits (a download) does not shield the next link (R2-M1)', async () => {
+      setAlways(true);
+      commit(tabA, 'https://example.com/a');
+      mockTraversalPending = 1;
+      start(tabA, 'https://example.com/file.zip'); // the traversal; no commit follows
+      start(tabA, GATEWAY); // a link click: not a traversal
+      await flush();
+      expect(navigate).toHaveBeenCalledWith(OFFER.destination, tabA.webview, { auto: true });
+    });
+
+    test('on: a second Back asked for while the first is still loading is a traversal', async () => {
+      setAlways(true);
+      commit(tabA, 'https://example.com/a');
+      mockTraversalPending = 1;
+      start(tabA, 'https://example.com/prev');
+      mockTraversalPending = 2;
+      commit(tabA, 'https://example.com/prev');
       start(tabA, GATEWAY);
       await flush();
       expect(navigate).not.toHaveBeenCalled();
