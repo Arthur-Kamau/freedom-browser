@@ -187,8 +187,9 @@ describe('colibri worker host', () => {
     jest.advanceTimersByTime(500 + host.STUCK_PROBE_MS);
     expect(stuck.worker.terminate).toHaveBeenCalledTimes(1);
     await expect(stuck.promise).rejects.toThrow(/verification still running after its deadline/);
-    // The request that overran is the culprit, not a bystander.
-    await expect(stuck.promise).rejects.not.toHaveProperty('colibriBystander');
+    // Two requests were on the worker: whose deadline fired first says
+    // nothing about which one the verifier was spinning in.
+    await expect(stuck.promise).rejects.toHaveProperty('colibriBystander', true);
     expect(mockLogWarn).toHaveBeenCalledWith(
       '[colibri] chain 1 worker replaced (verification still running after its deadline); ' +
       '1 request(s) failed, 1 sent to the new worker'
@@ -255,13 +256,46 @@ describe('colibri worker host', () => {
     // the worker before its own (3500) would.
     jest.advanceTimersByTime(500 + host.STUCK_PROBE_MS);
     expect(stuck.worker.terminate).toHaveBeenCalledTimes(1);
-    await expect(stuck.promise).rejects.not.toHaveProperty('colibriBystander');
+    await expect(stuck.promise).rejects.toHaveProperty('colibriBystander', true);
     await expect(overdue.promise).rejects.toThrow(/Colibri worker replaced/);
     await expect(overdue.promise).rejects.toHaveProperty('colibriBystander', true);
     expect(mockLogWarn).toHaveBeenCalledWith(
       '[colibri] chain 1 worker replaced (verification still running after its deadline); ' +
       '2 request(s) failed'
     );
+  });
+
+  test('a stuck worker with one request on it blames that request', async () => {
+    const { promise } =
+      await startRequest(host.createClient(CONFIG), { method: 'eth_call' }, { deadlineMs: 2000 });
+    jest.advanceTimersByTime(2000 + host.STUCK_PROBE_MS);
+    await expect(promise).rejects.toThrow(/verification still running/);
+    await expect(promise).rejects.not.toHaveProperty('colibriBystander');
+  });
+
+  // R2-M1: a receipt lookup with the configured timeout spins the verifier; a
+  // page eth_call's shorter deadline fires first. eth_call must not be blamed,
+  // and the receipt lookup, resent, is blamed once it spins alone.
+  test('the request whose deadline fires first is not blamed for another one spinning', async () => {
+    const client = host.createClient(CONFIG);
+    const spinner = await startRequest(client, { method: 'eth_getTransactionReceipt' }, { deadlineMs: 5000 });
+    const call = await startRequest(client, { method: 'eth_call' }, { deadlineMs: 2000 });
+    expect(call.worker).toBe(spinner.worker);
+    jest.advanceTimersByTime(2000 + host.STUCK_PROBE_MS);
+    expect(spinner.worker.terminate).toHaveBeenCalledTimes(1);
+    await expect(call.promise).rejects.toThrow(/verification still running/);
+    await expect(call.promise).rejects.toHaveProperty('colibriBystander', true);
+
+    await flush();
+    const fresh = lastWorker();
+    fresh.emit('message', { type: 'ready' });
+    await flush();
+    const [resent] = sentRequests(fresh);
+    expect(resent).toMatchObject({ method: 'eth_getTransactionReceipt' });
+    // Spins again, alone this time: now it is the known culprit.
+    jest.advanceTimersByTime(2000 + host.STUCK_PROBE_MS);
+    await expect(spinner.promise).rejects.toThrow(/verification still running/);
+    await expect(spinner.promise).rejects.not.toHaveProperty('colibriBystander');
   });
 
   test('a worker replaced with no culprit marks nobody as a bystander', async () => {

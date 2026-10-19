@@ -1680,6 +1680,30 @@ describe('chain-data-router', () => {
       expect(global.fetch).not.toHaveBeenCalled();
     });
 
+    // R2-F1: the deferred Colibri at the end of the order is no fallback for
+    // the quorum, so a page's lookup keeps the quorum's configured budget
+    // instead of cutting it at 2 s and trapping Colibri on an unknown hash.
+    test('a quorum-terminal order keeps the quorum’s full budget for a page’s lookup', async () => {
+      jest.useFakeTimers({ now: 1_000_000 });
+      mockRegistry.getNetwork.mockReturnValue({
+        access: { readOrder: ['colibri', 'quorum'] },
+        quorum: { k: 2, m: 2, timeoutMs: 5000 },
+      });
+      mockRegistry.getEndpoints.mockImplementation((_chainId, role) =>
+        role === 'prover' ? ['https://prover.example'] : ['https://a.example', 'https://b.example']
+      );
+      global.fetch = jest.fn(() => new Promise((resolve) => setTimeout(
+        () => resolve({ ok: true, json: async () => ({ result: null }) }), 3000
+      )));
+      mockRequestViaColibri.mockRejectedValue(trapError());
+      const lookup = request(1, 'eth_getTransactionReceipt', ['0xf7aa'], {
+        routingContext: { origin: 'https://app.example' },
+      });
+      await jest.advanceTimersByTimeAsync(3000);
+      await expect(lookup).resolves.toEqual({ result: null, source: 'quorum', verified: true });
+      expect(mockRequestViaColibri).not.toHaveBeenCalled();
+    });
+
     test('leaves out a source the caller excluded when asking the later ones', async () => {
       mockRegistry.getNetwork.mockReturnValue({
         access: { readOrder: ['colibri', 'quorum', 'direct'] },

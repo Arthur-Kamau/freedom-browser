@@ -2144,7 +2144,13 @@ async function request(
         allowDirectFallback: source === 'quorum' && order[sourceIndex + 1] === 'direct',
         deadlineMs: sourceDeadlineMs(Number(chainId), {
           interactive,
-          hasFallbackSource: sourceIndex + 1 < order.length || txLookup.unverified !== null,
+          // A deferred Colibri at the end of the order is no fallback for the
+          // sources before it: it is only asked to prove a mined transaction
+          // they report, and asked for an unknown or pending one it traps.
+          // Cutting their budget for it would trade an RPC answer for that.
+          hasFallbackSource: (txLookup.colibriDeferred && source !== 'colibri'
+            ? sourceIndex + 2 < order.length
+            : sourceIndex + 1 < order.length) || txLookup.unverified !== null,
         }),
       });
       signal?.throwIfAborted();

@@ -24,7 +24,11 @@
 // worker's two to four unrelated requests down too. Such a bystander is sent
 // once more, to the fresh worker, with whatever is left of its own deadline:
 // - when the worker is killed as stuck, every request on it that has not
-//   itself reached its deadline;
+//   itself reached its deadline. The host cannot see which request the
+//   verifier is spinning in, only whose deadline fired first, so with more
+//   than one request on the worker nobody is blamed: the overdue ones fail
+//   as bystanders, and the real culprit, resent, is caught alone (and blamed)
+//   on its next worker if it spins again;
 // - after a trap, every draining request the retired WASM instance refused
 //   (the worker reports those as `retry`; colibri-runtime.js).
 // The request that trapped or overran is not retried, nor is a bystander a
@@ -116,11 +120,17 @@ function bystanderError(err) {
 }
 
 // Fail everything on this worker and stop it. Idempotent: 'error', 'exit' and
-// the watchdog can all race here. `culpritId` names the request whose deadline
+// the watchdog can all race here. `culpritId` names the request known to have
 // led to the replacement, when one did; every other request is a bystander.
-// With `{ resendBystanders }` (the stuck-worker watchdog), requests that did
-// not cause the replacement are sent once more.
-function replace(entry, reason, { resendBystanders = false, culpritId = null } = {}) {
+// `{ unattributed }` (a stuck worker with several requests on it) marks every
+// request a bystander: one of them caused it, but which is unknown. With
+// `{ resendBystanders }` (the stuck-worker watchdog), requests that did not
+// cause the replacement, or may not have, are sent once more.
+function replace(entry, reason, {
+  resendBystanders = false,
+  culpritId = null,
+  unattributed = false,
+} = {}) {
   const wasLive = !entry.terminated;
   entry.readyReject?.(new ColibriWorkerError(`Colibri worker failed to start: ${reason}`));
   terminate(entry);
@@ -137,7 +147,7 @@ function replace(entry, reason, { resendBystanders = false, culpritId = null } =
     }
     failed += 1;
     const err = new ColibriWorkerError(`Colibri worker replaced: ${reason}`);
-    request.reject(culpritId !== null && id !== culpritId ? bystanderError(err) : err);
+    request.reject(unattributed || (culpritId !== null && id !== culpritId) ? bystanderError(err) : err);
   }
   if (wasLive && pending.length) {
     log.warn(`[colibri] chain ${entry.chainId} worker replaced (${reason}); ` +
@@ -248,9 +258,15 @@ function onDeadline(entry, id) {
   const probeId = nextRequestId++;
   entry.probes.set(probeId, setTimeout(() => {
     entry.probes.delete(probeId);
+    // The worker is stuck, but in whichever request it is verifying, not
+    // necessarily this one: this request's deadline may simply have come
+    // first. Only a request alone on the worker is known to be the culprit;
+    // otherwise nobody is blamed (see the header).
+    const sole = entry.pending.size === 1;
     replace(entry, 'verification still running after its deadline', {
       resendBystanders: true,
-      culpritId: id,
+      culpritId: sole ? id : null,
+      unattributed: !sole,
     });
   }, STUCK_PROBE_MS));
   try {
