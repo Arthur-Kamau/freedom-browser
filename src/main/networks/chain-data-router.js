@@ -1027,6 +1027,34 @@ async function requestViaMyotis(
   );
 }
 
+// What a caller (a dApp through wallet:chain-request, an onchain app, Ant)
+// may see of a Colibri failure. The SDK's transport errors carry the server
+// URL (the prover's, or a beacon/RPC endpoint's) and the request payload in
+// their text ("Error in rpc call eth_call[…] : Request to https://… with
+// payload {…} failed: fetch failed"), and a prover URL can hold credentials
+// once it is user-entered or keyed (#681). Its `request()` gives every failure
+// it cannot classify a catch-all code: -32603 for a transport or prover
+// failure, 4900 for an HTTP error or "All nodes failed". Those, and errors
+// with no numeric code at all (the worker host's own), become a fixed message;
+// the raw text stays in the main-process log. An error with its own code
+// (3 revert, 4200 unsupported, …) or with revert `data` is an answer the
+// caller can act on and passes through unchanged.
+const COLIBRI_CATCH_ALL_CODES = new Set([-32603, 4900]);
+const COLIBRI_GENERIC_ERROR = 'Colibri request failed';
+
+function colibriCallerError(err, chainId, method) {
+  if (typeof err?.data === 'string') return err;
+  if (typeof err?.code === 'number' && !COLIBRI_CATCH_ALL_CODES.has(err.code)) return err;
+  log.warn(`[chain-data] ${chainId} ${method} via colibri failed: ${err?.message || String(err)}`);
+  const safe = new Error(COLIBRI_GENERIC_ERROR);
+  if (typeof err?.code === 'number') safe.code = err.code;
+  // The adaptive routing reads the raw text (an execution limit demotes
+  // Colibri for the route), so carry its verdict instead of the text.
+  const kind = failureKind(err);
+  if (kind) safe.failureKind = kind;
+  return safe;
+}
+
 async function requestColibri(chainId, method, params, routeKey = null, deadlineMs = null) {
   if (!sourceServesMethod('colibri', method)) {
     throw new SourceUnavailableError(`Colibri does not support ${method}`);
@@ -1050,9 +1078,9 @@ async function requestColibri(chainId, method, params, routeKey = null, deadline
   // A prover call is never left unbounded: without a fall-through budget it
   // still has to settle inside the chain's configured timeout.
   const budgetMs = deadlineMs || configuredSourceTimeoutMs(chainId);
-  const requestPromise = Promise.resolve().then(() =>
-    requestViaColibri(chainId, method, params, { deadlineMs: budgetMs })
-  );
+  const requestPromise = Promise.resolve()
+    .then(() => requestViaColibri(chainId, method, params, { deadlineMs: budgetMs }))
+    .catch((err) => { throw colibriCallerError(err, chainId, method); });
   colibriInFlight.add(requestPromise);
   colibriInFlightByRoute.set(inFlightKey, routeInFlight + 1);
   const release = () => {
