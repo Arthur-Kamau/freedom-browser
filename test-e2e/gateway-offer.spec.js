@@ -270,3 +270,91 @@ test('with "always" on, the page it redirected away from is redirected again onc
   await navigateTo(window, GATEWAY_URL);
   await expect.poll(() => webviewUrl(window), { timeout: 15_000 }).toBe(NATIVE_URL);
 });
+
+// R3-M1: the x402 card's Cancel steps back one entry. That Back has to be
+// counted as a traversal like the toolbar's, or a gateway page behind the
+// paywall is taken for a fresh visit and, with "always" on, sent forward to
+// its native version instead of staying put. The card is the real renderer
+// card; only the wallet-side IPC it reads is stubbed (x402:cancel is real).
+const PAYER = {
+  index: 0,
+  name: 'Account 1',
+  address: '0x209693Bc6afc0C5328bA36FaF03C514EF312287C',
+  type: 'hd',
+};
+
+test('with "always" on, cancelling a payment page whose previous entry is a gateway page stays on it', async ({
+  electronApp,
+  window,
+  harness,
+}) => {
+  await setUp(harness);
+  await navigateTo(window, GATEWAY_URL);
+  await expect(window.locator('[data-test="gateway-offer-pill"]')).toBeVisible({
+    timeout: 15_000,
+  });
+  await navigateTo(window, 'https://example.com/paywall');
+  await expect
+    .poll(() => webviewUrl(window), { timeout: 15_000 })
+    .toBe('https://example.com/paywall');
+  await window.evaluate(() => window.electronAPI.saveSettings({ openWithoutGateway: true }));
+
+  await electronApp.evaluate(({ ipcMain }, payer) => {
+    const replace = (channel, handler) => {
+      ipcMain.removeHandler(channel);
+      ipcMain.handle(channel, handler);
+    };
+    replace('identity:get-status', () => ({ isUnlocked: true }));
+    replace('wallet:get-derived-wallets', () => ({ success: true, wallets: [payer] }));
+    replace('x402:get-details', () => ({
+      success: true,
+      detectionId: 'det-1',
+      url: 'https://example.com/paywall',
+      accepts: [
+        {
+          accept: {
+            amount: '2500000',
+            asset: '0xUSDC',
+            network: 'base',
+            payTo: '0x1111111111111111111111111111111111111111',
+          },
+          tuple: { amount: '2500000', chainId: 8453 },
+          balanceKey: '8453:0xUSDC',
+          asset: { symbol: 'USDC', decimals: 6 },
+          balance: '5000000',
+          fundable: true,
+        },
+      ],
+      initialSelectionIndex: 0,
+    }));
+    replace('x402:get-all-permissions', () => ({ success: true, permissions: [] }));
+  }, PAYER);
+  const guestId = await window.evaluate(async (payer) => {
+    const { walletState } = await import('./lib/wallet/wallet-state.js');
+    walletState.derivedWallets = [payer];
+    walletState.activeWalletIndex = payer.index;
+    const tabs = await import('./lib/tabs.js');
+    return tabs.getActiveWebview()?.getWebContentsId() ?? null;
+  }, PAYER);
+  expect(typeof guestId).toBe('number');
+  await electronApp.evaluate(({ BrowserWindow }, guestId) => {
+    BrowserWindow.getAllWindows()[0].webContents.send('x402:approval-needed', {
+      webContentsId: guestId,
+      detectionId: 'det-1',
+      url: 'https://example.com/paywall',
+      resourceType: 'mainFrame',
+    });
+  }, guestId);
+
+  await expect(window.locator('#x402-approval-reject')).toBeVisible({ timeout: 15_000 });
+  await window.locator('#x402-approval-reject').click();
+
+  await expect.poll(() => webviewUrl(window), { timeout: 15_000 }).toBe(GATEWAY_URL);
+  await expect(window.locator('[data-test="gateway-offer-pill"]')).toBeVisible({
+    timeout: 15_000,
+  });
+  // Well past the lookup: still here, not redirected forward.
+  await window.waitForTimeout(2_000);
+  expect(await webviewUrl(window)).toBe(GATEWAY_URL);
+  await window.screenshot({ path: 'test-results/gateway-offer-x402-cancel.png' });
+});

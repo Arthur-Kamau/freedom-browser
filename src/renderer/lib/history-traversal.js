@@ -10,10 +10,11 @@
 // was configured when the entry first loaded.
 //
 // The mark lives here, in a leaf module, rather than on `tabs.js`'
-// `navigationState`: `page-context-menu.js` is one of the three renderer
+// `navigationState`: `page-context-menu.js` is one of the four renderer
 // routes into a traversal — the toolbar's back/forward buttons and the
-// `interstitial:go-back` handler are the other two, both in `navigation.js`
-// — and it deliberately does not import `tabs.js` (it resolves the active
+// `interstitial:go-back` handler, both in `navigation.js`, and the x402
+// card's Cancel (`wallet/dapp-x402.js`) are the others — and it
+// deliberately does not import `tabs.js` (it resolves the active
 // guest off the DOM), while `tabs.js` already imports `page-context-menu.js`,
 // so putting the setter there would close an import cycle.
 //
