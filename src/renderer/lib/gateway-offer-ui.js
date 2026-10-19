@@ -31,7 +31,7 @@
  */
 
 import { getActiveTab, onWebviewCreated } from './tabs.js';
-import { isHistoryTraversalPending } from './history-traversal.js';
+import { pendingHistoryTraversalCount } from './history-traversal.js';
 import { isModalDialogOpen } from './modal-dialog.js';
 import { pushDebug } from './debug.js';
 import { boundPopoverToViewport } from './popover-bounds.js';
@@ -60,8 +60,23 @@ export const describeOffer = (offer) =>
 //   startedUrl   the last main-frame navigation started, for the "always"
 //                redirect: its answer only counts while nothing newer began.
 //   redirectedFrom  the gateway URL this tab was last sent away from by
-//                "always", which it then may come back to (Back, a page
-//                link) without being sent away again.
+//                "always", which it then may come back to (Back by a route
+//                that leaves no traversal mark, a page link) once without
+//                being sent away again. Only while the tab is still where
+//                "always" sent it: see `redirectLanded`.
+//   redirectLanded  set once a non-gateway page has committed after the
+//                redirect (the native destination). From then on, the first
+//                main-frame start to anywhere *other* than redirectedFrom
+//                means the tab has moved on, and the guard is dropped, so a
+//                later visit to the same gateway URL — typed, bookmarked,
+//                linked an hour on — is redirected like any other.
+//   settledTraversals  the pending traversal count at the last main-frame
+//                same-document commit. A Back that resolves in place (an
+//                anchor, an SPA route) leaves its mark standing, since
+//                same-document commits never consume it (history-traversal
+//                .js); a start only counts as a traversal when the count has
+//                grown past this snapshot, i.e. a Back/Forward was asked for
+//                after the page last moved in place.
 let stateByWebview = new WeakMap();
 let alwaysOpen = false;
 let navigate = null;
@@ -80,7 +95,15 @@ let trustToggleEl;
 const stateFor = (webview) => {
   let st = stateByWebview.get(webview);
   if (!st) {
-    st = { seq: 0, committedUrl: '', offer: null, startedUrl: '', redirectedFrom: '' };
+    st = {
+      seq: 0,
+      committedUrl: '',
+      offer: null,
+      startedUrl: '',
+      redirectedFrom: '',
+      redirectLanded: false,
+      settledTraversals: 0,
+    };
     stateByWebview.set(webview, st);
   }
   return st;
@@ -206,9 +229,12 @@ const openOffer = async () => {
 
 // A main-frame commit (cross-document or in-page): the offer belongs to the
 // new URL, so the old one goes at once and a fresh one is asked for.
-const onCommitted = (webview, url) => {
+const onCommitted = (webview, url, { inPage = false } = {}) => {
   const st = stateFor(webview);
   st.seq += 1;
+  if (inPage) st.settledTraversals = pendingHistoryTraversalCount(webview);
+  else st.settledTraversals = 0;
+  if (st.redirectedFrom && !looksLikeGatewayUrl(url)) st.redirectLanded = true;
   st.committedUrl = url || '';
   const hadOffer = !!st.offer;
   st.offer = null;
@@ -227,17 +253,34 @@ const onCommitted = (webview, url) => {
 const onStarted = (webview, url) => {
   const st = stateFor(webview);
   st.startedUrl = url || '';
+  // Read before anything returns, and reset: the snapshot only discounts a
+  // mark left standing *before* this start (see `settledTraversals`). The
+  // one way it errs: the page being left moving itself in place
+  // (`replaceState`) while a real Back is still in flight snapshots that
+  // Back's own mark, so the gateway page it restores is redirected once.
+  // That goes forward to the native page, not back where the user came
+  // from, so it cannot loop; the same-document commit that would tell the
+  // two apart does not exist (see tabs.js, `did-navigate-in-page`).
+  const traversal = pendingHistoryTraversalCount(webview) > st.settledTraversals;
+  st.settledTraversals = 0;
+  if (st.redirectedFrom && st.redirectLanded && url !== st.redirectedFrom) {
+    // The tab has left the page "always" sent it to: the guard is spent.
+    st.redirectedFrom = '';
+    st.redirectLanded = false;
+  }
   if (!alwaysOpen || !looksLikeGatewayUrl(url)) return;
-  if (isHistoryTraversalPending(webview)) return;
+  if (traversal) return;
   if (st.redirectedFrom && st.redirectedFrom === url) {
     // Back on the page "always" just took this tab away from: stay. The
     // next navigation to it is redirected again.
     st.redirectedFrom = '';
+    st.redirectLanded = false;
     return;
   }
   requestOffer(url).then((offer) => {
     if (!offer || !alwaysOpen || st.startedUrl !== url) return;
     st.redirectedFrom = url;
+    st.redirectLanded = false;
     pushDebug(`[gateway] always open without gateway: ${url} → ${offer.destination}`);
     navigate?.(offer.destination, webview, { auto: true });
   });
@@ -254,7 +297,7 @@ const watchWebview = (webview) => {
   });
   webview.addEventListener('did-navigate-in-page', (event) => {
     if (event.isMainFrame === false) return;
-    onCommitted(webview, event.url);
+    onCommitted(webview, event.url, { inPage: true });
   });
 };
 

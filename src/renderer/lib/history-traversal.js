@@ -147,16 +147,22 @@ export const clearHistoryTraversal = (webview) => {
 };
 
 /**
- * Whether a traversal is still waiting for its commit on `webview`, without
- * consuming it.
+ * How many traversals are still waiting for their commit on `webview`,
+ * without consuming any.
  *
  * Read by the gateway offer (#70) from `did-start-navigation`: with "Always
  * open without gateway" on, a gateway page reached by Back must stay the
  * gateway page — redirecting it again would send the user straight forward
  * to where they just came from, and Back could never get past it.
  *
+ * A count rather than a yes/no, because a mark can be left standing by a
+ * traversal that resolved same-document (see `clearHistoryTraversal`): the
+ * caller snapshots the count at each same-document commit and only treats a
+ * start as a traversal when the count has grown past that snapshot, i.e. a
+ * Back/Forward was asked for *after* the page last moved in place.
+ *
  * @param {object|null} webview - guest `<webview>` element
- * @returns {boolean}
+ * @returns {number}
  */
-export const isHistoryTraversalPending = (webview) =>
-  !!webview && (pendingTraversals.get(webview) || 0) > 0;
+export const pendingHistoryTraversalCount = (webview) =>
+  (webview && pendingTraversals.get(webview)) || 0;

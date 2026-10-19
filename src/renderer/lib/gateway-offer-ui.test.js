@@ -6,7 +6,7 @@
 // `var` (not let) avoids the TDZ under jest.mock hoisting.
 var mockActiveTab = null;
 var mockWebviewCreated = null;
-var mockTraversalPending = false;
+var mockTraversalPending = 0;
 jest.mock('./tabs.js', () => ({
   getActiveTab: jest.fn(() => mockActiveTab),
   onWebviewCreated: jest.fn((listener) => {
@@ -14,7 +14,7 @@ jest.mock('./tabs.js', () => ({
   }),
 }));
 jest.mock('./history-traversal.js', () => ({
-  isHistoryTraversalPending: jest.fn(() => mockTraversalPending),
+  pendingHistoryTraversalCount: jest.fn(() => mockTraversalPending),
 }));
 jest.mock('./modal-dialog.js', () => ({ isModalDialogOpen: jest.fn(() => false) }));
 jest.mock('./debug.js', () => ({ pushDebug: jest.fn() }));
@@ -105,7 +105,7 @@ describe('gateway-offer-ui', () => {
 
   beforeEach(() => {
     _resetForTests();
-    mockTraversalPending = false;
+    mockTraversalPending = 0;
     els = {
       'gateway-offer-pill': createElement('button', { classes: ['hidden'] }),
       'gateway-offer-pill-icon': createElement('span'),
@@ -340,7 +340,7 @@ describe('gateway-offer-ui', () => {
 
     test('on: Back onto a gateway page stays there and shows the pill', async () => {
       setAlways(true);
-      mockTraversalPending = true;
+      mockTraversalPending = 1;
       start(tabA, GATEWAY);
       commit(tabA, GATEWAY);
       await flush();
@@ -361,6 +361,79 @@ describe('gateway-offer-ui', () => {
       start(tabA, GATEWAY);
       await flush();
       expect(navigate).toHaveBeenCalledTimes(2);
+    });
+
+    test('on: the guard expires once the tab moves on (R1-M1)', async () => {
+      setAlways(true);
+      start(tabA, GATEWAY);
+      await flush();
+      expect(navigate).toHaveBeenCalledTimes(1);
+      // The native destination starts and commits: the guard still stands…
+      start(tabA, OFFER.destination);
+      commit(tabA, OFFER.destination);
+      // …the user browses elsewhere, then types/bookmarks the gateway URL again.
+      start(tabA, 'https://example.com/');
+      commit(tabA, 'https://example.com/');
+      start(tabA, GATEWAY);
+      await flush();
+      expect(navigate).toHaveBeenCalledTimes(2);
+    });
+
+    test('on: the guard survives the destination itself, so an unmarked Back stays', async () => {
+      setAlways(true);
+      start(tabA, GATEWAY);
+      await flush();
+      start(tabA, OFFER.destination);
+      commit(tabA, OFFER.destination);
+      // In-page moves on the destination do not end it either.
+      tabA.webview.dispatch('did-navigate-in-page', {
+        url: `${OFFER.destination}x`,
+        isMainFrame: true,
+      });
+      start(tabA, GATEWAY);
+      await flush();
+      expect(navigate).toHaveBeenCalledTimes(1);
+    });
+
+    test('on: the gateway page committing before the redirect does not spend the guard', async () => {
+      setAlways(true);
+      start(tabA, GATEWAY);
+      await flush();
+      commit(tabA, GATEWAY); // a fast gateway committed before loadTarget took over
+      start(tabA, OFFER.destination);
+      commit(tabA, OFFER.destination);
+      start(tabA, GATEWAY);
+      await flush();
+      expect(navigate).toHaveBeenCalledTimes(1);
+    });
+
+    test('on: a mark left by a same-document Back does not shield the next link (R1-M2)', async () => {
+      setAlways(true);
+      commit(tabA, 'https://example.com/a');
+      // Back resolves in place: the mark stays, the in-page commit snapshots it.
+      mockTraversalPending = 1;
+      tabA.webview.dispatch('did-navigate-in-page', {
+        url: 'https://example.com/a#top',
+        isMainFrame: true,
+      });
+      // A link click to a gateway page is not a traversal: redirected.
+      start(tabA, GATEWAY);
+      await flush();
+      expect(navigate).toHaveBeenCalledWith(OFFER.destination, tabA.webview, { auto: true });
+    });
+
+    test('on: a Back asked for after a same-document Back is still a traversal', async () => {
+      setAlways(true);
+      commit(tabA, 'https://example.com/a');
+      mockTraversalPending = 1;
+      tabA.webview.dispatch('did-navigate-in-page', {
+        url: 'https://example.com/a#top',
+        isMainFrame: true,
+      });
+      mockTraversalPending = 2; // a second Back, cross-document this time
+      start(tabA, GATEWAY);
+      await flush();
+      expect(navigate).not.toHaveBeenCalled();
     });
 
     test('switched off while a lookup is in flight: no redirect', async () => {

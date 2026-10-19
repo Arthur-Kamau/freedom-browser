@@ -250,3 +250,23 @@ test('with "always" on, Back onto the gateway page stays there and offers instea
   expect(await webviewUrl(window)).toBe(GATEWAY_URL);
   await expect(window.locator('[data-test="address-input"]')).toHaveValue(GATEWAY_URL);
 });
+
+test('with "always" on, the page it redirected away from is redirected again once the tab has moved on', async ({
+  window,
+  harness,
+}) => {
+  await setUp(harness);
+  await window.evaluate(() => window.electronAPI.saveSettings({ openWithoutGateway: true }));
+
+  await navigateTo(window, GATEWAY_URL);
+  await expect.poll(() => webviewUrl(window), { timeout: 15_000 }).toBe(NATIVE_URL);
+
+  // Somewhere else, then the same gateway URL typed again (R1-M1): the
+  // "just redirected away from" guard belongs to the first visit only.
+  await navigateTo(window, 'https://example.com/elsewhere');
+  await expect
+    .poll(() => webviewUrl(window), { timeout: 15_000 })
+    .toBe('https://example.com/elsewhere');
+  await navigateTo(window, GATEWAY_URL);
+  await expect.poll(() => webviewUrl(window), { timeout: 15_000 }).toBe(NATIVE_URL);
+});
