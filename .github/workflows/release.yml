@@ -230,6 +230,11 @@ jobs:
     # scripts/ci/release-signing-env.test.js).
     environment:
       name: ${{ (github.event_name != 'workflow_dispatch' || inputs.signed) && 'release-signing' || '' }}
+    # The name the artifact is uploaded under, so smoke-mac-arm64 downloads it
+    # by name and reads the signing state off it. Keep in step with the upload
+    # step's `name:`.
+    outputs:
+      artifact: freedom-mac-arm64-${{ env.SIGNED == 'true' && 'signed' || 'unsigned' }}
     env:
       # Tag pushes and scheduled nightlies are always signed and always bundle
       # Tor — testers on macOS need a notarized build as much as users do;
@@ -895,13 +900,15 @@ jobs:
           ignore-scripts: 'true'
           electron-cache: 'false'
 
-      # Signed and unsigned runs upload under different names, so match both
-      # and let the step below read the signing state back off the name that
-      # actually arrived rather than re-deriving it from the inputs.
+      # Signed and unsigned runs upload under different names; the build job
+      # reports the one it used, and the step below reads the signing state
+      # back off it rather than re-deriving it from the inputs. Download by
+      # name: download-artifact v5+ extracts a lone pattern match straight
+      # into `path`, so the artifact name no longer survives as a directory.
       - name: Download the mac arm64 artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: freedom-mac-arm64-*
+          name: ${{ needs.mac-arm64.outputs.artifact }}
           path: artifact
 
       # A tag push must smoke-test the version it claims to be shipping. A
@@ -924,24 +931,20 @@ jobs:
           echo "FREEDOM_E2E_EXPECTED_VERSION=$version" >> "$GITHUB_ENV"
 
       - name: Resolve the downloaded artifact
+        env:
+          ARTIFACT_NAME: ${{ needs.mac-arm64.outputs.artifact }}
         run: |
-          shopt -s nullglob
-          dirs=(artifact/freedom-mac-arm64-*)
-          if [ ${#dirs[@]} -ne 1 ]; then
-            echo "Expected exactly one freedom-mac-arm64-* artifact, found ${#dirs[@]}" >&2
-            exit 1
-          fi
-          case "$(basename "${dirs[0]}")" in
-            *-unsigned) signed=false ;;
-            *-signed) signed=true ;;
+          case "$ARTIFACT_NAME" in
+            freedom-mac-arm64-unsigned) signed=false ;;
+            freedom-mac-arm64-signed) signed=true ;;
             *)
-              echo "Unexpected artifact name $(basename "${dirs[0]}")" >&2
+              echo "Unexpected artifact name '$ARTIFACT_NAME'" >&2
               exit 1
               ;;
           esac
-          ls -la "${dirs[0]}"
-          echo "Artifact ${dirs[0]} (signed=$signed)"
-          echo "ARTIFACT_DIR=${dirs[0]}" >> "$GITHUB_ENV"
+          ls -la artifact
+          echo "Artifact $ARTIFACT_NAME (signed=$signed)"
+          echo "ARTIFACT_DIR=artifact" >> "$GITHUB_ENV"
           echo "SIGNED=$signed" >> "$GITHUB_ENV"
 
       - name: Mount the disk image and copy the app out of it

@@ -62,6 +62,7 @@ explicitly allows multiple bundle instances so profile launching can use
 
 - **Independent Toggle**: Start and stop IPFS separately from Swarm.
 - **Native Transport**: Uses the embedded `freedom-ipfs` native addon instead of a loopback Kubo process.
+- **Content Discovery**: Finds who serves a CID or IPNS name by asking two delegated routing services in parallel, `delegated-ipfs.dev` and `cid.contact`, with the DHT as a fallback. Both services see the CIDs and IPNS names you load; a profile using an external gateway asks neither.
 - **Live Diagnostics**: View native gateway stats and request progress while IPFS/IPNS pages load.
 - **External Gateway Mode**: For hosts where the native addon cannot load, a profile can point IPFS at an external HTTP gateway (e.g. a local Kubo on `:8080`) under **Settings → Nodes**. Freedom does not verify content integrity in this mode — the gateway is trusted for every `ipfs://` page it serves, so prefer a gateway you run yourself. Address a local Kubo as `http://127.0.0.1:8080`, not `http://localhost:8080`: a default-config Kubo redirects `localhost` requests to its subdomain gateway (`<cid>.ipfs.localhost`), which Freedom deliberately does not follow, so the node reads as unreachable. The gateway's version is detected (and shown in the nodes menu) only for a loopback endpoint, where Kubo's RPC API conventionally sits on `:5001`; a remote gateway is never probed on a port you did not configure.
 
