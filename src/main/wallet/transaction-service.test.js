@@ -453,6 +453,26 @@ describe('getTransactionStatus', () => {
     await expect(getTransactionStatus(HASH, 1)).resolves.toMatchObject({ status: 'pending' });
     expect(mockChainRequest).toHaveBeenCalledTimes(1);
   });
+
+  // R3-M1: Colibri traps (and retires its worker) on a hash it has no
+  // receipt for, which is most of what a background sweep polls.
+  test('a background sweep reads the receipt without Colibri', async () => {
+    chain({ eth_getTransactionReceipt: [null] }, { sourceFor: () => 'colibri' });
+
+    await expect(getTransactionStatus(HASH, 1, { sweep: true })).resolves.toMatchObject({
+      status: 'pending',
+    });
+    expect(mockChainRequest).toHaveBeenCalledWith(
+      1, 'eth_getTransactionReceipt', [HASH], { excludeSources: ['colibri'] }
+    );
+  });
+
+  test('an interactive status read still lets Colibri answer the receipt', async () => {
+    chain({ eth_getTransactionReceipt: [null] }, { sourceFor: () => 'colibri' });
+
+    await getTransactionStatus(HASH, 1);
+    expect(mockChainRequest).toHaveBeenCalledWith(1, 'eth_getTransactionReceipt', [HASH], undefined);
+  });
 });
 
 describe('capability-aware transaction routing', () => {

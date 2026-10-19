@@ -397,7 +397,7 @@ describe('payment-history (sqlite)', () => {
       await expect(mod.repollPending(fakeStatus)).resolves.toEqual({
         resolved: 1, stillPending: 1, errors: 0,
       });
-      expect(fakeStatus).toHaveBeenCalledWith('0xdropped', 1, { from: FROM_ADDR, nonce: 0 });
+      expect(fakeStatus).toHaveBeenCalledWith('0xdropped', 1, { from: FROM_ADDR, nonce: 0, sweep: true });
       expect(mod.getById(dropped.id)).toMatchObject({
         status: 'pending',
         metadata: { safeAddress: '0xsafe', txDroppedSeenAt: clock },
@@ -417,6 +417,39 @@ describe('payment-history (sqlite)', () => {
         txNonce: 0,
         failureReason: 'nonce used by another transaction',
       });
+    });
+
+    // R3-M2: the sighting is written after the status lookup resolves; a
+    // finaliser that ran meanwhile must not have its metadata overwritten
+    // with the sweep's stale snapshot.
+    test('a sighting does not overwrite a row finalised during its lookup', async () => {
+      useClock();
+      const row = mod.append({
+        kind: 'wallet-send', chainId: 1, txHash: '0xa', amount: '1',
+        metadata: { txFrom: FROM_ADDR, txNonce: 0 },
+      });
+      await mod.repollPending(async () => {
+        mod.markFailed(row.id, { reason: 'reverted' });
+        return { status: 'dropped' };
+      });
+      const after = mod.getById(row.id);
+      expect(after.status).toBe('failed');
+      expect(after.metadata).toEqual({ failureReason: 'reverted' });
+      expect(after.metadata.txDroppedSeenAt).toBeUndefined();
+    });
+
+    test('a pending answer clears the sighting without dropping concurrent metadata', async () => {
+      useClock();
+      const row = mod.append({
+        kind: 'wallet-send', chainId: 1, txHash: '0xa', amount: '1',
+        metadata: { txFrom: FROM_ADDR, txNonce: 0 },
+      });
+      await mod.repollPending(async () => ({ status: 'dropped' }));
+      await mod.repollPending(async () => {
+        mod.update(row.id, { metadata: { ...mod.getById(row.id).metadata, note: 'added' } });
+        return { status: 'pending' };
+      });
+      expect(mod.getById(row.id).metadata).toEqual({ txFrom: FROM_ADDR, txNonce: 0, note: 'added' });
     });
 
     test('a second sighting inside the confirm window leaves the row pending', async () => {
@@ -486,7 +519,7 @@ describe('payment-history (sqlite)', () => {
       mod.append({ kind: 'wallet-send', chainId: 1, txHash: '0xa', amount: '1' });
       const fn = jest.fn(async () => ({ status: 'pending' }));
       await mod.repollPending(fn);
-      expect(fn).toHaveBeenCalledWith('0xa', 1, { from: undefined, nonce: undefined });
+      expect(fn).toHaveBeenCalledWith('0xa', 1, { from: undefined, nonce: undefined, sweep: true });
     });
 
     test('a call during a sweep queues one more sweep after it, shared by every caller', async () => {

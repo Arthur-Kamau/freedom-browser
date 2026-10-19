@@ -556,8 +556,14 @@ function rowMetadata(row) {
   try { return row.metadata ? JSON.parse(row.metadata) : null; } catch { return null; }
 }
 
+// Re-reads the row rather than reusing the sweep's snapshot: the status
+// lookup awaited in between, and a concurrent finaliser (tx-recorder's
+// markFailed with its failureReason) may have written the row meanwhile.
+// A row no longer pending is left alone.
 function setDroppedSeenAt(row, seenAt) {
-  const metadata = { ...(rowMetadata(row) || {}) };
+  const current = getStatements().getById.get(row.id);
+  if (!current || current.status !== STATUSES.PENDING) return;
+  const metadata = { ...(rowMetadata(current) || {}) };
   if (seenAt === null) delete metadata.txDroppedSeenAt;
   else metadata.txDroppedSeenAt = seenAt;
   update(row.id, { metadata });
@@ -568,6 +574,7 @@ function sentFields(row) {
   return {
     from: typeof metadata?.txFrom === 'string' ? metadata.txFrom : undefined,
     nonce: Number.isSafeInteger(metadata?.txNonce) ? metadata.txNonce : undefined,
+    sweep: true,
   };
 }
 

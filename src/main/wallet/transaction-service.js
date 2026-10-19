@@ -415,11 +415,23 @@ async function signAndSendTransaction(params, signer) {
  * @param {number} [sent.nonce] - Nonce it was signed with; with `from`, lets
  *   a transaction that can no longer be mined report 'dropped' rather than
  *   'pending' forever
+ * @param {boolean} [sent.sweep] - Set by payment-history's background sweep.
+ *   Its rows are mostly hashes no source has a receipt for (still pending,
+ *   dropped, or pre-change rows that can never resolve), and Colibri traps on
+ *   an unknown hash, retiring its worker each time (see
+ *   nonceTakenByAnotherTransaction). A sweep re-polls those rows on every
+ *   send and every confirm timer, so it reads receipts without Colibri;
+ *   quorum still verifies the answer.
  * @returns {Promise<Object>} Transaction status
  */
-async function getTransactionStatus(txHash, chainId, { from, nonce } = {}) {
+async function getTransactionStatus(txHash, chainId, { from, nonce, sweep = false } = {}) {
   try {
-    const { result: receipt } = await chainData.request(chainId, 'eth_getTransactionReceipt', [txHash]);
+    const { result: receipt } = await chainData.request(
+      chainId,
+      'eth_getTransactionReceipt',
+      [txHash],
+      sweep ? { excludeSources: ['colibri'] } : undefined
+    );
 
     if (!receipt) {
       if (await nonceTakenByAnotherTransaction(txHash, chainId, from, nonce)) {
