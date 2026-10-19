@@ -213,10 +213,20 @@ async function resolveFeeParams({ maxFeePerGas, maxPriorityFeePerGas, gasPrice, 
 
   const fees = await getGasPrices(chainId);
 
-  if (fees.type === 'eip1559' && isPositiveFee(fees.maxFeePerGas) && isPositiveFee(fees.maxPriorityFeePerGas)) {
-    return { maxFeePerGas: fees.maxFeePerGas, maxPriorityFeePerGas: fees.maxPriorityFeePerGas };
-  }
-  if (isPositiveFee(fees.gasPrice)) {
+  // The quote already carries the headroom (chain-data-router's feeQuote):
+  // a type-2 cap of 2x base fee + tip, and on a chain without EIP-1559 a
+  // legacy gasPrice above eth_gasPrice. Sign those as quoted; an EIP-1559
+  // quote that cannot form a valid transaction is never downgraded to a
+  // legacy gasPrice here (#749).
+  if (fees.type === 'eip1559') {
+    if (
+      isPositiveFee(fees.maxFeePerGas) &&
+      isPositiveFee(fees.maxPriorityFeePerGas) &&
+      BigInt(fees.maxPriorityFeePerGas) <= BigInt(fees.maxFeePerGas)
+    ) {
+      return { maxFeePerGas: fees.maxFeePerGas, maxPriorityFeePerGas: fees.maxPriorityFeePerGas };
+    }
+  } else if (isPositiveFee(fees.gasPrice)) {
     return { gasPrice: fees.gasPrice };
   }
 
@@ -400,13 +410,21 @@ async function signAndSendTransaction(params, signer) {
  * Get transaction status/receipt
  * @param {string} txHash - Transaction hash
  * @param {number} chainId - Chain ID
+ * @param {Object} [sent] - What the transaction was signed with, when known
+ * @param {string} [sent.from] - Signing account
+ * @param {number} [sent.nonce] - Nonce it was signed with; with `from`, lets
+ *   a transaction that can no longer be mined report 'dropped' rather than
+ *   'pending' forever
  * @returns {Promise<Object>} Transaction status
  */
-async function getTransactionStatus(txHash, chainId) {
+async function getTransactionStatus(txHash, chainId, { from, nonce } = {}) {
   try {
     const { result: receipt } = await chainData.request(chainId, 'eth_getTransactionReceipt', [txHash]);
 
     if (!receipt) {
+      if (await nonceTakenByAnotherTransaction(txHash, chainId, from, nonce)) {
+        return { status: 'dropped', hash: txHash, nonce };
+      }
       return {
         status: 'pending',
         hash: txHash,
@@ -431,6 +449,21 @@ async function getTransactionStatus(txHash, chainId) {
       error: err.message,
     };
   }
+}
+
+/**
+ * A transaction with no receipt is either still waiting or will never be
+ * mined. It can never be mined once its sender's mined nonce has moved past
+ * it: some other transaction took that nonce (a re-send, a replacement, or
+ * this one dropped and the slot reused). Re-check the receipt after reading
+ * the nonce, since this transaction may itself be what moved it in between.
+ */
+async function nonceTakenByAnotherTransaction(txHash, chainId, from, nonce) {
+  if (typeof from !== 'string' || !Number.isSafeInteger(nonce) || nonce < 0) return false;
+  const { result: count } = await chainData.request(chainId, 'eth_getTransactionCount', [from, 'latest']);
+  if (BigInt(count) <= BigInt(nonce)) return false;
+  const { result: receipt } = await chainData.request(chainId, 'eth_getTransactionReceipt', [txHash]);
+  return !receipt;
 }
 
 /**

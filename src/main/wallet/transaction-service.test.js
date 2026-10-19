@@ -12,6 +12,7 @@ const {
   getGasPrices,
   signAndSendTransaction,
   waitForTransaction,
+  getTransactionStatus,
 } = require('./transaction-service');
 jest.mock('./chains', () => ({
   getTxExplorerUrl: (chainId, hash) => `https://explorer.test/${chainId}/${hash}`,
@@ -107,6 +108,52 @@ describe('signAndSendTransaction (signer-based)', () => {
     const parsed = Transaction.from(broadcastedRaw);
     expect(parsed.type).toBe(0);
     expect(parsed.gasPrice).toBe(7_000_000_000n);
+  });
+
+  // #749: the router's quote already carries the headroom (a type-2 cap
+  // derived from the block's base fee, or a buffered legacy gasPrice on a
+  // chain without EIP-1559); resolveFeeParams signs it as quoted.
+  it('signs a type-2 quote the router derived from the block base fee', async () => {
+    mockGetFeeQuote.mockResolvedValue({
+      type: 'eip1559',
+      baseFee: '137164402',
+      maxPriorityFeePerGas: '50000000',
+      maxFeePerGas: '324328804',
+      effectiveGasPrice: '187164402',
+      source: 'colibri',
+    });
+
+    await signAndSendTransaction(
+      { to: '0x209693Bc6afc0C5328bA36FaF03C514EF312287C', value: '1', gasLimit: '21000', chainId: 1 },
+      signer,
+    );
+
+    const parsed = Transaction.from(broadcastedRaw);
+    expect(parsed.type).toBe(2);
+    expect(parsed.gasPrice).toBeNull();
+    expect(parsed.maxFeePerGas).toBe(324_328_804n);
+    expect(parsed.maxPriorityFeePerGas).toBe(50_000_000n);
+  });
+
+  it('never downgrades an unusable type-2 quote to a legacy gas price', async () => {
+    const signTransaction = jest.fn();
+    // A type-2 quote whose tip exceeds its cap cannot be signed; the stray
+    // gasPrice on it must not be signed instead.
+    mockGetFeeQuote.mockResolvedValue({
+      type: 'eip1559',
+      maxFeePerGas: '100',
+      maxPriorityFeePerGas: '1000',
+      gasPrice: '137168303',
+      source: 'colibri',
+    });
+
+    await expect(
+      signAndSendTransaction(
+        { to: '0x209693Bc6afc0C5328bA36FaF03C514EF312287C', value: '1', gasLimit: '21000', chainId: 1 },
+        { ...signer, signTransaction },
+      ),
+    ).rejects.toThrow('Unable to determine a gas price');
+    expect(signTransaction).not.toHaveBeenCalled();
   });
 
   it('refuses to sign when the network reports no usable gas price', async () => {
@@ -244,6 +291,67 @@ describe('signAndSendTransaction (signer-based)', () => {
         decliningSigner,
       ),
     ).rejects.toThrow(/User rejected on device/);
+  });
+});
+
+describe('getTransactionStatus', () => {
+  const HASH = `0x${'aa'.repeat(32)}`;
+  const FROM = testWallet.address;
+
+  beforeEach(() => {
+    mockChainRequest.mockReset();
+  });
+
+  function chain(answers) {
+    mockChainRequest.mockImplementation(async (_chainId, method) => {
+      const queue = answers[method];
+      if (!queue || queue.length === 0) throw new Error(`unexpected ${method}`);
+      return { result: queue.shift(), source: 'direct' };
+    });
+  }
+
+  test('reports a transaction whose nonce another transaction took as dropped', async () => {
+    chain({
+      eth_getTransactionReceipt: [null, null],
+      eth_getTransactionCount: ['0x1'],
+    });
+
+    await expect(getTransactionStatus(HASH, 1, { from: FROM, nonce: 0 })).resolves.toEqual({
+      status: 'dropped',
+      hash: HASH,
+      nonce: 0,
+    });
+    expect(mockChainRequest).toHaveBeenCalledWith(1, 'eth_getTransactionCount', [FROM, 'latest']);
+  });
+
+  test('stays pending while the sender\'s mined nonce has not reached it', async () => {
+    chain({
+      eth_getTransactionReceipt: [null],
+      eth_getTransactionCount: ['0x3'],
+    });
+
+    await expect(getTransactionStatus(HASH, 1, { from: FROM, nonce: 3 })).resolves.toMatchObject({
+      status: 'pending',
+    });
+  });
+
+  test('is not dropped when it was this transaction that moved the nonce', async () => {
+    // Mined between the first receipt lookup and the nonce read.
+    chain({
+      eth_getTransactionReceipt: [null, { status: '0x1', blockNumber: '0xa', gasUsed: '0x5208' }],
+      eth_getTransactionCount: ['0x1'],
+    });
+
+    await expect(getTransactionStatus(HASH, 1, { from: FROM, nonce: 0 })).resolves.toMatchObject({
+      status: 'pending',
+    });
+  });
+
+  test('without the sent nonce, a missing receipt is only ever pending', async () => {
+    chain({ eth_getTransactionReceipt: [null] });
+
+    await expect(getTransactionStatus(HASH, 1)).resolves.toMatchObject({ status: 'pending' });
+    expect(mockChainRequest).toHaveBeenCalledTimes(1);
   });
 });
 

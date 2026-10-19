@@ -38,9 +38,11 @@ const STATUSES = Object.freeze({
   FAILED: 'failed',
   SETTLED: 'settled',
   NO_RECEIPT: 'no-receipt',
+  // Never mined, and never can be: another transaction took its nonce.
+  DROPPED: 'dropped',
 });
 const FINAL_STATUSES = new Set([
-  STATUSES.CONFIRMED, STATUSES.FAILED, STATUSES.SETTLED, STATUSES.NO_RECEIPT,
+  STATUSES.CONFIRMED, STATUSES.FAILED, STATUSES.SETTLED, STATUSES.NO_RECEIPT, STATUSES.DROPPED,
 ]);
 const isFinalStatus = (status) => FINAL_STATUSES.has(status);
 
@@ -387,6 +389,16 @@ function markFailed(id, { reason, gasUsed, gasPrice } = {}) {
   });
 }
 
+// Merges into the row's metadata rather than replacing it: a Safe row's
+// own metadata must survive the status change.
+function markDropped(id) {
+  const existing = getById(id);
+  return update(id, {
+    status: STATUSES.DROPPED,
+    metadata: { ...(existing?.metadata || {}), failureReason: 'nonce used by another transaction' },
+  });
+}
+
 // Filter keys the store accepts; anything else is silently dropped so the
 // renderer can pass through UI state without breaking. Clamping `limit`
 // and `offset` guards against a runaway page-size request pulling the
@@ -465,17 +477,38 @@ function removeById(id) {
 
 /**
  * Re-poll every `pending` row's status. For each row, the caller-supplied
- * `getStatusFn(txHash, chainId)` is awaited; if it returns a final status
+ * `getStatusFn(txHash, chainId, sent)` is awaited; if it returns a final status
  * the row is updated. Anything that throws or stays pending is left alone.
+ * `sent` is `{ from, nonce }` as the row's metadata recorded them at send
+ * time (tx-recorder), so a transaction whose nonce another transaction has
+ * since taken resolves as 'dropped' instead of staying pending forever.
  *
  * Exposed as an explicit function (not auto-run on open) so callers can
- * trigger it once the provider stack is up. PH2 will wire this from
- * `index.js` after the wallet bootstrap finishes.
+ * trigger it once the provider stack is up: `index.js` at boot, and
+ * tx-recorder whenever one of its transactions resolves. A call while a
+ * sweep is running joins that sweep.
  *
- * @param {(txHash:string, chainId:number) => Promise<{status:string, gasUsed?:string, gasPrice?:string}>} getStatusFn
+ * @param {(txHash:string, chainId:number, sent:{from?:string, nonce?:number}) => Promise<{status:string, gasUsed?:string, gasPrice?:string}>} getStatusFn
  * @returns {Promise<{ resolved:number, stillPending:number, errors:number }>}
  */
-async function repollPending(getStatusFn) {
+let repollInFlight = null;
+function repollPending(getStatusFn) {
+  if (!repollInFlight) {
+    repollInFlight = repollPendingOnce(getStatusFn).finally(() => { repollInFlight = null; });
+  }
+  return repollInFlight;
+}
+
+function sentFields(row) {
+  let metadata = null;
+  try { metadata = row.metadata ? JSON.parse(row.metadata) : null; } catch { /* ignore */ }
+  return {
+    from: typeof metadata?.txFrom === 'string' ? metadata.txFrom : undefined,
+    nonce: Number.isSafeInteger(metadata?.txNonce) ? metadata.txNonce : undefined,
+  };
+}
+
+async function repollPendingOnce(getStatusFn) {
   const pending = getStatements().getPending.all();
   let resolved = 0;
   let stillPending = 0;
@@ -484,8 +517,11 @@ async function repollPending(getStatusFn) {
   for (const row of pending) {
     if (!row.tx_hash) { stillPending++; continue; }
     try {
-      const r = await getStatusFn(row.tx_hash, row.chain_id);
-      if (r?.status === STATUSES.CONFIRMED) {
+      const r = await getStatusFn(row.tx_hash, row.chain_id, sentFields(row));
+      if (r?.status === STATUSES.DROPPED) {
+        markDropped(row.id);
+        resolved++;
+      } else if (r?.status === STATUSES.CONFIRMED) {
         markConfirmed(row.id, { gasUsed: r.gasUsed, gasPrice: r.gasPrice ?? r.effectiveGasPrice });
         resolved++;
       } else if (r?.status === STATUSES.FAILED) {
@@ -558,6 +594,7 @@ module.exports = {
   update,
   markConfirmed,
   markFailed,
+  markDropped,
   getRecent,
   getById,
   getCount,

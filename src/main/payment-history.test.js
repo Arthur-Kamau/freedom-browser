@@ -368,6 +368,66 @@ describe('payment-history (sqlite)', () => {
       expect(mod.getById(row.id).status).toBe('pending');
     });
 
+    // #749: a dropped transaction never gets a receipt; once another
+    // transaction takes its nonce the row resolves instead of staying
+    // pending forever.
+    test('resolves a row whose nonce another transaction took as dropped', async () => {
+      const dropped = mod.append({
+        kind: 'safe-send', chainId: 1, txHash: '0xdropped', amount: '1',
+        metadata: { safeAddress: '0xsafe', txFrom: FROM_ADDR, txNonce: 0 },
+      });
+      const resend = mod.append({
+        kind: 'wallet-send', chainId: 1, txHash: '0xresend', amount: '1',
+        metadata: { txFrom: FROM_ADDR, txNonce: 0 },
+      });
+      const fakeStatus = jest.fn(async (txHash) => (
+        txHash === '0xresend' ? { status: 'confirmed', gasUsed: '21000' } : { status: 'dropped' }
+      ));
+
+      const summary = await mod.repollPending(fakeStatus);
+
+      expect(summary).toEqual({ resolved: 2, stillPending: 0, errors: 0 });
+      expect(fakeStatus).toHaveBeenCalledWith('0xdropped', 1, { from: FROM_ADDR, nonce: 0 });
+      const row = mod.getById(dropped.id);
+      expect(row.status).toBe('dropped');
+      expect(row.confirmedAt).toEqual(expect.any(Number));
+      // The row's own metadata survives the status change.
+      expect(row.metadata).toMatchObject({
+        safeAddress: '0xsafe',
+        txNonce: 0,
+        failureReason: 'nonce used by another transaction',
+      });
+      expect(mod.getById(resend.id).status).toBe('confirmed');
+    });
+
+    test('a dropped row is final and is not polled again', async () => {
+      mod.append({ kind: 'wallet-send', chainId: 1, txHash: '0xa', amount: '1' });
+      await mod.repollPending(async () => ({ status: 'dropped' }));
+      const fn = jest.fn();
+      await expect(mod.repollPending(fn)).resolves.toEqual({ resolved: 0, stillPending: 0, errors: 0 });
+      expect(fn).not.toHaveBeenCalled();
+    });
+
+    test('a row recorded without a sender nonce is polled without one', async () => {
+      mod.append({ kind: 'wallet-send', chainId: 1, txHash: '0xa', amount: '1' });
+      const fn = jest.fn(async () => ({ status: 'pending' }));
+      await mod.repollPending(fn);
+      expect(fn).toHaveBeenCalledWith('0xa', 1, { from: undefined, nonce: undefined });
+    });
+
+    test('a call during a sweep joins it rather than polling every row twice', async () => {
+      mod.append({ kind: 'wallet-send', chainId: 1, txHash: '0xa', amount: '1' });
+      let release;
+      const fn = jest.fn(() => new Promise((resolve) => { release = resolve; }));
+      const first = mod.repollPending(fn);
+      const second = mod.repollPending(fn);
+      expect(second).toBe(first);
+      await new Promise((resolve) => setImmediate(resolve));
+      release({ status: 'confirmed' });
+      await first;
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
     test('pending rows with no txHash are skipped, not polled', async () => {
     mod.append({ kind: 'wallet-send', chainId: 1, amount: '1' }); // no txHash
       const fn = jest.fn();
