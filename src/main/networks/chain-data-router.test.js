@@ -1532,8 +1532,13 @@ describe('chain-data-router', () => {
 
   // #681: the Colibri SDK's transport errors carry the prover URL and the
   // request payload. A caller of the router gets a fixed message instead; the
-  // raw text stays in the main-process log.
+  // detail goes to the verbose log only, with its URLs redacted.
   describe('Colibri error text reaching callers (#681)', () => {
+    // Every line the router logged, at any level.
+    const logged = () => [...mockLog.verbose.mock.calls, ...mockLog.warn.mock.calls]
+      .map((args) => args.join(' '))
+      .join('\n');
+
     const PROVER = 'https://user:secret@prover.example/key/abc';
     // The shape Colibri's request() throws for a fetch failure:
     // ProviderRpcError.createError wraps it with its catch-all -32603.
@@ -1584,9 +1589,29 @@ describe('chain-data-router', () => {
       expect(err.data).toBeUndefined();
       expect(JSON.stringify({ message: err.message, code: err.code }))
         .not.toMatch(/prover|secret|payload|https?:/);
-      expect(mockLog.warn).toHaveBeenCalledWith(
-        expect.stringContaining(`Request to ${PROVER}/proof`)
+      // Nothing about it reaches the on-disk log (warn and up), and the
+      // verbose detail keeps the shape but none of the URL or its secret.
+      expect(mockLog.warn).not.toHaveBeenCalled();
+      expect(mockLog.verbose).toHaveBeenCalledWith(
+        expect.stringContaining('colibri error replaced for the caller: Error in rpc call eth_call')
       );
+      expect(mockLog.verbose).toHaveBeenCalledWith(expect.stringContaining('Request to <url> with'));
+      expect(logged()).not.toMatch(/secret|user:|prover\.example|https?:/);
+    });
+
+    test('caps the logged detail of a huge error', async () => {
+      onlyColibri(['direct']);
+      const huge = transportError();
+      huge.message += ` ${'calldata '.repeat(2000)}0x${'ab'.repeat(5000)}`;
+      mockRequestViaColibri.mockRejectedValue(huge);
+
+      await rejection(request(1, 'eth_call', [{ to: '0xabc' }, 'latest']));
+
+      const line = mockLog.verbose.mock.calls
+        .map(([text]) => text)
+        .find((text) => text.includes('colibri error replaced'));
+      expect(line.length).toBeLessThan(600);
+      expect(line).not.toMatch(/secret|https?:/);
     });
 
     // Pins the shape the router keys on against the installed SDK, as the
@@ -1625,7 +1650,9 @@ describe('chain-data-router', () => {
       const err = await rejection(request(1, 'eth_getBalance', ['0xabc', 'latest']));
 
       expect(err).toMatchObject({ message: 'Colibri request failed', code: -32603 });
-      expect(mockLog.warn).toHaveBeenCalledWith(expect.stringContaining(dead));
+      expect(mockLog.warn).not.toHaveBeenCalled();
+      expect(logged()).not.toContain('secret-api-key');
+      expect(logged()).toContain('<url>');
     }, 60_000);
 
     test('keeps the 4900 an HTTP error gets but not its text', async () => {
@@ -1668,7 +1695,9 @@ describe('chain-data-router', () => {
       const err = await rejection(request(1, 'eth_call', [{ to: '0xabc' }, 'latest']));
 
       expect(err).toBe(coded);
-      expect(mockLog.warn).not.toHaveBeenCalled();
+      expect(mockLog.verbose).not.toHaveBeenCalledWith(
+        expect.stringContaining('colibri error replaced')
+      );
     });
 
     test('still demotes Colibri for a route whose replaced error was an execution limit', async () => {
@@ -1687,7 +1716,7 @@ describe('chain-data-router', () => {
       await expect(request(1, 'eth_call', target, app)).resolves.toMatchObject({ source: 'direct' });
       await expect(request(1, 'eth_call', target, app)).resolves.toMatchObject({ source: 'direct' });
 
-      expect(mockLog.warn).toHaveBeenCalledWith(expect.stringContaining('Out of gas'));
+      expect(mockLog.verbose).toHaveBeenCalledWith(expect.stringContaining('Out of gas'));
       expect(mockRequestViaColibri).toHaveBeenCalledTimes(1);
     });
   });

@@ -1035,17 +1035,31 @@ async function requestViaMyotis(
 // once it is user-entered or keyed (#681). Its `request()` gives every failure
 // it cannot classify a catch-all code: -32603 for a transport or prover
 // failure, 4900 for an HTTP error or "All nodes failed". Those, and errors
-// with no numeric code at all (the worker host's own), become a fixed message;
-// the raw text stays in the main-process log. An error with its own code
-// (3 revert, 4200 unsupported, …) or with revert `data` is an answer the
-// caller can act on and passes through unchanged.
+// with no numeric code at all (the worker host's own), become a fixed message.
+// That includes text Colibri forwarded from an upstream RPC under -32603
+// without revert data (e.g. eth_estimateGas's "insufficient funds"): the SDK
+// gives no way to tell it apart from its own transport text, so it goes too.
+// An error with its own code (3 revert, 4200 unsupported, …) or with revert
+// `data` is an answer the caller can act on and passes through unchanged.
+//
+// The detail goes to the log at `verbose` (console with DEBUG only, never the
+// on-disk main.log a bug report attaches), with every URL replaced by <url>
+// (a prover URL can carry user:token or a key path) and capped like every
+// other source failure the router logs. It fires before later sources are
+// tried, so it must stay cheap on a prover that is down for every call.
 const COLIBRI_CATCH_ALL_CODES = new Set([-32603, 4900]);
 const COLIBRI_GENERIC_ERROR = 'Colibri request failed';
+
+function colibriLogDetail(err) {
+  return safeErrorMessage({
+    message: (err?.message || String(err)).replace(/[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]+/gi, '<url>'),
+  });
+}
 
 function colibriCallerError(err, chainId, method) {
   if (typeof err?.data === 'string') return err;
   if (typeof err?.code === 'number' && !COLIBRI_CATCH_ALL_CODES.has(err.code)) return err;
-  log.warn(`[chain-data] ${chainId} ${method} via colibri failed: ${err?.message || String(err)}`);
+  log.verbose(`[chain-data] ${chainId} ${method} colibri error replaced for the caller: ${colibriLogDetail(err)}`);
   const safe = new Error(COLIBRI_GENERIC_ERROR);
   if (typeof err?.code === 'number') safe.code = err.code;
   // The adaptive routing reads the raw text (an execution limit demotes
