@@ -1001,8 +1001,14 @@ describe('swarm-provider-ipc', () => {
 
       // A blob of `size` bytes: the root read reports its size, the join
       // returns that many bytes.
+      // The root chunk on the wire is its 8-byte span plus up to 4 KiB.
+      const rootChunk = (size) => ({
+        size: BigInt(size),
+        payload: Buffer.alloc(0),
+        chunkBytes: 8 + Math.min(size, 4096),
+      });
       function mockBlob(size) {
-        mockReadDataRoot.mockResolvedValue({ size: BigInt(size), payload: Buffer.alloc(0) });
+        mockReadDataRoot.mockResolvedValue(rootChunk(size));
         mockReadData.mockResolvedValue({
           data: Buffer.alloc(size, 0x61).toString('base64'),
           encoding: 'base64',
@@ -1011,7 +1017,7 @@ describe('swarm-provider-ipc', () => {
 
       test('reads a whole blob without connection permission', async () => {
         mockGetPermission.mockReturnValue(null);
-        const root = { size: 9000n, payload: Buffer.alloc(64) };
+        const root = { size: 9000n, payload: Buffer.alloc(64), chunkBytes: 72 };
         mockReadDataRoot.mockResolvedValue(root);
         mockReadData.mockResolvedValue({
           data: Buffer.alloc(9000, 0x61).toString('base64'),
@@ -1081,26 +1087,69 @@ describe('swarm-provider-ipc', () => {
         expect((await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth')).result).toBeDefined();
       });
 
-      test('refuses past the byte budget after the join, like swarm_readChunk', async () => {
+      test('reserves the size before the join, so concurrent reads cannot all start one', async () => {
         mockGetPermission.mockReturnValue(null);
-        // The root claims 100 KiB, but a concurrent read could fill the window
-        // between the size check and the join: the bytes actually returned
-        // are what count.
-        mockReadDataRoot.mockResolvedValue({ size: 100n * BigInt(KIB), payload: Buffer.alloc(0) });
-        mockReadData.mockResolvedValue({
-          data: Buffer.alloc(600 * KIB).toString('base64'),
-          encoding: 'base64',
+        mockBlob(100 * KIB);
+        // Hold every join open until all reads have been issued.
+        let release;
+        const gate = new Promise((resolve) => { release = resolve; });
+        mockReadData.mockImplementation(async () => {
+          await gate;
+          return { data: Buffer.alloc(100 * KIB).toString('base64'), encoding: 'base64' };
         });
 
-        const result = await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth');
+        const pending = Array.from({ length: 20 }, () =>
+          invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth'));
+        // Let every read get past its root read and budget check.
+        await new Promise((resolve) => setImmediate(resolve));
+        await new Promise((resolve) => setImmediate(resolve));
+        release();
+        const results = await Promise.all(pending);
 
-        expect(result.error.code).toBe(-32602);
-        expect(result.error.data.reason).toBe('rate_limited');
+        // 512 KiB / 100 KiB: five joins fit, the other fifteen never start.
+        expect(mockReadData).toHaveBeenCalledTimes(5);
+        expect(results.filter((r) => r.result)).toHaveLength(5);
+        const refused = results.filter((r) => r.error);
+        expect(refused).toHaveLength(15);
+        for (const r of refused) expect(r.error.data.reason).toBe('rate_limited');
+      });
+
+      test('charges the root chunk even when the blob is refused as too large', async () => {
+        mockGetPermission.mockReturnValue(null);
+        mockReadDataRoot.mockResolvedValue({
+          size: BigInt(512 * KIB + 1), payload: Buffer.alloc(0), chunkBytes: 4104,
+        });
+        expect((await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth')).error.data.reason)
+          .toBe('data_too_large');
+
+        // 4104 bytes are spent, so a blob of exactly what is left fits and
+        // one byte more does not.
+        mockBlob(512 * KIB - 4104);
+        expect((await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth')).result).toBeDefined();
+        clearPermissionFreeReadBudgets();
+        mockReadDataRoot.mockResolvedValue({
+          size: BigInt(512 * KIB + 1), payload: Buffer.alloc(0), chunkBytes: 4104,
+        });
+        await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth');
+        mockReadData.mockClear();
+        mockBlob(512 * KIB - 4104 + 1);
+        expect((await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth')).error.data.reason)
+          .toBe('rate_limited');
+        expect(mockReadData).not.toHaveBeenCalled();
+      });
+
+      test('a single-chunk blob is charged its root chunk only', async () => {
+        mockGetPermission.mockReturnValue(null);
+        mockBlob(4096); // 4104 bytes on the wire, charged once, not twice
+        expect((await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth')).result).toBeDefined();
+
+        mockBlob(512 * KIB - 4104);
+        expect((await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth')).result).toBeDefined();
       });
 
       test('refuses a blob larger than the anonymous byte budget without downloading it', async () => {
         mockGetPermission.mockReturnValue(null);
-        mockReadDataRoot.mockResolvedValue({ size: BigInt(512 * KIB + 1), payload: Buffer.alloc(0) });
+        mockReadDataRoot.mockResolvedValue(rootChunk(512 * KIB + 1));
 
         const result = await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth');
 
@@ -1122,7 +1171,7 @@ describe('swarm-provider-ipc', () => {
 
         clearPermissionFreeReadBudgets();
         mockReadData.mockClear();
-        mockReadDataRoot.mockResolvedValue({ size: BigInt(5 * MIB + 1), payload: Buffer.alloc(0) });
+        mockReadDataRoot.mockResolvedValue(rootChunk(5 * MIB + 1));
         const tooLarge = await invokeProvider('swarm_readData', { reference: VALID_REF }, 'myapp.eth');
 
         expect(tooLarge.error.data).toMatchObject({ reason: 'data_too_large', limit: 5 * MIB });
@@ -1131,7 +1180,7 @@ describe('swarm-provider-ipc', () => {
 
       test('reports a size beyond Number.MAX_SAFE_INTEGER as a BigInt', async () => {
         mockGetPermission.mockReturnValue(null);
-        mockReadDataRoot.mockResolvedValue({ size: 1n << 60n, payload: Buffer.alloc(0) });
+        mockReadDataRoot.mockResolvedValue({ size: 1n << 60n, payload: Buffer.alloc(0), chunkBytes: 4104 });
 
         const result = await invokeProvider('swarm_readData', { reference: VALID_REF }, 'unknown.eth');
 

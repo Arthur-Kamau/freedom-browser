@@ -216,6 +216,9 @@ async function readDataRoot(reference) {
   return {
     size: dataSizeFromSpan(chunk.span.toUint8Array()),
     payload: Buffer.from(chunk.payload.toUint8Array()),
+    // What the root read itself pulled off the network (span + payload), so
+    // the caller can charge it whether or not the blob is then joined.
+    chunkBytes: raw.length,
   };
 }
 

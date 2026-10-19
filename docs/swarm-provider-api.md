@@ -161,10 +161,11 @@ permission manifest", with a typographic apostrophe U+2019) the app's permission
 | `invalid_params`                                                                                                | Any (generic shape error)                                                                                                |
 | `unsupported_option` (+ `data.option`)                                                                          | Methods that take `options`: it must be absent or `{}`                                                                   |
 | `payload_too_large` (+ `limit`, `actual`)                                                                       | Publish, chunk and message writes; `swarm_writeFeedEntry` (neither `limit` nor `actual`)                                 |
+| `data_too_large` (+ `limit`, `actual`)                                                                          | `swarm_readData`                                                                                                         |
 | `missing_content_type`                                                                                          | `swarm_publishData`                                                                                                      |
 | `empty_files`, `too_many_files`, `invalid_path`, `duplicate_path`, `invalid_index_document`                     | `swarm_publishFiles`                                                                                                     |
-| `invalid_reference`, `invalid_span`, `invalid_identifier`, `invalid_owner`                                      | Chunk methods, `swarm_updateFeed`, feed reads                                                                            |
-| `chunk_not_found`, `chunk_type_mismatch`                                                                        | Chunk reads                                                                                                              |
+| `invalid_reference`, `invalid_span`, `invalid_identifier`, `invalid_owner`                                      | Chunk methods, `swarm_readData`, `swarm_updateFeed`, feed reads                                                          |
+| `chunk_not_found`, `chunk_type_mismatch`                                                                        | Chunk reads, `swarm_readData`                                                                                            |
 | `invalid_feed_name`, `invalid_topic`, `feed_not_found`, `feed_empty`, `entry_not_found`, `index_already_exists` | Feed methods                                                                                                             |
 | `invalid_topic`, `invalid_recipient`, `invalid_target`, `invalid_payload`, `invalid_address`, `invalid_kind`    | Messaging methods                                                                                                        |
 | `subscription_not_found`                                                                                        | `swarm_unsubscribe`                                                                                                      |
@@ -199,16 +200,16 @@ A content-addressed `bzz://<ref>` origin changes with every redeploy. An app
 that wants its grants and feeds to survive a redeploy should be served under
 an ENS name.
 
-| Tier           | Methods                                                                                                            | Grant                        | Prompt                                                                                                                             |
-| -------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Tier           | Methods                                                                                                                              | Grant                        | Prompt                                                                                                                             |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | **Public**     | `swarm_getCapabilities`, `swarm_readChunk`, `swarm_readData`, `swarm_readSingleOwnerChunk`, `swarm_readFeedEntry`, `swarm_listFeeds` | none                         | never                                                                                                                              |
-| **Connection** | `swarm_requestAccess`                                                                                              | —                            | once per origin                                                                                                                    |
-|                | `swarm_getUploadStatus`                                                                                            | connection                   | never                                                                                                                              |
-| **Publish**    | `swarm_publishData`, `swarm_publishFiles`, `swarm_publishChunk`                                                    | connection                   | every call, unless "always allow" (`autoApprove.publish`)                                                                          |
-| **Feeds**      | `swarm_createFeed`, `swarm_updateFeed`, `swarm_writeFeedEntry`                                                     | connection + feed grant      | the first call grants the tier and picks the identity; later calls prompt unless `autoApprove.feeds`                               |
-| **Signing**    | `swarm_getSigningIdentity`, `swarm_writeSingleOwnerChunk`                                                          | connection + feed grant      | as Feeds, with `autoApprove.signing`                                                                                               |
-| **Messaging**  | `swarm_getMessagingIdentity`, `swarm_subscribe`, `swarm_sendPss`, `swarm_sendGsoc`                                 | connection + messaging grant | the first call grants the tier; sends prompt every time unless `autoApprove.messaging`; identity and subscribe do not prompt again |
-|                | `swarm_unsubscribe`                                                                                                | connection                   | never                                                                                                                              |
+| **Connection** | `swarm_requestAccess`                                                                                                                | —                            | once per origin                                                                                                                    |
+|                | `swarm_getUploadStatus`                                                                                                              | connection                   | never                                                                                                                              |
+| **Publish**    | `swarm_publishData`, `swarm_publishFiles`, `swarm_publishChunk`                                                                      | connection                   | every call, unless "always allow" (`autoApprove.publish`)                                                                          |
+| **Feeds**      | `swarm_createFeed`, `swarm_updateFeed`, `swarm_writeFeedEntry`                                                                       | connection + feed grant      | the first call grants the tier and picks the identity; later calls prompt unless `autoApprove.feeds`                               |
+| **Signing**    | `swarm_getSigningIdentity`, `swarm_writeSingleOwnerChunk`                                                                            | connection + feed grant      | as Feeds, with `autoApprove.signing`                                                                                               |
+| **Messaging**  | `swarm_getMessagingIdentity`, `swarm_subscribe`, `swarm_sendPss`, `swarm_sendGsoc`                                                   | connection + messaging grant | the first call grants the tier; sends prompt every time unless `autoApprove.messaging`; identity and subscribe do not prompt again |
+|                | `swarm_unsubscribe`                                                                                                                  | connection                   | never                                                                                                                              |
 
 Notes:
 
@@ -371,9 +372,13 @@ Not reported there:
   origin is connected, 120 requests / 512 KiB when it is not. Exceeding it is
   `-32602 rate_limited`; a read that crosses the byte budget is refused after
   the fact, so its data is not returned. `swarm_readData` is one request
-  whatever the blob's size, and knows the size before downloading, so it
-  refuses a blob that would cross the byte budget up front; a blob larger
-  than the whole byte budget is `data_too_large` instead (see the method).
+  whatever the blob's size. Its root chunk (up to 4104 bytes) is charged as
+  soon as it is read, even if the read is then refused; a blob held in that
+  root chunk costs nothing more. A larger blob is charged its size in all,
+  reserved before the node joins it, so a blob that would cross the byte
+  budget, counting reads still in flight, is refused up front and is never
+  downloaded. The reservation stands if the join fails. A blob larger than
+  the whole byte budget is `data_too_large` instead (see the method).
 - **New GSOC topics**: 16 per origin per 60 s (only topics that have to be
   mined count; cached topics are free). Exceeding it is `-32602 rate_limited`
   with `retryAfterMs`.
@@ -494,7 +499,9 @@ the blob's size from its span (with the redundancy level cleared from the
 span's top byte). A blob larger than the origin's byte budget
 ([Limits](#limits): 5 MiB connected, 512 KiB not) is refused with
 `data_too_large` (`data.limit`, `data.actual` in bytes) before the rest is
-downloaded. Only unencrypted 32-byte references are accepted for now; an
+downloaded; one that fits the budget but not what is left of the current
+window, counting reads still in flight, is `rate_limited`, also before the
+download. Only unencrypted 32-byte references are accepted for now; an
 encrypted 64-byte one is `invalid_reference`. Errors: `invalid_reference`,
 `chunk_not_found` (the root or a chunk under it), `chunk_type_mismatch` (the
 root is not a CAC for that address), `data_too_large`, `rate_limited`. The

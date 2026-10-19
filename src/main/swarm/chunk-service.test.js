@@ -280,7 +280,7 @@ describe('chunk-service', () => {
 
     test('readDataRoot verifies the root chunk and returns the size from its span', async () => {
       const payload = Buffer.alloc(64, 0x01);
-      mockDownloadChunk.mockResolvedValue(Buffer.from('raw'));
+      mockDownloadChunk.mockResolvedValue(Buffer.alloc(8 + 64));
       mockUnmarshalContentAddressedChunk.mockReturnValue(
         makeCac(payload, withLevel(9000, 1), CAC_REFERENCE)
       );
@@ -288,7 +288,8 @@ describe('chunk-service', () => {
       const root = await readDataRoot(CAC_REFERENCE);
 
       expect(mockDownloadChunk).toHaveBeenCalledWith(CAC_REFERENCE);
-      expect(root).toEqual({ size: 9000n, payload });
+      // chunkBytes is what came off the wire, so the caller can charge it.
+      expect(root).toEqual({ size: 9000n, payload, chunkBytes: 72 });
       expect(mockDownloadData).not.toHaveBeenCalled();
     });
 

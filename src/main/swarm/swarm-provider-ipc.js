@@ -312,15 +312,26 @@ function readBudgetExceeded(budget) {
 }
 
 /**
- * The bytes still left in the origin's current read window, without
- * consuming any. Lets a blob read refuse before downloading what the budget
- * would refuse after the fact anyway.
+ * Reserve `bytes` of the origin's current read window up front, or refuse
+ * without reserving anything. Unlike consumePermissionFreeReadBudget, which
+ * charges after the fact, the check and the charge happen in one synchronous
+ * step, so concurrent reads cannot all pass a "does it still fit" check and
+ * then each pay for a download only one of them may return.
  */
-function remainingPermissionFreeReadBytes(origin) {
+function reservePermissionFreeReadBytes(origin, bytes) {
   const budget = getReadBudget(origin);
-  const bucket = permissionFreeReadBuckets.get(origin);
-  if (!bucket || Date.now() - bucket.startedAt >= budget.windowMs) return budget.maxBytes;
-  return budget.maxBytes - bucket.bytes;
+  const now = Date.now();
+  const existing = permissionFreeReadBuckets.get(origin);
+  const bucket = existing && now - existing.startedAt < budget.windowMs
+    ? existing
+    : { startedAt: now, requests: 0, bytes: 0 };
+
+  if (bucket.bytes + bytes > budget.maxBytes) {
+    return readBudgetExceeded(budget);
+  }
+  bucket.bytes += bytes;
+  permissionFreeReadBuckets.set(origin, bucket);
+  return null;
 }
 
 /**
@@ -886,12 +897,16 @@ async function handleReadChunk(params, origin) {
 
 /**
  * Handle swarm_readData: permission-free read of a whole blob, joined by the
- * node. One request against the read budget, like swarm_readChunk, and the
- * returned bytes count against it the same way. A blob larger than the
- * origin's whole byte budget can never be returned, so it is refused with
- * data_too_large from its root chunk's span, before the node joins it; one
- * that only overruns what is left of the current window is rate_limited,
- * also before the download.
+ * node. One request against the read budget, like swarm_readChunk, and bytes
+ * against the shared byte budget. The root chunk is charged as soon as it is
+ * read, whatever happens next. A blob larger than the origin's whole byte
+ * budget can never be returned, so it is refused with data_too_large from the
+ * root chunk's span, before the node joins it. A blob that does not fit in
+ * its root chunk has its full size reserved before the join, atomically, so
+ * concurrent reads cannot each start a join the window has no room for; one
+ * that does not fit what is left is rate_limited without downloading. The
+ * reservation stands if the join then fails, since the node may already have
+ * fetched most of it.
  */
 async function handleReadData(params, origin) {
   if (!params || typeof params !== 'object') {
@@ -916,6 +931,8 @@ async function handleReadData(params, origin) {
 
   try {
     const root = await readDataRoot(params.reference);
+    // The root chunk came off the network: charge it before any refusal.
+    const rootBudgetError = consumePermissionFreeReadBudget(origin, { bytes: root.chunkBytes });
 
     const budget = getReadBudget(origin);
     if (root.size > BigInt(budget.maxBytes)) {
@@ -926,15 +943,18 @@ async function handleReadData(params, origin) {
         { limit: budget.maxBytes, actual }
       );
     }
-    if (Number(root.size) > remainingPermissionFreeReadBytes(origin)) {
-      return readBudgetExceeded(budget);
+    if (rootBudgetError) return rootBudgetError;
+
+    // A blob held in its root chunk is that chunk's payload: already paid
+    // for. A larger one is charged its size in all (the root counts towards
+    // it), reserved now, before the node joins it.
+    const size = Number(root.size);
+    if (size > root.chunkBytes) {
+      const reserveError = reservePermissionFreeReadBytes(origin, size - root.chunkBytes);
+      if (reserveError) return reserveError;
     }
 
     const result = await readData(params.reference, root);
-    const byteBudgetError = consumePermissionFreeReadBudget(origin, {
-      bytes: Buffer.byteLength(result.data, 'base64'),
-    });
-    if (byteBudgetError) return byteBudgetError;
     return { result };
   } catch (err) {
     log.error(`[SwarmProvider] readData failed for ${origin}:`, err.message);
