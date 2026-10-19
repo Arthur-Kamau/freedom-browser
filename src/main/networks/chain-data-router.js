@@ -169,6 +169,28 @@ const MAX_MYOTIS_IN_FLIGHT = 1;
 const MAX_MYOTIS_QUEUED = 16;
 const MAX_COLIBRI_IN_FLIGHT = 8;
 const MAX_COLIBRI_IN_FLIGHT_PER_ROUTE = 2;
+// Colibri proves that a transaction is in a block; it cannot prove one is
+// absent or still pending. Asked for a hash its prover has not seen (a send
+// not mined yet, a dropped one, a pending one), Colibri 3.0.2's verifier spins
+// for 4-10 s of CPU and then traps with "memory access out of bounds"
+// (#750, reproduced 2026-10-19 against mainnet1.colibri-proof.tech). Two of
+// those at once keep its worker from answering the host's liveness ping, so
+// the host kills the worker and every request on it, verifiable or not. So
+// these lookups ask the RPC sources after Colibri first, and only a
+// transaction they report as mined goes on to Colibri for its proof (see
+// requestTxLookup).
+const TX_LOOKUP_METHODS = new Set(['eth_getTransactionReceipt', 'eth_getTransactionByHash']);
+// Per (chain, method) backoff from the verifier itself faulting (a WASM trap,
+// or its worker replaced under the request), whoever asked: wallet-internal
+// reads carry no routing context, so the per-app adaptive state above never
+// sees them. COLIBRI_FAULT_THRESHOLD faults within COLIBRI_FAULT_WINDOW_MS
+// keep Colibri out of that method on that chain for the next cooldown step;
+// a Colibri answer for it clears the record. Process-local, like the rest.
+const COLIBRI_FAULT_WINDOW_MS = 60_000;
+const COLIBRI_FAULT_THRESHOLD = 2;
+const COLIBRI_FAULT_COOLDOWNS_MS = [60_000, 5 * 60_000, 15 * 60_000];
+const COLIBRI_FAULT_PATTERN =
+  /memory access out of bounds|(?:^|: )unreachable(?: executed)?$|retired after a trap|Colibri worker replaced/i;
 const MAX_ADAPTIVE_SOURCE_ROUTES = 1024;
 
 // These are deliberately process-local. A source that struggles with one
@@ -178,6 +200,8 @@ const adaptiveSourceState = new Map();
 const myotisSlots = new Map();
 const colibriInFlight = new Set();
 const colibriInFlightByRoute = new Map();
+// `${chainId} ${method}` -> { faults: [timestamps], strikes, coolUntil }
+const colibriFaults = new Map();
 // What each RPC endpoint can serve for a range-capped log scan (callers that
 // pass rangeCapOf, i.e. the bundled Ant node's eth_getLogs through its bridge):
 // `${chainId} ${url}` -> { refusedFrom, capUntil, slowFrom, slowUntil,
@@ -445,6 +469,7 @@ function clearAdaptiveRoutingForTest() {
   myotisSlots.clear();
   colibriInFlight.clear();
   colibriInFlightByRoute.clear();
+  colibriFaults.clear();
   logRangeState.clear();
   logIndexCoolUntil.clear();
   logIndexPairCoolUntil.clear();
@@ -1069,9 +1094,50 @@ function colibriCallerError(err, chainId, method) {
   return safe;
 }
 
+const colibriFaultKey = (chainId, method) => `${Number(chainId)} ${method}`;
+
+function isColibriFault(err) {
+  return err?.name === 'RuntimeError' ||
+    COLIBRI_FAULT_PATTERN.test(String(err?.message || ''));
+}
+
+function colibriBackedOff(chainId, method, now = Date.now()) {
+  return (colibriFaults.get(colibriFaultKey(chainId, method))?.coolUntil || 0) > now;
+}
+
+function noteColibriAnswer(chainId, method) {
+  colibriFaults.delete(colibriFaultKey(chainId, method));
+}
+
+function noteColibriFault(chainId, method, now = Date.now()) {
+  const key = colibriFaultKey(chainId, method);
+  const state = colibriFaults.get(key) || { faults: [], strikes: 0, coolUntil: 0 };
+  // Requests already in flight when the backoff started still land here.
+  if (state.coolUntil > now) return;
+  state.faults = state.faults.filter((at) => now - at < COLIBRI_FAULT_WINDOW_MS);
+  state.faults.push(now);
+  if (state.faults.length >= COLIBRI_FAULT_THRESHOLD) {
+    const cooldownMs = COLIBRI_FAULT_COOLDOWNS_MS[
+      Math.min(state.strikes, COLIBRI_FAULT_COOLDOWNS_MS.length - 1)
+    ];
+    state.strikes += 1;
+    state.faults = [];
+    state.coolUntil = now + cooldownMs;
+    log.warn(`[chain-data] chain ${Number(chainId)} ${method}: the Colibri verifier faulted ` +
+      `${COLIBRI_FAULT_THRESHOLD} times within ${COLIBRI_FAULT_WINDOW_MS / 1000}s; ` +
+      `not asking Colibri for it for ${cooldownMs / 1000}s`);
+  }
+  colibriFaults.set(key, state);
+}
+
 async function requestColibri(chainId, method, params, routeKey = null, deadlineMs = null) {
   if (!sourceServesMethod('colibri', method)) {
     throw new SourceUnavailableError(`Colibri does not support ${method}`);
+  }
+  if (colibriBackedOff(chainId, method)) {
+    throw new SourceUnavailableError(
+      `Colibri backed off for ${method} after repeated verifier faults`
+    );
   }
   if (!registry.getEndpoints(chainId, 'prover').length) {
     throw new SourceUnavailableError('No Colibri prover configured');
@@ -1094,7 +1160,19 @@ async function requestColibri(chainId, method, params, routeKey = null, deadline
   const budgetMs = deadlineMs || configuredSourceTimeoutMs(chainId);
   const requestPromise = Promise.resolve()
     .then(() => requestViaColibri(chainId, method, params, { deadlineMs: budgetMs }))
-    .catch((err) => { throw colibriCallerError(err, chainId, method); });
+    .then(
+      (result) => {
+        noteColibriAnswer(chainId, method);
+        return result;
+      },
+      (err) => {
+        // Seen here even when the caller's deadline already moved it on: the
+        // worker host settles every request, if only when it replaces the
+        // worker (colibri-worker-host.js).
+        if (isColibriFault(err)) noteColibriFault(chainId, method);
+        throw colibriCallerError(err, chainId, method);
+      }
+    );
   colibriInFlight.add(requestPromise);
   colibriInFlightByRoute.set(inFlightKey, routeInFlight + 1);
   const release = () => {
@@ -1908,6 +1986,58 @@ async function checkLogTruncation(source, chainId, method, params, result, optio
   }
 }
 
+// A transaction lookup Colibri is in the read order for (TX_LOOKUP_METHODS).
+// The sources after Colibri answer first. Nothing proves an absence or a
+// pending transaction, so their null (not found) or pending (no block yet)
+// answer is final, labelled with the source that gave it. A mined
+// transaction is then asked of Colibri, whose proof replaces that answer; if
+// Colibri fails, the answer already in hand is returned instead of asking the
+// later sources a second time. Only when every later source failed is
+// Colibri asked on its own, as the last source left.
+function txLookupNeedsProof(method, result) {
+  if (result === null || result === undefined) return false;
+  if (method === 'eth_getTransactionByHash') {
+    return result.blockNumber != null && result.blockHash != null;
+  }
+  return true;
+}
+
+async function requestTxLookup(chainId, method, params, {
+  routeKey, includeTrust, signal, interactive, askLaterSources,
+}) {
+  let unverified = null;
+  let laterError = null;
+  try {
+    unverified = await askLaterSources();
+  } catch (err) {
+    signal?.throwIfAborted();
+    laterError = err;
+  }
+  if (unverified && !txLookupNeedsProof(method, unverified.result)) return unverified;
+  signal?.throwIfAborted();
+  try {
+    const sourceResult = await requestSource('colibri', chainId, method, params, {
+      includeTrust,
+      routeKey,
+      deadlineMs: sourceDeadlineMs(chainId, { interactive, hasFallbackSource: unverified !== null }),
+    });
+    signal?.throwIfAborted();
+    recordAdaptiveSuccess(routeKey);
+    return {
+      result: includeTrust ? sourceResult.result : sourceResult,
+      source: 'colibri',
+      verified: true,
+      ...(includeTrust && sourceResult.trust ? { trust: sourceResult.trust } : {}),
+    };
+  } catch (err) {
+    signal?.throwIfAborted();
+    recordAdaptiveFailure(routeKey, err);
+    log.verbose(`[chain-data] ${chainId} ${method} via colibri failed: ${safeErrorMessage(err)}`);
+    if (unverified) return unverified;
+    throw laterError;
+  }
+}
+
 async function request(
   chainId,
   method,
@@ -1997,6 +2127,26 @@ async function request(
     if (adaptiveSourceUnavailable(routeKey)) {
       failures.push(`${source}: temporarily bypassed for this app workload`);
       continue;
+    }
+    if (source === 'colibri' && TX_LOOKUP_METHODS.has(method) && sourceIndex + 1 < order.length) {
+      return requestTxLookup(Number(chainId), method, params, {
+        routeKey,
+        includeTrust,
+        signal,
+        interactive,
+        // The same request, from the sources after Colibri only.
+        askLaterSources: () => request(chainId, method, params, {
+          includeTrust,
+          routingContext,
+          signal,
+          background,
+          directTimeoutMs,
+          quorumTimeoutMs,
+          rankError,
+          excludeSources: [...excludeSources, ...order.slice(0, sourceIndex + 1)],
+          includeSources,
+        }),
+      });
     }
     const directAnsweredBy = {};
     try {

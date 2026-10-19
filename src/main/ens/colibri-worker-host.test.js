@@ -175,6 +175,106 @@ describe('colibri worker host', () => {
     expect(c.worker.terminate).not.toHaveBeenCalled();
   });
 
+  // #750: one unknown-hash lookup keeping the worker busy past its deadline
+  // used to fail every unrelated request on that worker with it.
+  test('a stuck-worker kill sends bystanders still inside their deadline to the new worker', async () => {
+    const client = host.createClient(CONFIG);
+    const stuck = await startRequest(client, { method: 'eth_getTransactionReceipt' }, { deadlineMs: 2000 });
+    jest.advanceTimersByTime(1500);
+    const bystander = await startRequest(client, { method: 'eth_getTransactionReceipt', params: ['0xmined'] },
+      { deadlineMs: 2000 });
+    expect(bystander.worker).toBe(stuck.worker);
+    jest.advanceTimersByTime(500 + host.STUCK_PROBE_MS);
+    expect(stuck.worker.terminate).toHaveBeenCalledTimes(1);
+    await expect(stuck.promise).rejects.toThrow(/verification still running after its deadline/);
+    expect(mockLogWarn).toHaveBeenCalledWith(
+      '[colibri] chain 1 worker replaced (verification still running after its deadline); ' +
+      '1 request(s) failed, 1 sent to the new worker'
+    );
+
+    await flush();
+    const fresh = lastWorker();
+    expect(fresh).not.toBe(stuck.worker);
+    fresh.emit('message', { type: 'ready' });
+    await flush();
+    const [resent] = sentRequests(fresh);
+    expect(resent).toMatchObject({ method: 'eth_getTransactionReceipt', params: ['0xmined'] });
+    fresh.emit('message', { type: 'result', id: resent.id, ok: true, result: { status: '0x1' } });
+    await expect(bystander.promise).resolves.toEqual({ status: '0x1' });
+  });
+
+  test('a resent bystander keeps what is left of its deadline and is not resent twice', async () => {
+    const client = host.createClient(CONFIG);
+    const stuck = await startRequest(client, { method: 'eth_call' }, { deadlineMs: 2000 });
+    jest.advanceTimersByTime(1500);
+    const bystander = await startRequest(client, { method: 'eth_chainId' }, { deadlineMs: 2000 });
+    jest.advanceTimersByTime(500 + host.STUCK_PROBE_MS);
+    await expect(stuck.promise).rejects.toThrow(/still running/);
+    await flush();
+    const fresh = lastWorker();
+    fresh.emit('message', { type: 'ready' });
+    await flush();
+    expect(sentRequests(fresh)).toHaveLength(1);
+    // It spent 1500 of its 2000 ms on the killed worker: its deadline ping
+    // comes 500 ms later, not a full 2000 ms later.
+    jest.advanceTimersByTime(499);
+    expect(fresh.postMessage.mock.calls.some(([m]) => m.type === 'ping')).toBe(false);
+    jest.advanceTimersByTime(1);
+    expect(fresh.postMessage.mock.calls.some(([m]) => m.type === 'ping')).toBe(true);
+    // Overdue on the fresh worker too: it fails with it this time.
+    jest.advanceTimersByTime(host.STUCK_PROBE_MS);
+    await expect(bystander.promise).rejects.toThrow(/still running/);
+    await flush();
+    expect(Worker).toHaveBeenCalledTimes(2);
+  });
+
+  test('a stuck-worker kill does not resend a destroyed client’s request', async () => {
+    const stuck = await startRequest(host.createClient(CONFIG), { method: 'eth_call' }, { deadlineMs: 2000 });
+    const other = host.createClient(CONFIG);
+    jest.advanceTimersByTime(1500);
+    const bystander = await startRequest(other, { method: 'eth_chainId' }, { deadlineMs: 2000 });
+    other.destroy();
+    jest.advanceTimersByTime(500 + host.STUCK_PROBE_MS);
+    await expect(stuck.promise).rejects.toThrow(/still running/);
+    await expect(bystander.promise).rejects.toThrow(/Colibri worker replaced/);
+    await flush();
+    expect(Worker).toHaveBeenCalledTimes(1);
+  });
+
+  test('after a trap, a request the retired instance refused is retried once on a fresh worker', async () => {
+    const client = host.createClient(CONFIG);
+    const a = await startRequest(client, { method: 'eth_getTransactionReceipt', params: ['0xunknown'] });
+    const b = await startRequest(client, { method: 'eth_blockNumber' });
+    const trapped = a.worker;
+    trapped.emit('message', { type: 'trap', message: 'memory access out of bounds' });
+    // The trapping request itself fails: asking again would trap again.
+    trapped.emit('message', {
+      type: 'result', id: a.id, ok: false,
+      error: { name: 'ProviderRpcError', message: 'memory access out of bounds', code: -32603 },
+    });
+    await expect(a.promise).rejects.toThrow(/memory access out of bounds/);
+    const refused = {
+      name: 'ProviderRpcError',
+      message: 'Colibri WASM runtime was retired after a trap; refusing execute()',
+    };
+    trapped.emit('message', { type: 'result', id: b.id, ok: false, error: refused, retry: true });
+    expect(trapped.terminate).toHaveBeenCalledTimes(1);
+    await flush();
+    const fresh = lastWorker();
+    expect(fresh).not.toBe(trapped);
+    fresh.emit('message', { type: 'ready' });
+    await flush();
+    const [resent] = sentRequests(fresh);
+    expect(resent).toMatchObject({ method: 'eth_blockNumber' });
+
+    // Refused again on the fresh worker: no second retry.
+    fresh.emit('message', { type: 'trap', message: 'memory access out of bounds' });
+    fresh.emit('message', { type: 'result', id: resent.id, ok: false, error: refused, retry: true });
+    await expect(b.promise).rejects.toThrow(/retired after a trap/);
+    await flush();
+    expect(Worker).toHaveBeenCalledTimes(2);
+  });
+
   test('a worker that exits fails its requests instead of leaving them pending', async () => {
     const { promise, worker } = await startRequest(host.createClient(CONFIG), { method: 'eth_call' });
     worker.emit('error', new Error('Worker terminated due to reaching memory limit'));

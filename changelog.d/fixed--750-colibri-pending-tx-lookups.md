@@ -1,0 +1,1 @@
+- Waiting on a just-sent Ethereum transaction no longer breaks the proof checker and fails the wallet and page reads running beside it ([#750](https://github.com/solardev-xyz/freedom-browser/issues/750))

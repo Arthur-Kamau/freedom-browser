@@ -18,6 +18,17 @@
 // Every request promise returned here therefore settles: with the worker's
 // answer, or when its worker is replaced. The router keeps its in-flight slot
 // until then, as before.
+//
+// A request that was merely on the same worker as the one that broke it is
+// not failed with it (#750): one unknown-hash receipt lookup used to take its
+// worker's two to four unrelated requests down too. Such a bystander is sent
+// once more, to the fresh worker, with whatever is left of its own deadline:
+// - when the worker is killed as stuck, every request on it that has not
+//   itself reached its deadline;
+// - after a trap, every draining request the retired WASM instance refused
+//   (the worker reports those as `retry`; colibri-runtime.js).
+// The request that trapped or overran is not retried, nor is a bystander a
+// second time, nor one whose client was destroyed meanwhile.
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
 const log = require('../logger');
@@ -82,21 +93,42 @@ function terminate(entry) {
   }
 }
 
+// Whether `request` may be sent again to a fresh worker (see the header). The
+// request whose deadline started the stuck-worker check has none left.
+function canResend(request) {
+  return !request.resent && !request.client.destroyed &&
+    request.deadlineAt - Date.now() > 0;
+}
+
+function resend(request) {
+  request.resent = true;
+  dispatch(request).catch(request.reject);
+}
+
 // Fail everything on this worker and stop it. Idempotent: 'error', 'exit' and
-// the watchdog can all race here.
-function replace(entry, reason) {
+// the watchdog can all race here. With `{ resendBystanders }` (the stuck-worker
+// watchdog), requests that did not cause the replacement are sent once more.
+function replace(entry, reason, { resendBystanders = false } = {}) {
   const wasLive = !entry.terminated;
   entry.readyReject?.(new ColibriWorkerError(`Colibri worker failed to start: ${reason}`));
   terminate(entry);
   const pending = [...entry.pending.values()];
   entry.pending.clear();
+  let failed = 0;
+  let resent = 0;
   for (const request of pending) {
     clearTimeout(request.timer);
+    if (resendBystanders && canResend(request)) {
+      resent += 1;
+      resend(request);
+      continue;
+    }
+    failed += 1;
     request.reject(new ColibriWorkerError(`Colibri worker replaced: ${reason}`));
   }
   if (wasLive && pending.length) {
     log.warn(`[colibri] chain ${entry.chainId} worker replaced (${reason}); ` +
-      `${pending.length} request(s) failed`);
+      `${failed} request(s) failed` + (resent ? `, ${resent} sent to the new worker` : ''));
   }
 }
 
@@ -148,6 +180,7 @@ function spawn(chainId) {
       case 'result':
         settle(entry, message.id, (pending) => {
           if (message.ok) pending.resolve(message.result);
+          else if (message.retry && canResend(pending)) resend(pending);
           else pending.reject(reviveError(message.error));
         });
         return;
@@ -201,7 +234,7 @@ function onDeadline(entry, id) {
   const probeId = nextRequestId++;
   entry.probes.set(probeId, setTimeout(() => {
     entry.probes.delete(probeId);
-    replace(entry, 'verification still running after its deadline');
+    replace(entry, 'verification still running after its deadline', { resendBystanders: true });
   }, STUCK_PROBE_MS));
   try {
     entry.worker.postMessage({ type: 'ping', id: probeId });
@@ -214,33 +247,54 @@ function onDeadline(entry, id) {
   }, ABANDONED_MS);
 }
 
-async function sendRequest(client, method, params, deadlineMs) {
+// Posts `request` to the chain's live worker (spawning one if needed). The
+// request object outlives a worker: a resend dispatches it again, and its
+// promise settles once, through request.resolve/reject.
+async function dispatch(request) {
+  const { client } = request;
   const entry = await liveEntry(client.chainId).ready;
   if (client.destroyed) throw new ColibriWorkerError('Colibri client was destroyed');
+  // The deadline runs from the first time a worker is ready for the request,
+  // as it always has; a resend keeps what is left of it.
+  if (request.deadlineAt === null) request.deadlineAt = Date.now() + request.deadlineMs;
+  const id = nextRequestId++;
+  entry.pending.set(id, request);
+  for (const old of client.workers) if (old.terminated) client.workers.delete(old);
+  client.workers.add(entry);
+  request.timer = setTimeout(
+    () => onDeadline(entry, id),
+    Math.max(1, request.deadlineAt - Date.now())
+  );
+  try {
+    entry.worker.postMessage({
+      type: 'request',
+      id,
+      clientId: client.id,
+      config: client.config,
+      method: request.method,
+      params: request.params,
+    });
+  } catch (err) {
+    settle(entry, id, (p) => p.reject(new ColibriWorkerError(
+      `Colibri request could not be sent: ${err.message}`
+    )));
+  }
+}
+
+function sendRequest(client, method, params, deadlineMs) {
   return new Promise((resolve, reject) => {
-    const id = nextRequestId++;
-    const pending = { resolve, reject, timer: null };
-    entry.pending.set(id, pending);
-    for (const old of client.workers) if (old.terminated) client.workers.delete(old);
-    client.workers.add(entry);
-    pending.timer = setTimeout(
-      () => onDeadline(entry, id),
-      Math.max(1, Number(deadlineMs) || DEFAULT_DEADLINE_MS)
-    );
-    try {
-      entry.worker.postMessage({
-        type: 'request',
-        id,
-        clientId: client.id,
-        config: client.config,
-        method,
-        params,
-      });
-    } catch (err) {
-      settle(entry, id, (p) => p.reject(new ColibriWorkerError(
-        `Colibri request could not be sent: ${err.message}`
-      )));
-    }
+    const request = {
+      client,
+      method,
+      params,
+      deadlineMs: Math.max(1, Number(deadlineMs) || DEFAULT_DEADLINE_MS),
+      deadlineAt: null,
+      resolve,
+      reject,
+      timer: null,
+      resent: false,
+    };
+    dispatch(request).catch(reject);
   });
 }
 
