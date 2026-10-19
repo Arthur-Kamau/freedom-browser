@@ -391,12 +391,17 @@ function markFailed(id, { reason, gasUsed, gasPrice } = {}) {
 }
 
 // Merges into the row's metadata rather than replacing it: a Safe row's
-// own metadata must survive the status change.
+// own metadata must survive the status change. Only a row still pending
+// is marked: the sweep decides 'dropped' from a lookup it awaited, and a
+// concurrent finaliser (tx-recorder's markConfirmed/markFailed) may have
+// written the row's final status meanwhile; that status stands. The read
+// and the write run in one synchronous step, so nothing lands between.
 function markDropped(id) {
   const existing = getById(id);
+  if (!existing || existing.status !== STATUSES.PENDING) return null;
   return update(id, {
     status: STATUSES.DROPPED,
-    metadata: { ...(existing?.metadata || {}), failureReason: 'nonce used by another transaction' },
+    metadata: { ...(existing.metadata || {}), failureReason: 'nonce used by another transaction' },
   });
 }
 
@@ -593,8 +598,7 @@ async function repollPendingOnce(getStatusFn) {
       if (r?.status === STATUSES.DROPPED) {
         const now = Date.now();
         if (Number.isFinite(seenAt) && now - seenAt >= DROPPED_CONFIRM_MS) {
-          markDropped(row.id);
-          resolved++;
+          if (markDropped(row.id)) resolved++;
           continue;
         }
         if (!Number.isFinite(seenAt) || seenAt > now) setDroppedSeenAt(row, now);

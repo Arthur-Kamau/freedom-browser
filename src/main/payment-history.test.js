@@ -438,6 +438,38 @@ describe('payment-history (sqlite)', () => {
       expect(after.metadata.txDroppedSeenAt).toBeUndefined();
     });
 
+    // R4-M1: the confirming sweep's 'dropped' answer is also stale once
+    // its lookup resolves; a final status written meanwhile stands.
+    test.each([
+      ['confirmed', (id) => mod.markConfirmed(id, { gasUsed: '21000' }), { txFrom: FROM_ADDR, txNonce: 0 }],
+      ['failed', (id) => mod.markFailed(id, { reason: 'reverted' }), { failureReason: 'reverted' }],
+    ])('a confirming sweep does not overwrite a row %s during its lookup', async (status, finalise, metadata) => {
+      useClock();
+      const row = mod.append({
+        kind: 'wallet-send', chainId: 1, txHash: '0xa', amount: '1',
+        metadata: { txFrom: FROM_ADDR, txNonce: 0 },
+      });
+      await mod.repollPending(async () => ({ status: 'dropped' }));
+      const seenAt = mod.getById(row.id).metadata.txDroppedSeenAt;
+      clock += mod.DROPPED_CONFIRM_MS;
+      await expect(mod.repollPending(async () => {
+        finalise(row.id);
+        return { status: 'dropped' };
+      })).resolves.toEqual({ resolved: 0, stillPending: 0, errors: 0 });
+      const after = mod.getById(row.id);
+      expect(after.status).toBe(status);
+      expect(after.metadata).toEqual(status === 'confirmed'
+        ? { ...metadata, txDroppedSeenAt: seenAt }
+        : metadata);
+    });
+
+    test('markDropped leaves a row that is no longer pending alone', () => {
+      const row = mod.append({ kind: 'wallet-send', chainId: 1, txHash: '0xa', amount: '1' });
+      mod.markConfirmed(row.id, {});
+      expect(mod.markDropped(row.id)).toBeNull();
+      expect(mod.getById(row.id).status).toBe('confirmed');
+    });
+
     test('a pending answer clears the sighting without dropping concurrent metadata', async () => {
       useClock();
       const row = mod.append({
