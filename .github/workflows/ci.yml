@@ -983,6 +983,10 @@ jobs:
   # trust levels: status sentence and row sequences, click-to-copy of the
   # full value, one click from an open menu to the popover, and the shield
   # giving way to the neutral globe on an internal page.
+  # `gateway-offer.spec.js` (#70) drives the "Open without gateway" pill for
+  # eth.limo/eth.link/bzz.link pages: the URL is never rewritten, the popover
+  # opens the native address with path/query/fragment, and the opt-in
+  # "always" redirect leaves a gateway page reached by Back alone.
   e2e-address-bar-ens:
     needs: code-changed
     if: ${{ !cancelled() && needs.code-changed.outputs.code != 'false' }}
@@ -1019,7 +1023,8 @@ jobs:
             test-e2e/chrome-page-spoof.spec.js \
             test-e2e/tez-unverified.spec.js \
             test-e2e/tez-head-conflict.spec.js \
-            test-e2e/ens-trust-popover.spec.js
+            test-e2e/ens-trust-popover.spec.js \
+            test-e2e/gateway-offer.spec.js
 
       - name: Upload Playwright traces and screenshots
         if: failure()
