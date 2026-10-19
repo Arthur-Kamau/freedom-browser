@@ -377,6 +377,40 @@ describe('colibri worker host', () => {
     await expect(poll.promise).resolves.toBeNull();
   });
 
+  // R5-M1: of single-method suspects, the deadline holder is blamed even when
+  // it is not the oldest. A page's 2s receipt lookup lands behind a wallet
+  // waitForTransaction lookup running on the configured timeout: the page's
+  // overdue request is blamed, the wallet's older one (deadline left) resent.
+  test('of single-method suspects, the deadline holder is blamed, not the oldest', async () => {
+    const client = host.createClient(CONFIG);
+    const wallet = await startRequest(client, { method: 'eth_getTransactionReceipt', params: ['0xwallet'] },
+      { deadlineMs: 10_000 });
+    jest.advanceTimersByTime(500);
+    const page = await startRequest(client, { method: 'eth_getTransactionReceipt', params: ['0xpage'] },
+      { deadlineMs: 2000 });
+    expect(page.worker).toBe(wallet.worker);
+    jest.advanceTimersByTime(2000);
+    expect(wallet.worker.postMessage.mock.calls.some(([m]) => m.type === 'ping')).toBe(true);
+    jest.advanceTimersByTime(host.STUCK_PROBE_MS);
+    expect(wallet.worker.terminate).toHaveBeenCalledTimes(1);
+    await expect(page.promise).rejects.toThrow(/verification still running after its deadline/);
+    await expect(page.promise).rejects.not.toHaveProperty('colibriBystander');
+    expect(mockLogWarn).toHaveBeenCalledWith(
+      '[colibri] chain 1 worker replaced (verification still running after its deadline); ' +
+      '1 request(s) failed, 1 sent to the new worker'
+    );
+    await flush();
+    const fresh = lastWorker();
+    expect(fresh).not.toBe(wallet.worker);
+    fresh.emit('message', { type: 'ready' });
+    await flush();
+    const sent = sentRequests(fresh);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ method: 'eth_getTransactionReceipt', params: ['0xwallet'] });
+    fresh.emit('message', { type: 'result', id: sent[0].id, ok: true, result: null });
+    await expect(wallet.promise).resolves.toBeNull();
+  });
+
   // R4-M2: the deadline holder settles during the probe, so the worker then
   // blocked in the one other suspect. That one is blamed and, although it has
   // deadline left, failed rather than resent: it would spin again.
