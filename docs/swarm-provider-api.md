@@ -376,8 +376,13 @@ Not reported there:
   soon as it is read, even if the read is then refused; a blob held in that
   root chunk costs nothing more. A larger blob is charged its size in all,
   reserved before the node joins it, so a blob that would cross the byte
-  budget, counting reads still in flight, is refused up front and is never
-  downloaded. The reservation stands if the join fails. A blob larger than
+  budget, counting reads started earlier in the same window (including ones
+  still in flight), is refused up front and is never downloaded. The
+  reservation stands if the join fails. A reservation belongs to the window it
+  was made in: when the window resets, a join still running from the old one
+  no longer counts, so a page can have more than one window's worth of joins
+  in flight at once, but never starts more than one window's worth per
+  window. A blob larger than
   the whole byte budget is `data_too_large` instead (see the method).
 - **New GSOC topics**: 16 per origin per 60 s (only topics that have to be
   mined count; cached topics are free). Exceeding it is `-32602 rate_limited`
@@ -500,8 +505,9 @@ span's top byte). A blob larger than the origin's byte budget
 ([Limits](#limits): 5 MiB connected, 512 KiB not) is refused with
 `data_too_large` (`data.limit`, `data.actual` in bytes) before the rest is
 downloaded; one that fits the budget but not what is left of the current
-window, counting reads still in flight, is `rate_limited`, also before the
-download. Only unencrypted 32-byte references are accepted for now; an
+window, counting reads started earlier in that window (in flight or not), is
+`rate_limited`, also before the download. A join still running when the
+window resets is not carried into the next one. Only unencrypted 32-byte references are accepted for now; an
 encrypted 64-byte one is `invalid_reference`. Errors: `invalid_reference`,
 `chunk_not_found` (the root or a chunk under it), `chunk_type_mismatch` (the
 root is not a CAC for that address), `data_too_large`, `rate_limited`. The

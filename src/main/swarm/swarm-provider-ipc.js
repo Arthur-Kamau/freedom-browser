@@ -906,7 +906,9 @@ async function handleReadChunk(params, origin) {
  * concurrent reads cannot each start a join the window has no room for; one
  * that does not fit what is left is rate_limited without downloading. The
  * reservation stands if the join then fails, since the node may already have
- * fetched most of it.
+ * fetched most of it. A reservation is charged to the window it was made in;
+ * when the window resets, a join still running from the old window no longer
+ * counts, so the bound is bytes started per window, not bytes in flight.
  */
 async function handleReadData(params, origin) {
   if (!params || typeof params !== 'object') {
