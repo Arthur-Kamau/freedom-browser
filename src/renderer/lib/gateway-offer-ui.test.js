@@ -1,0 +1,382 @@
+// "Open without gateway" pill (#70): per-tab offers on commit, the popover's
+// Open / Cancel / "always" choice, and the opt-in automatic redirect with its
+// Back-button and stale-answer guards. Main's host parsing is covered by
+// src/main/gateway-offer.test.js; here `getGatewayOffer` is the IPC stub.
+
+// `var` (not let) avoids the TDZ under jest.mock hoisting.
+var mockActiveTab = null;
+var mockWebviewCreated = null;
+var mockTraversalPending = false;
+jest.mock('./tabs.js', () => ({
+  getActiveTab: jest.fn(() => mockActiveTab),
+  onWebviewCreated: jest.fn((listener) => {
+    mockWebviewCreated = listener;
+  }),
+}));
+jest.mock('./history-traversal.js', () => ({
+  isHistoryTraversalPending: jest.fn(() => mockTraversalPending),
+}));
+jest.mock('./modal-dialog.js', () => ({ isModalDialogOpen: jest.fn(() => false) }));
+jest.mock('./debug.js', () => ({ pushDebug: jest.fn() }));
+jest.mock('./popover-bounds.js', () => ({ boundPopoverToViewport: jest.fn() }));
+
+import {
+  initGatewayOfferUi,
+  closeGatewayOfferPopover,
+  getActiveOffer,
+  looksLikeGatewayUrl,
+  describeOffer,
+  _resetForTests,
+} from './gateway-offer-ui.js';
+
+const { createDocument, createElement } = require('../../../test/helpers/fake-dom.js');
+
+const GATEWAY = 'https://vitalik.eth.limo/blog/?p=1#c';
+const OFFER = {
+  gateway: 'eth.limo',
+  gatewayHost: 'vitalik.eth.limo',
+  protocol: 'ipfs',
+  target: 'ipfs://vitalik.eth',
+  destination: 'ipfs://vitalik.eth/blog/?p=1#c',
+};
+
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe('looksLikeGatewayUrl (the IPC pre-filter)', () => {
+  test.each([
+    'https://vitalik.eth.limo/',
+    'https://vitalik.eth.link',
+    'http://vitalik.bzz.link/x?y#z',
+    'https://VITALIK.ETH.LIMO/',
+    'https://vitalik.eth.limo./',
+  ])('%s is sent to main', (url) => expect(looksLikeGatewayUrl(url)).toBe(true));
+
+  test.each([
+    'https://example.com/',
+    'https://eth.limo/',
+    'https://vitalik.eth.limo.evil.example/',
+    'https://example.com/?u=https://vitalik.eth.limo/',
+    'ipfs://vitalik.eth/',
+    '',
+    null,
+  ])('%s is not', (url) => expect(looksLikeGatewayUrl(url)).toBe(false));
+});
+
+test('describeOffer names the transport and the gateway', () => {
+  expect(describeOffer(OFFER)).toBe(
+    'Loads directly from IPFS instead of through the eth.limo gateway.'
+  );
+  expect(describeOffer({ protocol: 'bzz', gateway: 'bzz.link' })).toBe(
+    'Loads directly from Swarm instead of through the bzz.link gateway.'
+  );
+});
+
+describe('gateway-offer-ui', () => {
+  let els;
+  let doc;
+  let api;
+  let navigate;
+  let windowHandlers;
+  let tabA;
+  let tabB;
+
+  const pill = () => els['gateway-offer-pill'];
+  const popover = () => els['gateway-offer-popover'];
+  const pillShown = () => !pill().classList.contains('hidden');
+  const makeTab = (id) => {
+    const tab = { id, webview: createElement('webview') };
+    mockWebviewCreated(tab.webview);
+    return tab;
+  };
+  const commit = (tab, url) => tab.webview.dispatch('did-navigate', { url });
+  const start = (tab, url, extra = {}) =>
+    tab.webview.dispatch('did-start-navigation', {
+      url,
+      isMainFrame: true,
+      isInPlace: false,
+      ...extra,
+    });
+  const switchTo = (tab) => {
+    mockActiveTab = tab;
+    doc.handlers['active-tab-changed']();
+  };
+  const setAlways = (value) =>
+    windowHandlers['settings:updated']({ detail: { openWithoutGateway: value } });
+
+  beforeEach(() => {
+    _resetForTests();
+    mockTraversalPending = false;
+    els = {
+      'gateway-offer-pill': createElement('button', { classes: ['hidden'] }),
+      'gateway-offer-pill-icon': createElement('span'),
+      'gateway-offer-popover': createElement('div'),
+      'gateway-offer-popover-icon': createElement('span'),
+      'gateway-offer-destination': createElement('div'),
+      'gateway-offer-explanation': createElement('div'),
+      'gateway-offer-always': createElement('input'),
+      'gateway-offer-open': createElement('button'),
+      'gateway-offer-cancel': createElement('button'),
+      'trust-popover-gateway-toggle': createElement('input'),
+    };
+    els['gateway-offer-popover'].hidden = true;
+    for (const id of ['popover-icon', 'destination', 'explanation', 'always', 'open', 'cancel']) {
+      els['gateway-offer-popover'].appendChild(els[`gateway-offer-${id}`]);
+    }
+    doc = createDocument({ elementsById: els });
+    global.document = doc;
+    windowHandlers = {};
+    api = {
+      getGatewayOffer: jest.fn(async (url) => (url === GATEWAY ? OFFER : null)),
+      getSettings: jest.fn(async () => ({ openWithoutGateway: false })),
+      saveSettings: jest.fn(async () => true),
+    };
+    global.window = {
+      electronAPI: api,
+      addEventListener: jest.fn((event, handler) => {
+        windowHandlers[event] = handler;
+      }),
+    };
+    navigate = jest.fn();
+    initGatewayOfferUi({ navigate });
+    tabA = makeTab(1);
+    tabB = makeTab(2);
+    mockActiveTab = tabA;
+  });
+
+  test('starts hidden and watches every new webview', () => {
+    expect(pillShown()).toBe(false);
+    expect(typeof mockWebviewCreated).toBe('function');
+  });
+
+  test('a committed gateway page with a native version shows the pill', async () => {
+    commit(tabA, GATEWAY);
+    await flush();
+    expect(api.getGatewayOffer).toHaveBeenCalledWith(GATEWAY);
+    expect(pillShown()).toBe(true);
+    expect(pill().title).toBe('Open ipfs://vitalik.eth/blog/?p=1#c');
+    expect(pill().getAttribute('aria-label')).toBe(
+      'Open without gateway: ipfs://vitalik.eth/blog/?p=1#c'
+    );
+    expect(els['gateway-offer-pill-icon'].dataset.protocol).toBe('ipfs');
+  });
+
+  test('a page that is not a gateway costs no lookup and shows nothing', async () => {
+    commit(tabA, 'https://example.com/');
+    await flush();
+    expect(api.getGatewayOffer).not.toHaveBeenCalled();
+    expect(pillShown()).toBe(false);
+  });
+
+  test('no offer from main (failed lookup, invalid CID) means no pill', async () => {
+    commit(tabA, 'https://nothing.eth.limo/');
+    await flush();
+    expect(api.getGatewayOffer).toHaveBeenCalled();
+    expect(pillShown()).toBe(false);
+  });
+
+  test('a commit takes the old offer away at once, and a late answer for it is dropped', async () => {
+    commit(tabA, GATEWAY);
+    await flush();
+    expect(pillShown()).toBe(true);
+
+    let release;
+    api.getGatewayOffer.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        })
+    );
+    commit(tabA, 'https://other.eth.limo/');
+    expect(pillShown()).toBe(false);
+    commit(tabA, 'https://example.com/');
+    release(OFFER);
+    await flush();
+    expect(pillShown()).toBe(false);
+    expect(getActiveOffer()).toBeNull();
+  });
+
+  test('an in-page navigation refreshes the destination; a subframe one does not', async () => {
+    commit(tabA, GATEWAY);
+    await flush();
+    api.getGatewayOffer.mockClear();
+    tabA.webview.dispatch('did-navigate-in-page', { url: GATEWAY, isMainFrame: false });
+    expect(api.getGatewayOffer).not.toHaveBeenCalled();
+    tabA.webview.dispatch('did-navigate-in-page', { url: GATEWAY, isMainFrame: true });
+    await flush();
+    expect(api.getGatewayOffer).toHaveBeenCalledWith(GATEWAY);
+  });
+
+  test("the pill follows the active tab: a background tab's offer shows once switched to", async () => {
+    commit(tabB, GATEWAY);
+    await flush();
+    expect(pillShown()).toBe(false);
+    switchTo(tabB);
+    expect(pillShown()).toBe(true);
+    switchTo(tabA);
+    expect(pillShown()).toBe(false);
+  });
+
+  test('the pill opens the popover with the whole destination and what changes', async () => {
+    commit(tabA, GATEWAY);
+    await flush();
+    pill().dispatch('click');
+    expect(popover().hidden).toBe(false);
+    expect(pill().getAttribute('aria-expanded')).toBe('true');
+    expect(els['gateway-offer-destination'].textContent).toBe(OFFER.destination);
+    expect(els['gateway-offer-explanation'].textContent).toBe(
+      'Loads directly from IPFS instead of through the eth.limo gateway.'
+    );
+    expect(els['gateway-offer-always'].checked).toBe(false);
+    pill().dispatch('click');
+    expect(popover().hidden).toBe(true);
+  });
+
+  test('"Open without gateway" navigates this tab to the native URL, setting untouched', async () => {
+    commit(tabA, GATEWAY);
+    await flush();
+    pill().dispatch('click');
+    els['gateway-offer-open'].dispatch('click');
+    await flush();
+    expect(navigate).toHaveBeenCalledWith(OFFER.destination, tabA.webview, { auto: false });
+    expect(api.saveSettings).not.toHaveBeenCalled();
+    expect(popover().hidden).toBe(true);
+  });
+
+  test('ticking "Always" applies with Open, and the trust popover box follows', async () => {
+    commit(tabA, GATEWAY);
+    await flush();
+    pill().dispatch('click');
+    els['gateway-offer-always'].checked = true;
+    els['gateway-offer-open'].dispatch('click');
+    await flush();
+    expect(api.saveSettings).toHaveBeenCalledWith({ openWithoutGateway: true });
+    expect(els['trust-popover-gateway-toggle'].checked).toBe(true);
+    expect(navigate).toHaveBeenCalledWith(OFFER.destination, tabA.webview, { auto: false });
+  });
+
+  test('Cancel (and Escape) close without navigating or saving the box', async () => {
+    commit(tabA, GATEWAY);
+    await flush();
+    pill().dispatch('click');
+    els['gateway-offer-always'].checked = true;
+    els['gateway-offer-cancel'].dispatch('click');
+    expect(popover().hidden).toBe(true);
+    pill().dispatch('click');
+    expect(els['gateway-offer-always'].checked).toBe(false);
+    doc.handlers.keydown({ key: 'Escape', preventDefault: jest.fn() });
+    expect(popover().hidden).toBe(true);
+    expect(navigate).not.toHaveBeenCalled();
+    expect(api.saveSettings).not.toHaveBeenCalled();
+  });
+
+  test('closeGatewayOfferPopover closes it for the shared dismissal paths', async () => {
+    commit(tabA, GATEWAY);
+    await flush();
+    pill().dispatch('click');
+    closeGatewayOfferPopover();
+    expect(popover().hidden).toBe(true);
+  });
+
+  test('the trust popover checkbox saves the setting on change', () => {
+    els['trust-popover-gateway-toggle'].checked = true;
+    els['trust-popover-gateway-toggle'].dispatch('change');
+    expect(api.saveSettings).toHaveBeenCalledWith({ openWithoutGateway: true });
+  });
+
+  test('a settings broadcast keeps the trust popover checkbox current', () => {
+    setAlways(true);
+    expect(els['trust-popover-gateway-toggle'].checked).toBe(true);
+    setAlways(false);
+    expect(els['trust-popover-gateway-toggle'].checked).toBe(false);
+  });
+
+  describe('"Always open without gateway"', () => {
+    test('off (the default): a gateway navigation is only offered, never redirected', async () => {
+      start(tabA, GATEWAY);
+      commit(tabA, GATEWAY);
+      await flush();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(pillShown()).toBe(true);
+    });
+
+    test('on: a starting gateway navigation goes to the native URL, in any tab', async () => {
+      setAlways(true);
+      start(tabB, GATEWAY);
+      await flush();
+      expect(navigate).toHaveBeenCalledWith(OFFER.destination, tabB.webview, { auto: true });
+    });
+
+    test('on: no native version, no redirect', async () => {
+      setAlways(true);
+      start(tabA, 'https://nothing.eth.limo/');
+      await flush();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    test('on: subframe and same-document starts are ignored', async () => {
+      setAlways(true);
+      start(tabA, GATEWAY, { isMainFrame: false });
+      start(tabA, GATEWAY, { isInPlace: true });
+      await flush();
+      expect(api.getGatewayOffer).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    test('on: an answer that lands after the tab moved on is dropped', async () => {
+      setAlways(true);
+      let release;
+      api.getGatewayOffer.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          })
+      );
+      start(tabA, GATEWAY);
+      start(tabA, 'https://example.com/');
+      release(OFFER);
+      await flush();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    test('on: Back onto a gateway page stays there and shows the pill', async () => {
+      setAlways(true);
+      mockTraversalPending = true;
+      start(tabA, GATEWAY);
+      commit(tabA, GATEWAY);
+      await flush();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(pillShown()).toBe(true);
+    });
+
+    test('on: the page it just redirected away from is not redirected again right away', async () => {
+      setAlways(true);
+      start(tabA, GATEWAY);
+      await flush();
+      expect(navigate).toHaveBeenCalledTimes(1);
+      // e.g. the user goes back by a route that leaves no traversal mark
+      start(tabA, GATEWAY);
+      await flush();
+      expect(navigate).toHaveBeenCalledTimes(1);
+      // …but a later visit is redirected again.
+      start(tabA, GATEWAY);
+      await flush();
+      expect(navigate).toHaveBeenCalledTimes(2);
+    });
+
+    test('switched off while a lookup is in flight: no redirect', async () => {
+      setAlways(true);
+      let release;
+      api.getGatewayOffer.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          })
+      );
+      start(tabA, GATEWAY);
+      setAlways(false);
+      release(OFFER);
+      await flush();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+  });
+});

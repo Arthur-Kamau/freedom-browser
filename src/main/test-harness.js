@@ -290,6 +290,21 @@ function overrideEnsIpc() {
 
   replaceHandler(IPC.ENS_INVALIDATE_CONTENT, async () => true);
 
+  // The gateway offer (#70) looks names up in main, not over ENS_RESOLVE, so
+  // it gets the same fixture map: the real parsing and offer logic, with
+  // the lookup answered by `setEnsFixture` rather than the network.
+  const { makeGatewayOfferHandler } = require('./gateway-offer');
+  replaceHandler(
+    IPC.GATEWAY_OFFER,
+    makeGatewayOfferHandler({
+      resolveContent: async (name) => {
+        const key = (name || '').trim().toLowerCase();
+        if (ensFixtures.has(key)) return answerEnsFixture(ensFixtures.get(key));
+        return { type: 'not_found', name: key, reason: 'NO_FIXTURE' };
+      },
+    })
+  );
+
   // Tezos Domains shares the ENS fixture map — `.tez` and `.eth` names can
   // never collide — so a spec drives both name systems through
   // `setEnsFixture`. Without this override a harness spec that navigates to

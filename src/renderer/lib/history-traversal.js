@@ -145,3 +145,18 @@ export const consumeHistoryTraversal = (webview) => {
 export const clearHistoryTraversal = (webview) => {
   if (webview) pendingTraversals.delete(webview);
 };
+
+/**
+ * Whether a traversal is still waiting for its commit on `webview`, without
+ * consuming it.
+ *
+ * Read by the gateway offer (#70) from `did-start-navigation`: with "Always
+ * open without gateway" on, a gateway page reached by Back must stay the
+ * gateway page — redirecting it again would send the user straight forward
+ * to where they just came from, and Back could never get past it.
+ *
+ * @param {object|null} webview - guest `<webview>` element
+ * @returns {boolean}
+ */
+export const isHistoryTraversalPending = (webview) =>
+  !!webview && (pendingTraversals.get(webview) || 0) > 0;

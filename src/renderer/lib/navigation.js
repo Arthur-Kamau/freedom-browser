@@ -880,6 +880,14 @@ const toggleTrustPopover = () => {
   }
   if (contentEl) contentEl.hidden = contentRows.length === 0;
 
+  // "Always open without gateway" (#70) only means something for a name a
+  // gateway serves — `.eth` — never for an onchain app or another name
+  // system. gateway-offer-ui.js owns the checkbox itself.
+  const gatewayRow = document.getElementById('trust-popover-gateway');
+  if (gatewayRow) {
+    gatewayRow.hidden = badge.kind === 'onchain' || !/\.eth$/i.test(name || '');
+  }
+
   // Record the identity of what's now rendered before we flip the
   // popover open — `setTrustPopoverOpen(true)` doesn't clear it, only
   // the close path does.
