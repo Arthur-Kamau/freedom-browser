@@ -271,6 +271,66 @@ test('with "always" on, the page it redirected away from is redirected again onc
   await expect.poll(() => webviewUrl(window), { timeout: 15_000 }).toBe(NATIVE_URL);
 });
 
+// petfold on #739: with "always" on, typing the same gateway address again
+// straight after it was redirected used to land on the gateway every second
+// time — the "just redirected away from" guard took the typed visit for an
+// unmarked Back. A slow lookup lets the gateway page commit first each time,
+// so a visit that is *not* redirected stays visibly on it.
+test('with "always" on, the same gateway address typed again and again is redirected every time', async ({
+  window,
+  harness,
+}) => {
+  await harness.setEnsFixture(NAME, { ...ENS_OK, delayMs: 700 });
+  await harness.setContentFixture(`ipfs://${NAME}/`, {
+    body: `<!doctype html><title>native ${NAME}</title><h1>native</h1>`,
+  });
+  await window.evaluate(() => window.electronAPI.saveSettings({ openWithoutGateway: true }));
+
+  for (let i = 0; i < 3; i += 1) {
+    await navigateTo(window, GATEWAY_URL);
+    await expect.poll(() => webviewUrl(window), { timeout: 15_000 }).toBe(GATEWAY_URL);
+    await expect.poll(() => webviewUrl(window), { timeout: 15_000 }).toBe(NATIVE_URL);
+  }
+});
+
+// petfold on #739: bzz.link answers a `<cid>.bzz.link` hash that is not on its
+// allowlist with a 302 to its "forbidden" page, so the commit is never the
+// gateway address. The offer is for the address the navigation started at,
+// with its own path, query and fragment, shown on the page it landed on.
+test('a Swarm CID the gateway redirects to its forbidden page is still offered', async ({
+  window,
+  harness,
+}) => {
+  const cid = new Reference(SAMPLE_BZZ_HASH).toCid('manifest');
+  const requested = `https://${cid}.bzz.link/docs/?q=1`;
+  const forbidden = `https://bzz.link/forbidden?hash=${SAMPLE_BZZ_HASH}`;
+  await harness.setContentFixture(requested, {
+    status: 302,
+    headers: { Location: forbidden },
+  });
+  await harness.setContentFixture(`bzz://${SAMPLE_BZZ_HASH}/`, {
+    body: '<!doctype html><title>native swarm</title><h1>native</h1>',
+  });
+
+  await navigateTo(window, `${requested}#top`);
+  await expect
+    .poll(() => webviewUrl(window), { timeout: 15_000 })
+    .toMatch(/^https:\/\/bzz\.link\/forbidden\?hash=/);
+  const pill = window.locator('[data-test="gateway-offer-pill"]');
+  await expect(pill).toBeVisible({ timeout: 15_000 });
+  const destination = `bzz://${SAMPLE_BZZ_HASH}/docs/?q=1#top`;
+  await expect(pill).toHaveAttribute('title', `Open ${destination}`);
+  await expect(window.locator('#gateway-offer-pill-icon')).toHaveAttribute(
+    'data-protocol',
+    'swarm'
+  );
+  await pill.click();
+  await expect(window.locator('#gateway-offer-destination')).toHaveText(destination);
+  await clickOverGuest(window.locator('[data-test="gateway-offer-open"]'));
+  await expect.poll(() => webviewUrl(window), { timeout: 15_000 }).toBe(destination);
+  await expect(pill).toBeHidden();
+});
+
 // R3-M1: the x402 card's Cancel steps back one entry. That Back has to be
 // counted as a traversal like the toolbar's, or a gateway page behind the
 // paywall is taken for a fresh visit and, with "always" on, sent forward to

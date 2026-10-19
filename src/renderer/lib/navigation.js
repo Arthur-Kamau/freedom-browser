@@ -96,6 +96,7 @@ import { startIpfsProgressStatus, stopIpfsProgressStatus } from './ipfs-progress
 import { TOOLTIP_HOVER_DELAY_MS } from './hover-tooltip.js';
 import { boundPopoverToViewport } from './popover-bounds.js';
 import { matchesShortcut } from './shortcuts.js';
+import { noteUserNavigation } from './gateway-offer-ui.js';
 
 // Helper to get active tab's navigation state (with fallback to empty object)
 const getNavState = () => getActiveTabState() || {};
@@ -1553,6 +1554,10 @@ export const loadTarget = (value, displayOverride = null, targetWebview = null, 
   // of the very same affordance holds the draft, so these must too.
   if (!options.pageInitiated && !options.continuesNavigation && !options.keepsAddressBarEdit) {
     clearAddressBarEdit(navState);
+    // The same user action ends the "always open without gateway" Back
+    // guard for this tab (#70): a typed or bookmarked gateway address is
+    // redirected every time, not every other time.
+    noteUserNavigation(webview);
   }
 
   // Handle view-source: URLs - need to resolve dweb URLs before loading

@@ -185,6 +185,17 @@ function makeProtocolHandler(scheme) {
 function makeHttpStubHandler(scheme) {
   return async (request) => {
     log.info(`[test-harness] stubbed ${scheme}: ${redactUrlForLog(request.url)}`);
+    // An http(s) URL answers from a content fixture only on an *exact* match
+    // (no prefix fallback, so a fixture can never shadow other pages), which
+    // lets a spec stand in for a server's own answer — a gateway's 302 with
+    // a `Location` header, say (#70). The fragment is never part of what a
+    // server sees, but `request.url` here still carries it, so it is dropped.
+    const fixtureUrl = request.url.split('#')[0];
+    if (contentFixtures.has(fixtureUrl)) {
+      const fixture = contentFixtures.get(fixtureUrl);
+      await holdOpen(fixture.delayMs);
+      return buildResponse(fixture);
+    }
     const body =
       `<!doctype html>` +
       `<title>test-harness ${scheme} stub</title>` +

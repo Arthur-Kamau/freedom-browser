@@ -27,6 +27,7 @@ import {
   getActiveOffer,
   looksLikeGatewayUrl,
   describeOffer,
+  noteUserNavigation,
   _resetForTests,
 } from './gateway-offer-ui.js';
 
@@ -39,6 +40,19 @@ const OFFER = {
   protocol: 'ipfs',
   target: 'ipfs://vitalik.eth',
   destination: 'ipfs://vitalik.eth/blog/?p=1#c',
+};
+
+// bzz.link's answer for a CID that is not on its allowlist.
+const SWARM_REF = 'e53efa25'.padEnd(64, '0');
+const CID_URL =
+  'https://bah5acgza4u7pujju42fv7fu36if7xhkfij7gcyzfjj535g5pdy73yp26fdra.bzz.link/docs/?q=1#top';
+const FORBIDDEN = `https://bzz.link/forbidden?hash=${SWARM_REF}`;
+const CID_OFFER = {
+  gateway: 'bzz.link',
+  gatewayHost: 'bah5acgza4u7pujju42fv7fu36if7xhkfij7gcyzfjj535g5pdy73yp26fdra.bzz.link',
+  protocol: 'bzz',
+  target: `bzz://${SWARM_REF}`,
+  destination: `bzz://${SWARM_REF}/docs/?q=1#top`,
 };
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -194,6 +208,101 @@ describe('gateway-offer-ui', () => {
     await flush();
     expect(pillShown()).toBe(false);
     expect(getActiveOffer()).toBeNull();
+  });
+
+  // petfold on #739: bzz.link answers `<cid>.bzz.link` hashes that are not on
+  // its allowlist with a 302 to `https://bzz.link/forbidden?hash=<hex>`, so
+  // the commit is never the gateway address the user asked for.
+  describe('a gateway address redirected elsewhere', () => {
+    beforeEach(() => {
+      api.getGatewayOffer.mockImplementation(async (url) => (url === CID_URL ? CID_OFFER : null));
+    });
+
+    test('offers the address it started at, path and all, on the page it landed on', async () => {
+      start(tabA, CID_URL);
+      commit(tabA, FORBIDDEN);
+      await flush();
+      expect(api.getGatewayOffer).toHaveBeenCalledWith(CID_URL);
+      expect(pillShown()).toBe(true);
+      expect(getActiveOffer()).toBe(CID_OFFER);
+      expect(pill().title).toBe(`Open ${CID_OFFER.destination}`);
+      expect(els['gateway-offer-pill-icon'].dataset.protocol).toBe('swarm');
+
+      pill().dispatch('click');
+      els['gateway-offer-open'].dispatch('click');
+      await flush();
+      expect(navigate).toHaveBeenCalledWith(CID_OFFER.destination, tabA.webview, {
+        auto: false,
+      });
+    });
+
+    test('only for that navigation: the next page gets no offer from it', async () => {
+      start(tabA, CID_URL);
+      commit(tabA, FORBIDDEN);
+      await flush();
+      expect(pillShown()).toBe(true);
+      // A commit with no start of its own (never expected) borrows nothing:
+      // the redirect's commit consumed the start.
+      commit(tabA, 'https://example.org/');
+      await flush();
+      expect(pillShown()).toBe(false);
+      // A link, then a same-document move there.
+      start(tabA, 'https://bzz.link/');
+      commit(tabA, 'https://bzz.link/');
+      await flush();
+      expect(pillShown()).toBe(false);
+      tabA.webview.dispatch('did-navigate-in-page', {
+        url: 'https://bzz.link/#x',
+        isMainFrame: true,
+      });
+      commit(tabA, FORBIDDEN);
+      await flush();
+      expect(pillShown()).toBe(false);
+      expect(api.getGatewayOffer).toHaveBeenCalledTimes(1);
+    });
+
+    test('a start that never committed (a download) does not speak for the next page', async () => {
+      start(tabA, CID_URL); // never commits
+      start(tabA, 'https://example.com/');
+      commit(tabA, 'https://example.com/');
+      await flush();
+      expect(api.getGatewayOffer).not.toHaveBeenCalled();
+      expect(pillShown()).toBe(false);
+    });
+
+    test('a non-gateway start redirected somewhere else costs no lookup', async () => {
+      start(tabA, 'https://example.com/');
+      commit(tabA, 'https://www.example.com/');
+      await flush();
+      expect(api.getGatewayOffer).not.toHaveBeenCalled();
+    });
+
+    test('a gateway redirecting to another gateway page offers the page it landed on', async () => {
+      api.getGatewayOffer.mockImplementation(async (url) => (url === GATEWAY ? OFFER : null));
+      start(tabA, 'https://vitalik.eth.limo/blog');
+      commit(tabA, GATEWAY);
+      await flush();
+      expect(api.getGatewayOffer).toHaveBeenCalledTimes(1);
+      expect(api.getGatewayOffer).toHaveBeenCalledWith(GATEWAY);
+      expect(getActiveOffer()).toBe(OFFER);
+    });
+
+    test('a late answer for the redirect is dropped once the tab moved on', async () => {
+      let release;
+      api.getGatewayOffer.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          })
+      );
+      start(tabA, CID_URL);
+      commit(tabA, FORBIDDEN);
+      start(tabA, 'https://example.com/');
+      commit(tabA, 'https://example.com/');
+      release(CID_OFFER);
+      await flush();
+      expect(pillShown()).toBe(false);
+    });
   });
 
   test('an in-page navigation refreshes the destination; a subframe one does not', async () => {
@@ -489,6 +598,53 @@ describe('gateway-offer-ui', () => {
       start(tabA, GATEWAY);
       await flush();
       expect(navigate).not.toHaveBeenCalled();
+    });
+
+    // petfold on #739: pasting the same gateway address again and again in
+    // one tab landed on the gateway every second time. A typed or
+    // bookmarked address (navigation.js calls noteUserNavigation for every
+    // user-driven loadTarget) is never the Back the guard is for.
+    test('on: typing the same gateway address twice in a row redirects both times', async () => {
+      setAlways(true);
+      for (let i = 1; i <= 3; i += 1) {
+        noteUserNavigation(tabA.webview); // the address bar's loadTarget
+        start(tabA, GATEWAY);
+        await flush();
+        expect(navigate).toHaveBeenCalledTimes(i);
+        start(tabA, OFFER.destination);
+        commit(tabA, OFFER.destination);
+      }
+      // An unmarked Back afterwards is still caught by the guard.
+      start(tabA, GATEWAY);
+      await flush();
+      expect(navigate).toHaveBeenCalledTimes(3);
+    });
+
+    test('on: noteUserNavigation on another tab leaves this one guarded', async () => {
+      setAlways(true);
+      start(tabA, GATEWAY);
+      await flush();
+      start(tabA, OFFER.destination);
+      commit(tabA, OFFER.destination);
+      noteUserNavigation(tabB.webview);
+      noteUserNavigation(createElement('webview')); // never watched: a no-op
+      start(tabA, GATEWAY);
+      await flush();
+      expect(navigate).toHaveBeenCalledTimes(1);
+    });
+
+    test('on: the gateway redirecting to its forbidden page does not spend the guard', async () => {
+      api.getGatewayOffer.mockImplementation(async (url) => (url === CID_URL ? CID_OFFER : null));
+      setAlways(true);
+      start(tabA, CID_URL);
+      await flush();
+      expect(navigate).toHaveBeenCalledWith(CID_OFFER.destination, tabA.webview, { auto: true });
+      commit(tabA, FORBIDDEN); // the gateway's 302 landing before loadTarget took over
+      start(tabA, CID_OFFER.destination);
+      commit(tabA, CID_OFFER.destination);
+      start(tabA, CID_URL); // an unmarked Back
+      await flush();
+      expect(navigate).toHaveBeenCalledTimes(1);
     });
 
     test('switched off while a lookup is in flight: no redirect', async () => {

@@ -16,7 +16,13 @@
  *
  * The offer is worked out on arrival — a typed URL, a bookmark and a link
  * clicked inside a page all get it the same way, once the gateway page has
- * committed. Nothing intercepts the click.
+ * committed. Nothing intercepts the click. A gateway can also answer by
+ * sending the navigation elsewhere: bzz.link redirects any `<cid>.bzz.link`
+ * not on its allowlist to `https://bzz.link/forbidden?hash=…`. Then the
+ * offer is worked out for the address the navigation *started* at (with its
+ * own path, query and fragment) and shown on the page it ended on, since
+ * that is exactly where opening natively helps. Only for that navigation:
+ * the next page the tab moves to gets its own offer or none.
  *
  * "Always open without gateway" (the `openWithoutGateway` setting, off by
  * default) is the one case that navigates by itself: a gateway navigation
@@ -25,7 +31,8 @@
  * typed `ipfs://` / `bzz://` URL, so the transport assertion and the trust
  * checks behind those still apply. A gateway page reached by Back/Forward is
  * left alone (and shows the pill), as is one this tab was just redirected
- * away from — otherwise Back could never get past it. The same setting is a
+ * away from — otherwise Back could never get past it — unless the address
+ * bar or a bookmark asked for it again. The same setting is a
  * checkbox at the bottom of the trust popover and a row in Settings →
  * Networks → Name Resolution.
  */
@@ -59,11 +66,19 @@ export const describeOffer = (offer) =>
 //   offer        main's answer for committedUrl, or null.
 //   startedUrl   the last main-frame navigation started, for the "always"
 //                redirect: its answer only counts while nothing newer began.
+//   pendingStartUrl  the same URL, but consumed by the cross-document commit
+//                that ends that navigation. When that commit is somewhere
+//                else (a server redirect), a gateway-shaped start is what the
+//                offer is worked out for. Cleared on commit so it can never
+//                speak for a later page.
 //   redirectedFrom  the gateway URL this tab was last sent away from by
 //                "always", which it then may come back to (Back by a route
 //                that leaves no traversal mark, a page link) once without
 //                being sent away again. Only while the tab is still where
-//                "always" sent it: see `redirectLanded`.
+//                "always" sent it: see `redirectLanded`. The address bar or a
+//                bookmark asking for a URL again (`noteUserNavigation`) is
+//                never that Back, so it drops the guard: typing the same
+//                gateway address twice is redirected twice.
 //   redirectLanded  set once a non-gateway page has committed after the
 //                redirect (the native destination). From then on, the first
 //                main-frame start to anywhere *other* than redirectedFrom
@@ -106,6 +121,7 @@ const stateFor = (webview) => {
       committedUrl: '',
       offer: null,
       startedUrl: '',
+      pendingStartUrl: '',
       redirectedFrom: '',
       redirectLanded: false,
       seenTraversals: 0,
@@ -238,6 +254,14 @@ const openOffer = async () => {
 const onCommitted = (webview, url, { inPage = false } = {}) => {
   const st = stateFor(webview);
   st.seq += 1;
+  // The URL the navigation ending here started at. A same-document commit
+  // has no start of its own (those are skipped in `watchWebview`), so it
+  // neither reads nor consumes it.
+  let startedAt = '';
+  if (!inPage) {
+    startedAt = st.pendingStartUrl;
+    st.pendingStartUrl = '';
+  }
   if (inPage) {
     // At most one request per in-place move. The one way this errs: the page
     // being left moving itself (`pushState`/`replaceState`) while a real Back
@@ -248,14 +272,25 @@ const onCommitted = (webview, url, { inPage = false } = {}) => {
     // `did-navigate-in-page`).
     st.seenTraversals = Math.min(historyTraversalRequestCount(webview), st.seenTraversals + 1);
   }
-  if (st.redirectedFrom && !looksLikeGatewayUrl(url)) st.redirectLanded = true;
+  // The gateway's own redirect target (bzz.link's forbidden page) is not
+  // where "always" sent the tab, so it does not count as landing.
+  if (st.redirectedFrom && !looksLikeGatewayUrl(url) && startedAt !== st.redirectedFrom) {
+    st.redirectLanded = true;
+  }
   st.committedUrl = url || '';
   const hadOffer = !!st.offer;
   st.offer = null;
   if (hadOffer && activeWebview() === webview) refresh();
-  if (!looksLikeGatewayUrl(url)) return;
+  // A gateway address the server redirected somewhere that is not itself a
+  // gateway page: offer the address that was asked for.
+  const offerFor = looksLikeGatewayUrl(url)
+    ? url
+    : startedAt && startedAt !== url && looksLikeGatewayUrl(startedAt)
+      ? startedAt
+      : '';
+  if (!offerFor) return;
   const seq = st.seq;
-  requestOffer(url).then((offer) => {
+  requestOffer(offerFor).then((offer) => {
     if (st.seq !== seq || !offer) return;
     st.offer = offer;
     if (activeWebview() === webview) refresh();
@@ -267,6 +302,7 @@ const onCommitted = (webview, url, { inPage = false } = {}) => {
 const onStarted = (webview, url) => {
   const st = stateFor(webview);
   st.startedUrl = url || '';
+  st.pendingStartUrl = url || '';
   // Read before anything returns: this start accounts for every request
   // made so far (see `seenTraversals`), whether or not it ever commits, so a
   // Back onto a download cannot shield the next link click either.
@@ -294,6 +330,19 @@ const onStarted = (webview, url) => {
     pushDebug(`[gateway] always open without gateway: ${url} → ${offer.destination}`);
     navigate?.(offer.destination, webview, { auto: true });
   });
+};
+
+/**
+ * The address bar or a bookmark (a user-driven `loadTarget`) is about to
+ * navigate this tab. That is never the Back the redirect guard protects, so
+ * the guard goes: the "always" redirect then treats the address like any
+ * other, however often it is entered.
+ */
+export const noteUserNavigation = (webview) => {
+  const st = webview ? stateByWebview.get(webview) : null;
+  if (!st) return;
+  st.redirectedFrom = '';
+  st.redirectLanded = false;
 };
 
 const watchWebview = (webview) => {
