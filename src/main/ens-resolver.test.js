@@ -1096,6 +1096,26 @@ describe('ens-resolver', () => {
       expect(mockUrReverse).toHaveBeenCalledTimes(3);
     });
 
+    test('an unnormalized primary name is UNVERIFIED, never shown as the name', async () => {
+      // `vitaIik.eth` (a capital I) forward-verifies as written, but it is
+      // not its own normalization, `vitaiik.eth`.
+      const input = addr('1015');
+      mockUrReverse.mockResolvedValue(['vitaIik.eth', RESOLVER, RESOLVER]);
+
+      const result = await resolveEnsReverse(input);
+
+      expect(result).toMatchObject({
+        success: false,
+        address: input.toLowerCase(),
+        system: 'ens',
+        reason: 'UNVERIFIED',
+        claimedName: 'vitaIik.eth',
+        error: `Reverse record for ${input.toLowerCase()} claims a name that isn't normalized`,
+        trust: { level: 'verified', system: 'ens' },
+      });
+      expect(result.name).toBeUndefined();
+    });
+
     test('surfaces conflicting reverse names when the RPC quorum disagrees', async () => {
       const input = addr('1014');
       mockUrReverse
@@ -1638,6 +1658,29 @@ describe('ens-resolver', () => {
         coinType: 60n,
       });
       expect(mockUrResolve).not.toHaveBeenCalled();
+    });
+
+    test('an unnormalized Myotis primary name is UNVERIFIED', async () => {
+      myotisUp();
+      const address = '0x0000000000000000000000000000000000001202';
+      mockMyotisResolveEnsRecord.mockResolvedValue({
+        status: 'ok',
+        verified: true,
+        blockNumber: 23456789,
+        name: 'Reverse-Myotis.eth',
+      });
+
+      const result = await resolveEnsReverse(address);
+
+      expect(result).toMatchObject({
+        success: false,
+        address,
+        system: 'ens',
+        reason: 'UNVERIFIED',
+        claimedName: 'Reverse-Myotis.eth',
+        trust: { method: 'myotis' },
+      });
+      expect(result.name).toBeUndefined();
     });
 
     test('serves forward-verified ENS reverse records through Myotis', async () => {
@@ -3246,6 +3289,22 @@ describe('ens-resolver', () => {
         trust: { level: 'verified', method: 'colibri', prover: 'test-prover.example' },
       });
       expect(mockUrReverse).not.toHaveBeenCalled();
+    });
+
+    test('an unnormalized Colibri primary name is UNVERIFIED', async () => {
+      withColibri({ ensResolutionOrder: ['colibri'] });
+      mockResolveReverseViaColibri.mockResolvedValue({ name: 'vitaIik.eth' });
+
+      const result = await resolveEnsReverse(ADDR);
+
+      expect(result).toMatchObject({
+        success: false,
+        address: ADDR,
+        reason: 'UNVERIFIED',
+        claimedName: 'vitaIik.eth',
+        trust: { method: 'colibri' },
+      });
+      expect(result.name).toBeUndefined();
     });
 
     test('no primary set surfaces as NO_REVERSE with trust attached', async () => {
