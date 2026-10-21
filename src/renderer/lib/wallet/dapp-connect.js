@@ -402,8 +402,13 @@ export async function disconnectDapp(permissionKey = null) {
     await window.dappPermissions.revokePermission(key);
     console.log('[WalletUI] Disconnected dApp:', key);
 
-    dappConnectionBanner?.classList.add('hidden');
-    currentBannerPermissionKey = null;
+    // The banner shows the visible tab's site; a key from the permissions
+    // list can name a site in another tab, whose revocation must leave the
+    // visible site's banner alone.
+    if (key === currentBannerPermissionKey) {
+      dappConnectionBanner?.classList.add('hidden');
+      currentBannerPermissionKey = null;
+    }
 
     // Only the visible page can be told — and only when it is the site
     // that was disconnected (a key from the permissions list can name a

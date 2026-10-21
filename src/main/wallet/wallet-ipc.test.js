@@ -24,6 +24,7 @@ jest.mock('./dapp-permissions', () => ({
 jest.mock('./safe/safe-transactions', () => ({
   startSafeSend: jest.fn(async () => ({ safeTxHash: '0xsafetx' })),
 }));
+jest.mock('../ens-resolver', () => ({ resolveEnsContent: jest.fn() }));
 jest.mock('./safe/safe-messages', () => ({
   startSafeMessage: jest.fn(async () => ({ token: 'session' })),
 }));
@@ -365,6 +366,70 @@ describe('signing handlers require a main-side confirmation', () => {
         const result = await handlers[channel](AUTO, payload, 0, { autoApprove: key, webContentsId: 20 });
         expect(result.success).toBe(true);
         expect(dappPermissions.getSigningAutoApprove).toHaveBeenCalledWith(key);
+      });
+
+      // A DNS-named ENS site (`ens://example.com`) loads as ipns://<key>;
+      // the renderer keys it on the name, and main accepts that only when
+      // its own resolution of the name answers the guest's exact key.
+      describe('a DNS-named ENS site over IPNS', () => {
+        const { resolveEnsContent } = require('../ens-resolver');
+        const B58 = '12D3KooWAsDaZWCkCEUN3myg49NoCMmrYYivmJVwjg7DVJBvWdaX';
+        const B36 = 'k51qzi5uqu5dgkkr5wjh0m796f9u3tou74wn2q2u3shgh6yn52ce4hitig3if4';
+        const NAME = 'example.com';
+        const resolvesTo = (decoded) => ({ type: 'ok', protocol: 'ipns', uri: `ipns://${decoded}`, decoded });
+
+        beforeEach(() => {
+          resolveEnsContent.mockReset().mockResolvedValue(resolvesTo(B58));
+        });
+
+        test.each([
+          ['the base36 key navigation loads', B36],
+          ['the resolver’s own base58 key', B58],
+        ])('is honoured on %s', async (_label, host) => {
+          guest(30, `ipns://${host}/app/`);
+          const result = await handlers[channel](AUTO, payload, 0, { autoApprove: NAME, webContentsId: 30 });
+          expect(result.success).toBe(true);
+          expect(resolveEnsContent).toHaveBeenCalledWith(NAME);
+          expect(dappPermissions.getSigningAutoApprove).toHaveBeenCalledWith(NAME);
+        });
+
+        test('is refused when the name resolves to another key', async () => {
+          guest(30, 'ipns://k51otherkey/');
+          await refusedWith(AUTO, { autoApprove: NAME, webContentsId: 30 });
+        });
+
+        test('is refused on a case-folded base58 host', async () => {
+          guest(30, `ipns://${B58.toLowerCase()}/`);
+          await refusedWith(AUTO, { autoApprove: NAME, webContentsId: 30 });
+        });
+
+        test('is refused when the name does not resolve to IPNS, or resolution fails', async () => {
+          guest(30, `ipns://${B36}/`);
+          resolveEnsContent.mockResolvedValueOnce({ type: 'ok', protocol: 'ipfs', decoded: B36 });
+          await refusedWith(AUTO, { autoApprove: NAME, webContentsId: 30 });
+          resolveEnsContent.mockResolvedValueOnce({ type: 'not_found' });
+          await refusedWith(AUTO, { autoApprove: NAME, webContentsId: 30 });
+          resolveEnsContent.mockRejectedValueOnce(new Error('rpc down'));
+          await refusedWith(AUTO, { autoApprove: NAME, webContentsId: 30 });
+        });
+
+        test('is refused when the guest navigates away while the name resolves', async () => {
+          guest(30, `ipns://${B36}/`);
+          resolveEnsContent.mockImplementationOnce(async () => {
+            guests.get(30).getURL = () => 'https://attacker.example/';
+            return resolvesTo(B58);
+          });
+          await refusedWith(AUTO, { autoApprove: NAME, webContentsId: 30 });
+        });
+
+        test('never applies to a non-IPNS guest, or to an ENS-host or scheme key', async () => {
+          guest(31, 'https://attacker.example/');
+          await refusedWith(AUTO, { autoApprove: NAME, webContentsId: 31 });
+          guest(30, `ipns://${B36}/`);
+          await refusedWith(AUTO, { autoApprove: 'myapp.eth', webContentsId: 30 });
+          await refusedWith(AUTO, { autoApprove: 'https://example.com', webContentsId: 30 });
+          expect(resolveEnsContent).not.toHaveBeenCalled();
+        });
       });
     });
   });

@@ -118,8 +118,12 @@ const loadProvider = async (options = {}) => {
   };
   jest.doMock('./wallet/safe-signing.js', () => safeSigning);
   jest.doMock('./origin-utils.js', () => ({
+    ...jest.requireActual('./origin-utils.js'),
     getPermissionKey: jest.fn((url) => url || null),
   }));
+  // Navigation's hash/CID/key -> name map (state.knownEnsNames).
+  const knownEnsNames = new Map();
+  jest.doMock('./state.js', () => ({ state: { knownEnsNames } }));
   const committedDisplayUrls = new Map();
   const tabs = {
     getDisplayUrlForWebview: jest.fn((wv) => committedDisplayUrls.get(wv) ?? ''),
@@ -176,6 +180,7 @@ const loadProvider = async (options = {}) => {
     dappPermissions,
     safeSigning,
     walletUi,
+    knownEnsNames,
   };
 };
 
@@ -838,6 +843,39 @@ describe('dapp-provider attributes requests to the requesting webview', () => {
       'dapp:provider-response',
       expect.objectContaining({ error: expect.objectContaining({ code: 4100 }) })
     );
+  });
+
+  // A DNS-named ENS site over IPNS commits as ipns://<key> but is shown as
+  // ens://example.com; it keeps the name key its grants were stored under
+  // before #764, and main cross-checks the name against the guest's key.
+  test('a DNS-named ENS site over IPNS is keyed on its name, not its IPNS key', async () => {
+    const B58 = '12D3KooWAsDaZWCkCEUN3myg49NoCMmrYYivmJVwjg7DVJBvWdaX';
+    const B36 = 'k51qzi5uqu5dgkkr5wjh0m796f9u3tou74wn2q2u3shgh6yn52ce4hitig3if4';
+    const NAMED = 'ens://example.com/';
+    const { mod, addWebview, commitMainFrameOf, sendRequestFrom, walletUi, dappPermissions, knownEnsNames } =
+      await twoTabs({
+        backgroundPermission: null,
+        permissionsByKey: {
+          [VISIBLE]: { walletIndex: 0, chainId: 100, autoApprove: { signing: true } },
+          [NAMED]: { walletIndex: 3, chainId: 100, autoApprove: {} },
+        },
+      });
+    knownEnsNames.set(B58, 'example.com');
+    const ipnsTab = addWebview({ url: `ipns://${B36}/`, webContentsId: 91 });
+    commitMainFrameOf(ipnsTab, MAIN_FRAME);
+
+    sendRequestFrom(ipnsTab, { id: 1, method: 'personal_sign', params: ['0xdead', '0xbackground'] });
+    await flushMicrotasks();
+
+    expect(dappPermissions.getPermission).toHaveBeenCalledWith(NAMED);
+    expect(dappPermissions.getPermission).not.toHaveBeenCalledWith(`ipns://${B36}/`);
+    expect(walletUi.showDappSignApproval).toHaveBeenCalledWith(
+      ipnsTab, NAMED, 'personal_sign', ['0xdead', '0xbackground']);
+
+    // The banner keys the same way; the Swarm/x402 banners read the page URL.
+    mod.setActiveWebview(ipnsTab);
+    expect(mod.getActiveDisplayUrl()).toBe(NAMED);
+    expect(mod.getActivePageUrl()).toBe(`ipns://${B36}/`);
   });
 
   test('getActiveDisplayUrl reads the visible tab’s committed page, not the address bar', async () => {

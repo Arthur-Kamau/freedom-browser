@@ -30,7 +30,8 @@ const {
   consumeConfirmation,
 } = require('./signing-confirmation');
 const dappPermissions = require('./dapp-permissions');
-const { normalizeOrigin } = require('../../shared/origin-utils');
+const { normalizeOrigin, isDwebNameHost, isPotentialEnsName } = require('../../shared/origin-utils');
+const { ipnsMhToCidV1Base36 } = require('../../shared/cid-utils');
 
 /**
  * Validate that an RPC URL is a known, trusted endpoint.
@@ -122,11 +123,13 @@ function isDappSigningAutoApproved(permissionKey, walletIndex) {
  * same one swarm-provider-ipc.js uses: dweb pages keep their dweb URL
  * (`bzz://name.eth/…` keys to `name.eth`), and an onchain app's internal
  * `web3://0x….eip155-<chainId>/` form keys to the same `web3://0x…[:id]`
- * key its standard display form does. Anything unattributable — no id, a
- * destroyed guest, another window's guest, a page that has since
- * navigated to another site — is refused, which only costs a prompt.
+ * key its standard display form does. A DNS-named ENS site over IPNS is
+ * the one case whose page URL does not carry its name (see
+ * `dnsNameServesIpnsGuest`). Anything unattributable — no id, a destroyed
+ * guest, another window's guest, a page that has since navigated to
+ * another site — is refused.
  */
-function requesterBelongsTo(sender, webContentsId, permissionKey) {
+async function requesterBelongsTo(sender, webContentsId, permissionKey) {
   if (!Number.isInteger(webContentsId) || typeof permissionKey !== 'string' || !permissionKey) {
     return false;
   }
@@ -136,13 +139,47 @@ function requesterBelongsTo(sender, webContentsId, permissionKey) {
   } catch {
     return false;
   }
-  if (!contents || contents.isDestroyed?.()) return false;
-  if (!Number.isInteger(sender?.id) || contents.hostWebContents?.id !== sender.id) return false;
+  const guestKey = () => {
+    if (!contents || contents.isDestroyed?.()) return null;
+    if (!Number.isInteger(sender?.id) || contents.hostWebContents?.id !== sender.id) return null;
+    try {
+      return normalizeOrigin(contents.getURL()) || null;
+    } catch {
+      return null;
+    }
+  };
+  const key = guestKey();
+  if (!key) return false;
+  if (key === permissionKey) return true;
+  if (!(await dnsNameServesIpnsGuest(permissionKey, key))) return false;
+  // The resolution awaited; the guest must still be on the same page.
+  return guestKey() === key;
+}
+
+/**
+ * A DNS name with an ENS contenthash (`example.com`, displayed
+ * `ens://example.com`) cannot load as `ipns://example.com` — that form
+ * means DNSLink — so its page loads as `ipns://<key>` while the renderer
+ * keys it on the name, the same key the address bar always gave it. Main
+ * accepts the name for that guest only when its own ENS resolution of the
+ * name answers that exact IPNS key: the resolver's base58 form, or the
+ * libp2p-key base36 form the renderer canonicalises it to before loading
+ * (exact comparison — a case-folded base58 host is a different key).
+ */
+async function dnsNameServesIpnsGuest(permissionKey, guestKey) {
+  const host = /^ipns:\/\/([^/?#]+)$/.exec(guestKey)?.[1];
+  if (!host) return false;
+  if (permissionKey.includes('://') || isDwebNameHost(permissionKey) || !isPotentialEnsName(permissionKey)) {
+    return false;
+  }
+  let result;
   try {
-    return normalizeOrigin(contents.getURL()) === permissionKey;
+    result = await require('../ens-resolver').resolveEnsContent(permissionKey);
   } catch {
     return false;
   }
+  if (result?.type !== 'ok' || result.protocol !== 'ipns' || !result.decoded) return false;
+  return host === result.decoded || host === ipnsMhToCidV1Base36(result.decoded);
 }
 
 /**
@@ -158,15 +195,15 @@ function requesterBelongsTo(sender, webContentsId, permissionKey) {
  *     absent where auto-approve doesn't exist).
  * Anything else throws SIGNING_NOT_CONFIRMED before a key is touched.
  *
- * @returns {'confirmed'|'auto-approved'}
+ * @returns {Promise<'confirmed'|'auto-approved'>}
  */
-function authorizeSigning(authorization, kind, accountIndex, payload, autoApproveCheck, sender = null) {
+async function authorizeSigning(authorization, kind, accountIndex, payload, autoApproveCheck, sender = null) {
   if (authorization?.confirmation) {
     consumeConfirmation(authorization.confirmation, kind, accountIndex, payload);
     return 'confirmed';
   }
   if (authorization?.autoApprove !== undefined && autoApproveCheck) {
-    if (!requesterBelongsTo(sender, authorization.webContentsId, authorization.autoApprove)) {
+    if (!(await requesterBelongsTo(sender, authorization.webContentsId, authorization.autoApprove))) {
       throw notAuthorized('the requesting page does not belong to the site whose auto-approve rules were named');
     }
     if (autoApproveCheck(authorization.autoApprove)) {
@@ -185,7 +222,7 @@ async function handleSendTransaction(walletIndex, params, kind, context = {}, au
     }
     const tx = { to, value, data, gasLimit, maxFeePerGas, maxPriorityFeePerGas, gasPrice, chainId };
     const confirmKind = kind === PAYMENT_KINDS.DAPP_SEND ? CONFIRM_KINDS.DAPP_SEND : CONFIRM_KINDS.WALLET_SEND;
-    const how = authorizeSigning(
+    const how = await authorizeSigning(
       authorization,
       confirmKind,
       walletIndex,
@@ -444,7 +481,7 @@ function registerWalletIpc() {
       if (!message) {
         return { success: false, error: 'Message is required' };
       }
-      authorizeSigning(authorization, CONFIRM_KINDS.SIGN_MESSAGE, walletIndex, message, (key) =>
+      await authorizeSigning(authorization, CONFIRM_KINDS.SIGN_MESSAGE, walletIndex, message, (key) =>
         isDappSigningAutoApproved(key, walletIndex), event?.sender);
 
       const signature = await getSigner(walletIndex).signMessage(message);
@@ -462,7 +499,7 @@ function registerWalletIpc() {
       if (!typedData) {
         return { success: false, error: 'Typed data is required' };
       }
-      authorizeSigning(authorization, CONFIRM_KINDS.SIGN_TYPED_DATA, walletIndex, typedData, (key) =>
+      await authorizeSigning(authorization, CONFIRM_KINDS.SIGN_TYPED_DATA, walletIndex, typedData, (key) =>
         isDappSigningAutoApproved(key, walletIndex), event?.sender);
 
       const signature = await getSigner(walletIndex).signTypedData(typedData);
@@ -525,12 +562,12 @@ function registerWalletIpc() {
 
   ipcMain.handle(
     'wallet:safe-send',
-    safeStateHandler((safeIndex, tx, display, chainId, authorization) => {
+    safeStateHandler(async (safeIndex, tx, display, chainId, authorization) => {
       // Creating the SafeTx is the confirmation point: it silently collects
       // the vault owners' signatures, and every later board step
       // (safe-sign, safe-execute) only acts on this main-held, confirmed
       // SafeTx. There is no auto-approve for Safe sends.
-      authorizeSigning(authorization, CONFIRM_KINDS.SAFE_SEND, safeIndex, { tx, chainId }, null);
+      await authorizeSigning(authorization, CONFIRM_KINDS.SAFE_SEND, safeIndex, { tx, chainId }, null);
       const { startSafeSend } = require('./safe/safe-transactions');
       return startSafeSend({ safeIndex, tx, display, chainId });
     })
@@ -584,11 +621,11 @@ function registerWalletIpc() {
   // identity and returns a per-session token that every other call must
   // present.
   ipcMain.handle('wallet:safe-message-start', (event, ...args) =>
-    safeStateHandler((safeIndex, request, display, requester, authorization) => {
+    safeStateHandler(async (safeIndex, request, display, requester, authorization) => {
       // Same confirmation point as safe-send; follow-up calls are bound to
       // the session token this returns. A dApp's signing auto-approve is
       // evaluated here, in main — for the page the session is bound to only.
-      authorizeSigning(authorization, CONFIRM_KINDS.SAFE_MESSAGE, safeIndex, request, (key) =>
+      await authorizeSigning(authorization, CONFIRM_KINDS.SAFE_MESSAGE, safeIndex, request, (key) =>
         key === (requester?.origin ?? null) &&
           authorization.webContentsId === (requester?.webContentsId ?? null) &&
           isDappSigningAutoApproved(key, safeIndex), event?.sender);

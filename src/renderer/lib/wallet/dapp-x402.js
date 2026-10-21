@@ -37,7 +37,7 @@ import {
   signingButtonLabel,
 } from './wallet-utils.js';
 import { getPermissionKey } from '../origin-utils.js';
-import { getActiveDisplayUrl } from '../dapp-provider.js';
+import { getActivePageUrl } from '../dapp-provider.js';
 import { goBackInHistory } from '../history-traversal.js';
 import { refreshBalances } from './balance-display.js';
 import { showX402Permissions } from './permission-manage.js';
@@ -1032,7 +1032,7 @@ function hideUnlockError() {
 export async function updateX402ConnectionBanner(originKey = null) {
   if (!bannerEl) return;
 
-  const activeKey = getPermissionKey(getActiveDisplayUrl());
+  const activeKey = getPermissionKey(getActivePageUrl());
   if (originKey && originKey !== activeKey) return;
   const key = activeKey;
 
@@ -1109,8 +1109,12 @@ export async function disconnectX402(originKey) {
   if (!key) return;
   try {
     await window.electronAPI.x402RevokeAllForOrigin({ origin: key });
-    bannerEl?.classList.add('hidden');
-    currentBannerKey = null;
+    // Only the banner of the origin that was revoked: a key from the
+    // permissions list can name a site in another tab.
+    if (key === currentBannerKey) {
+      bannerEl?.classList.add('hidden');
+      currentBannerKey = null;
+    }
   } catch (err) {
     console.error('[x402] revoke-all failed:', err);
   }

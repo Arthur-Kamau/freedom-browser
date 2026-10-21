@@ -9,7 +9,7 @@ import { walletState, registerScreenHider, hideAllSubscreens } from './wallet-st
 import { isSignatureInFlight, signatureInFlightError } from './signature-flight.js';
 import { formatBytes } from './wallet-utils.js';
 import { open as openSidebarPanel, isVisible as isSidebarVisible } from '../sidebar.js';
-import { getPermissionKey, getActiveWebview, getActiveDisplayUrl } from '../dapp-provider.js';
+import { getPermissionKey, getActiveWebview, getActivePageUrl } from '../dapp-provider.js';
 import { showSwarmPermissions } from './permission-manage.js';
 import { createPromptQueue, setButtonsDisabled } from './prompt-queue.js';
 import {
@@ -358,7 +358,7 @@ function rejectSwarmConnect(pending) {
 export async function updateSwarmConnectionBanner(permissionKey = null) {
   if (!swarmConnectionBanner) return;
 
-  const activeKey = getPermissionKey(getActiveDisplayUrl());
+  const activeKey = getPermissionKey(getActivePageUrl());
   if (permissionKey && permissionKey !== activeKey) return;
   permissionKey = activeKey;
 
@@ -406,15 +406,19 @@ export async function disconnectSwarmApp(permissionKey = null) {
     // Only the visible page can be told — and only when it is the site
     // that was disconnected.
     const webview = getActiveWebview();
-    if (webview && webview.send && getPermissionKey(getActiveDisplayUrl()) === key) {
+    if (webview && webview.send && getPermissionKey(getActivePageUrl()) === key) {
       webview.send('swarm:provider-event', {
         event: 'disconnect',
         data: { origin: key },
       });
     }
 
-    swarmConnectionBanner?.classList.add('hidden');
-    currentBannerPermissionKey = null;
+    // Only the banner of the site that was revoked: a key from the
+    // permissions list can name a site in another tab.
+    if (key === currentBannerPermissionKey) {
+      swarmConnectionBanner?.classList.add('hidden');
+      currentBannerPermissionKey = null;
+    }
   } catch (err) {
     console.error('[SwarmConnect] Failed to disconnect:', err);
   }

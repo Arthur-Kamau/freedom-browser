@@ -16,7 +16,8 @@ import { isSafeAccount, GNOSIS_CHAIN_ID } from './wallet/wallet-utils.js';
 import { openSafeMessageBoard, abandonSafeMessageBoard } from './wallet/safe-signing.js';
 import { confirmSigning } from './wallet/signing-confirmation.js';
 import { getPermissionKey } from './origin-utils.js';
-import { parseOnchainAppUrl } from './url-utils.js';
+import { parseOnchainAppUrl, applyDnsNameIdentity } from './url-utils.js';
+import { state } from './state.js';
 import { trackGuestMainFrame, isFromGuestMainFrame } from './guest-main-frame.js';
 import { getDisplayUrlForWebview } from './tabs.js';
 
@@ -129,19 +130,34 @@ function getOnchainApp(webview) {
  * `committedDisplayUrl`, which keeps ENS/bzz/ipfs names), never the address
  * bar: `#address-input` shows the visible tab — or a half-typed draft — so
  * reading it let a background tab's request borrow the visible site's
- * connection and auto-approve rules (#764).
+ * connection and auto-approve rules (#764). A DNS-named ENS site over IPNS
+ * commits as `ipns://<key>`; `applyDnsNameIdentity` maps it back to the
+ * `ens://<name>` its address bar shows, so it keeps the key its grants were
+ * stored under (main cross-checks that name against the guest's key).
  */
 function getRequestDisplayUrl(webview) {
-  return getOnchainApp(webview)?.url || getDisplayUrlForWebview(webview);
+  return getOnchainApp(webview)?.url ||
+    applyDnsNameIdentity(getDisplayUrlForWebview(webview), state.knownEnsNames);
 }
 
 /**
- * The committed display URL of the visible tab ('' when none). For chrome
- * that describes the visible tab (the connection banners) — never for
+ * The dApp identity of the visible tab's committed page ('' when none) —
+ * the same derivation a request from that tab is keyed on. For chrome that
+ * describes the visible tab's dApp connection (the banner) — never for
  * attributing a request; use the requesting webview for that.
  */
 export function getActiveDisplayUrl() {
   return activeWebview ? getRequestDisplayUrl(activeWebview) : '';
+}
+
+/**
+ * The visible tab's committed page URL ('' when none), read exactly as
+ * `swarm-provider.js` reads it for a request: without the dApp-only
+ * DNS-name mapping above, since the Swarm provider and main's x402
+ * attribution both key on the page URL itself.
+ */
+export function getActivePageUrl() {
+  return activeWebview ? getDisplayUrlForWebview(activeWebview) : '';
 }
 
 async function getCurrentChainId(webview = null) {
