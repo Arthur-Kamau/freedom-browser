@@ -2413,14 +2413,20 @@ function isNormalizedEnsName(name) {
   }
 }
 
+// `unverifiedCause` lets the renderer tell this apart from a claim that
+// doesn't forward-resolve back: an unnormalized name usually does resolve
+// back, so the generic warning would read as a false alarm.
 function unnormalizedReverseResult(normalizedAddress, claimedName, trust) {
-  return unverifiedReverseResult(
-    normalizedAddress,
-    NAME_SYSTEMS.ens,
-    claimedName,
-    `Reverse record for ${normalizedAddress} claims a name that isn't normalized`,
-    trust
-  );
+  return {
+    ...unverifiedReverseResult(
+      normalizedAddress,
+      NAME_SYSTEMS.ens,
+      claimedName,
+      `Reverse record for ${normalizedAddress} claims a name that isn't normalized`,
+      trust
+    ),
+    unverifiedCause: 'unnormalized',
+  };
 }
 
 function unverifiedReverseResult(normalizedAddress, nameSystem, claimedName, detail, trust = undefined) {

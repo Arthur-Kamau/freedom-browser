@@ -1110,6 +1110,7 @@ describe('ens-resolver', () => {
         system: 'ens',
         reason: 'UNVERIFIED',
         claimedName: 'vitaIik.eth',
+        unverifiedCause: 'unnormalized',
         error: `Reverse record for ${input.toLowerCase()} claims a name that isn't normalized`,
         trust: { level: 'verified', system: 'ens' },
       });
@@ -1678,6 +1679,7 @@ describe('ens-resolver', () => {
         system: 'ens',
         reason: 'UNVERIFIED',
         claimedName: 'Reverse-Myotis.eth',
+        unverifiedCause: 'unnormalized',
         trust: { method: 'myotis' },
       });
       expect(result.name).toBeUndefined();
@@ -3302,6 +3304,7 @@ describe('ens-resolver', () => {
         address: ADDR,
         reason: 'UNVERIFIED',
         claimedName: 'vitaIik.eth',
+        unverifiedCause: 'unnormalized',
         trust: { method: 'colibri' },
       });
       expect(result.name).toBeUndefined();
