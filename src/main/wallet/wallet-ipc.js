@@ -4,7 +4,7 @@
  * Registers IPC handlers for wallet operations.
  */
 
-const { ipcMain } = require('electron');
+const { ipcMain, webContents } = require('electron');
 const QRCode = require('qrcode');
 const { getAllBalances, getBalancesWithCache, clearBalanceCache } = require('./balance-service');
 const { getChain, getAllChains } = require('./chains');
@@ -30,6 +30,7 @@ const {
   consumeConfirmation,
 } = require('./signing-confirmation');
 const dappPermissions = require('./dapp-permissions');
+const { normalizeOrigin } = require('../../shared/origin-utils');
 
 /**
  * Validate that an RPC URL is a known, trusted endpoint.
@@ -110,24 +111,64 @@ function isDappSigningAutoApproved(permissionKey, walletIndex) {
 }
 
 /**
+ * True only when `webContentsId` names a live `<webview>` guest of the
+ * chrome window that sent this IPC (`sender`) and that guest's committed
+ * page belongs to `permissionKey` (#764).
+ *
+ * The renderer names the site whose auto-approve rules it wants applied,
+ * but the site is a renderer-side derivation; a wrong one (the visible tab
+ * answering for a background tab's request) must not borrow another
+ * site's rules. The guest's own URL is the independent cross-check, the
+ * same one swarm-provider-ipc.js uses: dweb pages keep their dweb URL
+ * (`bzz://name.eth/…` keys to `name.eth`), and an onchain app's internal
+ * `web3://0x….eip155-<chainId>/` form keys to the same `web3://0x…[:id]`
+ * key its standard display form does. Anything unattributable — no id, a
+ * destroyed guest, another window's guest, a page that has since
+ * navigated to another site — is refused, which only costs a prompt.
+ */
+function requesterBelongsTo(sender, webContentsId, permissionKey) {
+  if (!Number.isInteger(webContentsId) || typeof permissionKey !== 'string' || !permissionKey) {
+    return false;
+  }
+  let contents;
+  try {
+    contents = webContents.fromId(webContentsId);
+  } catch {
+    return false;
+  }
+  if (!contents || contents.isDestroyed?.()) return false;
+  if (!Number.isInteger(sender?.id) || contents.hostWebContents?.id !== sender.id) return false;
+  try {
+    return normalizeOrigin(contents.getURL()) === permissionKey;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Gate every signing handler (security audit O-7). A request is signed
  * only when the caller presents
  *   - `{ confirmation }`: a token main issued through
  *     `wallet:confirm-signing` for exactly this request (single use,
  *     short-lived — see signing-confirmation.js), or
- *   - `{ autoApprove: permissionKey }`: and main's own reading of that
- *     dApp's stored auto-approve policy covers this request
- *     (`autoApproveCheck`, absent where auto-approve doesn't exist).
+ *   - `{ autoApprove: permissionKey, webContentsId }`: the requesting
+ *     page's guest webContents actually belongs to `permissionKey`
+ *     (`requesterBelongsTo`, #764), and main's own reading of that dApp's
+ *     stored auto-approve policy covers this request (`autoApproveCheck`,
+ *     absent where auto-approve doesn't exist).
  * Anything else throws SIGNING_NOT_CONFIRMED before a key is touched.
  *
  * @returns {'confirmed'|'auto-approved'}
  */
-function authorizeSigning(authorization, kind, accountIndex, payload, autoApproveCheck) {
+function authorizeSigning(authorization, kind, accountIndex, payload, autoApproveCheck, sender = null) {
   if (authorization?.confirmation) {
     consumeConfirmation(authorization.confirmation, kind, accountIndex, payload);
     return 'confirmed';
   }
   if (authorization?.autoApprove !== undefined && autoApproveCheck) {
+    if (!requesterBelongsTo(sender, authorization.webContentsId, authorization.autoApprove)) {
+      throw notAuthorized('the requesting page does not belong to the site whose auto-approve rules were named');
+    }
     if (autoApproveCheck(authorization.autoApprove)) {
       return 'auto-approved';
     }
@@ -136,7 +177,7 @@ function authorizeSigning(authorization, kind, accountIndex, payload, autoApprov
   throw notAuthorized('no confirmation token');
 }
 
-async function handleSendTransaction(walletIndex, params, kind, context = {}, authorization = null) {
+async function handleSendTransaction(walletIndex, params, kind, context = {}, authorization = null, sender = null) {
   try {
     const { to, value, data, gasLimit, maxFeePerGas, maxPriorityFeePerGas, gasPrice, chainId } = params || {};
     if (!to || chainId === undefined || !gasLimit) {
@@ -151,7 +192,8 @@ async function handleSendTransaction(walletIndex, params, kind, context = {}, au
       tx,
       confirmKind === CONFIRM_KINDS.DAPP_SEND
         ? (permissionKey) => isDappTxAutoApproved(permissionKey, walletIndex, tx)
-        : null
+        : null,
+      sender
     );
     const result = await signAndRecord(tx, getSigner(walletIndex), buildTxRecordContext(kind, context));
 
@@ -393,17 +435,17 @@ function registerWalletIpc() {
 
   // Renderer threads the dapp's permissionKey through as context.origin
   // so payment-history rows match the x402 permission store's keying.
-  ipcMain.handle('wallet:dapp-send-transaction', (_event, params, walletIndex, context, authorization) =>
-    handleSendTransaction(walletIndex, params, PAYMENT_KINDS.DAPP_SEND, context, authorization));
+  ipcMain.handle('wallet:dapp-send-transaction', (event, params, walletIndex, context, authorization) =>
+    handleSendTransaction(walletIndex, params, PAYMENT_KINDS.DAPP_SEND, context, authorization, event?.sender));
 
   // Sign a personal message (EIP-191) for a dApp
-  ipcMain.handle('wallet:sign-message', async (_event, message, walletIndex, authorization) => {
+  ipcMain.handle('wallet:sign-message', async (event, message, walletIndex, authorization) => {
     try {
       if (!message) {
         return { success: false, error: 'Message is required' };
       }
       authorizeSigning(authorization, CONFIRM_KINDS.SIGN_MESSAGE, walletIndex, message, (key) =>
-        isDappSigningAutoApproved(key, walletIndex));
+        isDappSigningAutoApproved(key, walletIndex), event?.sender);
 
       const signature = await getSigner(walletIndex).signMessage(message);
 
@@ -415,13 +457,13 @@ function registerWalletIpc() {
   });
 
   // Sign typed data (EIP-712) for a dApp
-  ipcMain.handle('wallet:sign-typed-data', async (_event, typedData, walletIndex, authorization) => {
+  ipcMain.handle('wallet:sign-typed-data', async (event, typedData, walletIndex, authorization) => {
     try {
       if (!typedData) {
         return { success: false, error: 'Typed data is required' };
       }
       authorizeSigning(authorization, CONFIRM_KINDS.SIGN_TYPED_DATA, walletIndex, typedData, (key) =>
-        isDappSigningAutoApproved(key, walletIndex));
+        isDappSigningAutoApproved(key, walletIndex), event?.sender);
 
       const signature = await getSigner(walletIndex).signTypedData(typedData);
 
@@ -541,17 +583,18 @@ function registerWalletIpc() {
   // session is bound to its requesting page: start takes the requester
   // identity and returns a per-session token that every other call must
   // present.
-  ipcMain.handle(
-    'wallet:safe-message-start',
+  ipcMain.handle('wallet:safe-message-start', (event, ...args) =>
     safeStateHandler((safeIndex, request, display, requester, authorization) => {
       // Same confirmation point as safe-send; follow-up calls are bound to
       // the session token this returns. A dApp's signing auto-approve is
-      // evaluated here, in main.
+      // evaluated here, in main — for the page the session is bound to only.
       authorizeSigning(authorization, CONFIRM_KINDS.SAFE_MESSAGE, safeIndex, request, (key) =>
-        key === (requester?.origin ?? null) && isDappSigningAutoApproved(key, safeIndex));
+        key === (requester?.origin ?? null) &&
+          authorization.webContentsId === (requester?.webContentsId ?? null) &&
+          isDappSigningAutoApproved(key, safeIndex), event?.sender);
       const { startSafeMessage } = require('./safe/safe-messages');
       return startSafeMessage({ safeIndex, request, display, requester });
-    })
+    })(event, ...args)
   );
 
   ipcMain.handle(

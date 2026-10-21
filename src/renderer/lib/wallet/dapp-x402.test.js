@@ -335,6 +335,9 @@ async function loadDappX402(options = {}) {
     showX402Permissions: updatePermissionSubscreen,
   }));
   jest.doMock('./balance-display.js', () => ({ refreshBalances }));
+  jest.doMock('../dapp-provider.js', () => ({
+    getActiveDisplayUrl: jest.fn(() => ''),
+  }));
   jest.doMock('./vault-unlock.js', () => ({
     showVaultUnlock: jest.fn().mockResolvedValue(undefined),
   }));

@@ -174,6 +174,7 @@ async function loadSwarmConnect() {
   jest.doMock('../dapp-provider.js', () => ({
     getPermissionKey: jest.fn((url) => url),
     getActiveWebview: jest.fn(() => null),
+    getActiveDisplayUrl: jest.fn(() => ''),
   }));
   jest.doMock('./permission-manage.js', () => ({ showSwarmPermissions: jest.fn() }));
   jest.doMock('./publisher-identity-selector.js', () => ({
