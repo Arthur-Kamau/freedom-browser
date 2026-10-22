@@ -452,6 +452,11 @@ module.exports = {
   AQUA_DISCLOSURE_MANUAL: 'aqua:disclosure:manual',
   AQUA_DISCLOSURE_REQUEST: 'aqua:disclosure-request',
   AQUA_DISCLOSURE_MANUAL_RESPONSE: 'aqua:disclosure:manual-response',
+  // freedom://identity asks main to open the sidebar's unlock screen; the
+  // chrome answers once the user has unlocked or given up.
+  AQUA_UNLOCK: 'aqua:unlock',
+  AQUA_UNLOCK_REQUEST: 'aqua:unlock-request',
+  AQUA_UNLOCK_RESPONSE: 'aqua:unlock-response',
   // Chrome-only: main asks the sidebar for a wallet signature over a claim
   // pre-image or a service sign-in message, and the sidebar answers.
   AQUA_SIGN_REQUEST: 'aqua:sign-request',

@@ -634,6 +634,14 @@ contextBridge.exposeInMainWorld('aqua', {
   },
   // { requestId, response } or { requestId, error: { message } }.
   respondToDisclosureRequest: (payload) => ipcRenderer.send('aqua:disclosure:manual-response', payload),
+  // freedom://identity asked for the vault to be unlocked; show the unlock
+  // screen and answer { requestId, unlocked } or { requestId, error }.
+  onUnlockRequest: (callback) => {
+    const handler = (_event, request) => callback(request);
+    ipcRenderer.on('aqua:unlock-request', handler);
+    return () => ipcRenderer.removeListener('aqua:unlock-request', handler);
+  },
+  respondToUnlockRequest: (payload) => ipcRenderer.send('aqua:unlock-response', payload),
 });
 
 contextBridge.exposeInMainWorld('remoteSigner', {

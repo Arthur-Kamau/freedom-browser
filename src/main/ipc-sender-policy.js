@@ -99,6 +99,7 @@ const INTERNAL_CHANNELS = [
   'aqua:shared:attest',
   'aqua:shared:list',
   'aqua:status',
+  'aqua:unlock',
   'bookmarks:get',
   'clipboard:copy-text',
   'downloads:cancel',

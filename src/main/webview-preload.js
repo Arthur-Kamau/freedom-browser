@@ -1134,6 +1134,8 @@ contextBridge.exposeInMainWorld('freedomAPI', {
   aquaRespondToRequest: guardInternal('aquaRespondToRequest', (requestText) =>
     ipcRenderer.invoke('aqua:disclosure:manual', requestText)
   ),
+  // Opens the sidebar's unlock screen; resolves once the vault is open.
+  aquaUnlock: guardInternal('aquaUnlock', () => ipcRenderer.invoke('aqua:unlock')),
 
   // Token registry — used by the payments page to resolve asset
   // metadata (symbol, decimals) per chainId:address.

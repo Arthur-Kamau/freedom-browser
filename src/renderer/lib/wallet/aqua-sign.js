@@ -9,6 +9,7 @@
  * claims → Manage" deep link in the wallet tab.
  */
 import { showFirstPartySignApproval } from './dapp-sign.js';
+import { showVaultUnlock } from './vault-unlock.js';
 import { openOrFocusInternalPage } from '../tabs.js';
 
 const PURPOSE_COPY = {
@@ -70,6 +71,14 @@ export function initAquaSign() {
   const aqua = window.aqua;
   if (aqua?.onSignRequest) {
     aqua.onSignRequest((request) => handleAquaSignRequest(request, aqua.respondToSignRequest));
+  }
+  if (aqua?.onUnlockRequest) {
+    aqua.onUnlockRequest(({ requestId }) =>
+      showVaultUnlock('freedom://identity').then(
+        () => aqua.respondToUnlockRequest({ requestId, unlocked: true }),
+        (err) => aqua.respondToUnlockRequest({ requestId, error: { message: err?.message || 'The wallet was not unlocked' } })
+      )
+    );
   }
   const manage = document.getElementById('identity-claims-manage');
   if (manage) {

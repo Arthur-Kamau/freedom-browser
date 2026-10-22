@@ -9,6 +9,7 @@ const HOSTILE = `"><img src=x onerror=alert(1) data-xss="1">'<b>&amp;`;
 const IDS = {
   'claims-list': 'div', 'claims-empty': 'div', 'shared-claims': 'div', 'issued-list': 'div',
   'status-wallet': 'span', 'status-service': 'span', 'status-caps': 'span', 'add-claim-toggle': 'button', 'add-claim-card': 'div', 'shared-count': 'span', 'issued-count': 'span',
+  'unlock-row': 'div', 'unlock-btn': 'button',
   'nav-claims': 'button', 'nav-attest': 'button', 'nav-issued': 'button', 'nav-requests': 'button', 'panel-claims': 'section', 'panel-attest': 'section', 'panel-issued': 'section', 'panel-requests': 'section',
   'request-input': 'textarea', 'request-btn': 'button', 'request-status': 'span', 'response-box': 'div', 'response-output': 'textarea', 'response-copy': 'button', 'status-notice': 'div', 'wallet-line': 'p', 'claim-form': 'form', 'claim-type': 'select',
   'fields-name': 'div', 'fields-email': 'div', 'fields-phone': 'div', 'fields-domain': 'div',
@@ -44,6 +45,7 @@ function api(overrides = {}) {
     aquaListIssued: jest.fn(async () => ({ success: true, issued: [] })),
     aquaExportIssued: jest.fn(async () => ({ success: true, json: '{"revisions":{}}' })),
     copyText: jest.fn(async () => true),
+    aquaUnlock: jest.fn(async () => ({ success: true, unlocked: true })),
     onAquaClaimsChanged: jest.fn(),
     ...overrides,
   };
@@ -68,13 +70,17 @@ describe('freedom://identity', () => {
 
   test('a locked vault is said plainly, and a missing one differently', async () => {
     const locked = { success: false, error: { code: 'VAULT_LOCKED', message: 'Unlock your vault' } };
-    const page = await run(api({
+    const lockedApi = api({
       aquaStatus: async () => ({ success: true, nodeUrl: 'u', wallet: null, vaultUnlocked: false, hasVault: true }),
       aquaListClaims: async () => locked,
-    }));
+    });
+    const page = await run(lockedApi);
     expect(page.elements['status-notice'].textContent).toContain('locked');
     expect(page.elements['status-notice'].classList.contains('hidden')).toBe(false);
     expect(page.elements['claims-list'].textContent).toContain('Unlock your wallet');
+    expect(page.elements['unlock-row'].classList.contains('hidden')).toBe(false);
+    await page.elements['unlock-btn'].fire('click');
+    expect(lockedApi.aquaUnlock).toHaveBeenCalled();
 
     const fresh = await run(api({
       aquaStatus: async () => ({ success: true, nodeUrl: 'u', wallet: null, vaultUnlocked: false, hasVault: false }),

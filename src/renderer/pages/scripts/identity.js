@@ -17,6 +17,8 @@ const addClaimToggle = document.getElementById('add-claim-toggle');
 const addClaimCard = document.getElementById('add-claim-card');
 const sharedCount = document.getElementById('shared-count');
 const issuedCount = document.getElementById('issued-count');
+const unlockRow = document.getElementById('unlock-row');
+const unlockBtn = document.getElementById('unlock-btn');
 const form = document.getElementById('claim-form');
 const typeSelect = document.getElementById('claim-type');
 const fieldGroups = {
@@ -130,7 +132,7 @@ function errorText(result, fallback) {
   if (!err) return fallback;
   if (err.code === 'VAULT_LOCKED') {
     return hasVault
-      ? 'Unlock your wallet in the sidebar, then try again.'
+      ? 'Unlock your wallet to see your claims.'
       : 'Set up your wallet in the sidebar to keep claims in this profile.';
   }
   if (err.code === 'DISABLED') return 'Enable Identity & Wallet under Settings → Advanced to use identity claims.';
@@ -276,6 +278,7 @@ async function loadStatus() {
   const result = await window.freedomAPI.aquaStatus();
   if (!result?.success) {
     showNotice('warn', errorText(result, 'Identity claims are unavailable.'));
+    unlockRow.classList.add('hidden');
     walletLine.textContent = '';
     statusWallet.textContent = '—';
     statusService.textContent = '—';
@@ -301,10 +304,11 @@ async function loadStatus() {
   statusWallet.title = result.wallet?.address || '';
   statusService.textContent = result.nodeUrl || '';
   statusCaps.textContent = caps;
+  unlockRow.classList.toggle('hidden', !(result.hasVault && !result.vaultUnlocked));
   if (!result.hasVault) {
     showNotice('warn', 'Set up your wallet in the sidebar before creating identity claims.');
   } else if (!result.vaultUnlocked) {
-    showNotice('warn', 'Your wallet is locked. Unlock it in the sidebar to see and create claims.');
+    showNotice('warn', 'Your wallet is locked. Unlock it to see and create claims.');
   } else if (result.wallet && result.wallet.canSign === false) {
     showNotice('warn', 'A multi-owner account cannot sign identity claims. Switch to another wallet.');
   }
@@ -628,6 +632,20 @@ for (const t of NAV_TARGETS) {
 }
 if (typeof window.addEventListener === 'function') window.addEventListener('hashchange', routeFromHash);
 routeFromHash();
+
+async function unlockWallet() {
+  unlockBtn.disabled = true;
+  try {
+    const result = await window.freedomAPI.aquaUnlock();
+    if (!result?.success) showNotice('error', errorText(result, 'The wallet was not unlocked.'));
+    else hideNotice();
+  } finally {
+    unlockBtn.disabled = false;
+  }
+  await loadStatus();
+  await Promise.all([loadClaims(), loadShared(), loadIssued()]);
+}
+unlockBtn.addEventListener('click', unlockWallet);
 
 requestBtn.addEventListener('click', reviewRequest);
 responseCopy.addEventListener('click', async () => {
