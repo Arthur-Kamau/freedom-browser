@@ -87,6 +87,10 @@ back to you.
 
 ## Verifying a response
 
+`test-e2e/fixtures/aqua-verifier.html` is a complete example: it connects,
+sends the request above, and verifies the response as described here;
+`test-e2e/aqua-disclosure.spec.js` drives it end to end.
+
 A response with no field redaction rebuilds into ordinary trees (take each
 `Full` entry's `revision`). Verify each claim tree and its attestations with
 the Aqua SDK; at SDK v7.0.0 the WASM verifier cannot run
