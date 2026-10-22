@@ -274,7 +274,7 @@
 }
 
 /* ============================================
-   Toolbar Button (Wallet Toggle)
+   Toolbar Buttons (Identity, Wallet Toggle)
    ============================================ */
 
 .wallet-toggle-btn {
@@ -306,6 +306,11 @@
 .wallet-toggle-btn svg {
   width: 15px;
   height: 15px;
+}
+
+.identity-btn svg {
+  width: 16px;
+  height: 16px;
 }
 
 /* ============================================

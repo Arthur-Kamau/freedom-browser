@@ -18,6 +18,9 @@ async function loadSidebar() {
   const elements = {
     sidebar: createElement('aside', { classes: ['sidebar', 'collapsed'] }),
     'wallet-toggle-btn': createElement('button'),
+    'identity-toggle-btn': createElement('button', { classes: ['hidden'] }),
+    'identity-btn': createElement('button', { classes: ['hidden'] }),
+    'identity-menu-divider': createElement('div', { classes: ['hidden'] }),
     'sidebar-close': createElement('button'),
     // The panel opens on its home view; a test hides it to put a request's
     // screen up (showHome(false)).
@@ -388,5 +391,27 @@ describe('sidebar concealed by browser full screen', () => {
     flight.beginSignatureFlight({ id: 'ledger-send' });
     showHome(true);
     expect(elements.sidebar.classList.contains('fullscreen-concealed')).toBe(false);
+  });
+});
+
+describe('the Identity entry points follow the Identity & Wallet switch', () => {
+  afterEach(() => {
+    delete global.document;
+    delete global.window;
+    delete global.CustomEvent;
+    delete global.MutationObserver;
+  });
+
+  const IDENTITY_IDS = ['identity-toggle-btn', 'identity-btn', 'identity-menu-divider'];
+
+  test('shown with the wallet button while the feature is on, hidden with it when it goes off', async () => {
+    const { elements } = await loadSidebar();
+    for (const id of IDENTITY_IDS) expect(elements[id].classList.contains('hidden')).toBe(false);
+    expect(elements['wallet-toggle-btn'].classList.contains('hidden')).toBe(false);
+
+    const onSettings = global.window.addEventListener.mock.calls.find(([type]) => type === 'settings:updated')[1];
+    onSettings({ detail: { enableIdentityWallet: false } });
+    for (const id of IDENTITY_IDS) expect(elements[id].classList.contains('hidden')).toBe(true);
+    expect(elements['wallet-toggle-btn'].classList.contains('hidden')).toBe(true);
   });
 });

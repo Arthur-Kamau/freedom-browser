@@ -847,6 +847,13 @@ window.addEventListener('DOMContentLoaded', async () => {
     closeMenus();
     loadTarget('freedom://settings');
   });
+  document.getElementById('identity-btn')?.addEventListener('click', () => {
+    closeMenus();
+    openOrFocusInternalPage('identity');
+  });
+  document
+    .getElementById('identity-toggle-btn')
+    ?.addEventListener('click', () => openOrFocusInternalPage('identity'));
   initUpdateStatusUi({
     closeMenus,
     openSettings: () => loadTarget('freedom://settings/about/updates'),
