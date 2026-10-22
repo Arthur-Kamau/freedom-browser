@@ -104,3 +104,12 @@ the `subject` you expected, that each attestation's `context` or structural
 link names the claim, and whether the attesters are ones you trust. A
 response proves what the trees prove; trusting an attester is the
 verifier's decision.
+
+## Example
+
+`test-e2e/fixtures/aqua-verifier.html` is a complete requester and verifier
+in one page: it connects, sends the request above, rebuilds whole trees,
+posts each tree (or selective tree) to the verify endpoint, checks the nonce
+and the subject, and lists what verified. `test-e2e/aqua-disclosure.spec.js`
+drives it end to end through the Share Identity screen with a pre-seeded
+vault and claims store, with the verify endpoint stubbed in the page.
