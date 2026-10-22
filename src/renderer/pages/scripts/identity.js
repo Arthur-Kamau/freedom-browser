@@ -305,6 +305,7 @@ async function loadStatus() {
   statusService.textContent = result.nodeUrl || '';
   statusCaps.textContent = caps;
   unlockRow.classList.toggle('hidden', !(result.hasVault && !result.vaultUnlocked));
+  watchLock(Boolean(result.hasVault && !result.vaultUnlocked));
   if (!result.hasVault) {
     showNotice('warn', 'Set up your wallet in the sidebar before creating identity claims.');
   } else if (!result.vaultUnlocked) {
@@ -646,6 +647,27 @@ async function unlockWallet() {
   await Promise.all([loadClaims(), loadShared(), loadIssued()]);
 }
 unlockBtn.addEventListener('click', unlockWallet);
+
+// An unlock made elsewhere (the sidebar's own prompts, a signing flow) is
+// not announced to pages, so while the vault is locked the page re-reads
+// its status every few seconds and fills in once it opens.
+let lockPoll = null;
+function watchLock(locked) {
+  if (locked && !lockPoll) {
+    lockPoll = setInterval(async () => {
+      const result = await window.freedomAPI.aquaStatus();
+      if (result?.success && result.vaultUnlocked) {
+        clearInterval(lockPoll);
+        lockPoll = null;
+        await loadStatus();
+        await Promise.all([loadClaims(), loadShared(), loadIssued()]);
+      }
+    }, 3000);
+  } else if (!locked && lockPoll) {
+    clearInterval(lockPoll);
+    lockPoll = null;
+  }
+}
 
 requestBtn.addEventListener('click', reviewRequest);
 responseCopy.addEventListener('click', async () => {
