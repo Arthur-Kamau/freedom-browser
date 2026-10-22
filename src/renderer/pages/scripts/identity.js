@@ -19,7 +19,10 @@ const statusCaps = $('status-caps');
 const claimsCount = $('claims-count');
 const sharedCount = $('shared-count');
 const issuedCount = $('issued-count');
-const unlockRow = $('unlock-row');
+const statusLock = $('status-lock');
+const lockedCard = $('locked-card');
+const lockedTitle = $('locked-title');
+const lockedText = $('locked-text');
 const unlockBtn = $('unlock-btn');
 
 // Add a claim
@@ -204,9 +207,7 @@ function errorText(result, fallback) {
   const err = result && result.error;
   if (!err) return fallback;
   if (err.code === 'VAULT_LOCKED') {
-    return hasVault
-      ? 'Unlock your wallet to see your claims.'
-      : 'Set up your wallet in the sidebar to keep claims in this profile.';
+    return hasVault ? 'Unlock your wallet first.' : 'Set up your wallet in the sidebar first.';
   }
   if (err.code === 'DISABLED') return 'Enable Identity & Wallet under Settings → Advanced to use identity claims.';
   return err.message || fallback;
@@ -420,12 +421,19 @@ function renderClaim(claim) {
   return card;
 }
 
+// A locked store is already said once, on the locked card: a list that
+// cannot be read stays empty rather than repeating it.
+function isLocked(result) {
+  return result?.error?.code === 'VAULT_LOCKED';
+}
+
 async function loadClaims() {
   const result = await window.freedomAPI.aquaListClaims();
   if (!result?.success) {
     claimsEmpty.classList.add('hidden');
     claimsCount.textContent = '0';
-    claimsEl.replaceChildren(el('div', 'meta', errorText(result, 'Claims could not be loaded.')));
+    claimsEl.replaceChildren();
+    if (!isLocked(result)) claimsEl.appendChild(el('div', 'meta', errorText(result, 'Claims could not be loaded.')));
     return;
   }
   const claims = result.claims || [];
@@ -443,7 +451,7 @@ async function loadStatus() {
   const result = await window.freedomAPI.aquaStatus();
   if (!result?.success) {
     showNotice('warn', errorText(result, 'Identity claims are unavailable.'));
-    unlockRow.classList.add('hidden');
+    showLocked(false, false);
     walletLine.textContent = '';
     statusWallet.textContent = '—';
     statusService.textContent = '—';
@@ -469,14 +477,29 @@ async function loadStatus() {
   statusWallet.title = result.wallet?.address || '';
   statusService.textContent = result.nodeUrl || '';
   statusCaps.textContent = caps;
-  unlockRow.classList.toggle('hidden', !(result.hasVault && !result.vaultUnlocked));
-  watchLock(Boolean(result.hasVault && !result.vaultUnlocked));
-  if (!result.hasVault) {
-    showNotice('warn', 'Set up your wallet in the sidebar before creating identity claims.');
-  } else if (!result.vaultUnlocked) {
-    showNotice('warn', 'Your wallet is locked. Unlock it to see and create claims.');
-  } else if (result.wallet && result.wallet.canSign === false) {
+  const locked = Boolean(result.hasVault && !result.vaultUnlocked);
+  showLocked(!result.hasVault, locked);
+  watchLock(locked);
+  if (result.hasVault && result.vaultUnlocked && result.wallet && result.wallet.canSign === false) {
     showNotice('warn', 'A multi-owner account cannot sign identity claims. Switch to another wallet.');
+  }
+}
+
+// The one place a missing or locked wallet is said. While it is, the lists
+// stay empty and the actions that need the vault are disabled.
+function showLocked(missing, locked) {
+  const blocked = missing || locked;
+  lockedCard.classList.toggle('hidden', !blocked);
+  statusLock.classList.toggle('hidden', !locked);
+  unlockBtn.classList.toggle('hidden', !locked);
+  addClaimBtn.disabled = blocked;
+  requestOpenBtn.disabled = blocked;
+  if (missing) {
+    lockedTitle.textContent = 'No wallet yet';
+    lockedText.textContent = 'Set up your wallet in the sidebar before creating identity claims.';
+  } else if (locked) {
+    lockedTitle.textContent = 'Your wallet is locked';
+    lockedText.textContent = 'Claims are kept encrypted with your wallet seed, so they are readable only while it is unlocked.';
   }
 }
 
@@ -697,12 +720,13 @@ async function attestShared() {
 
 async function loadShared() {
   if (!activeAddress) {
-    sharedEl.replaceChildren(el('div', 'meta', 'Set up and unlock your wallet to see claims shared with you.'));
+    sharedEl.replaceChildren();
     return;
   }
   const result = await window.freedomAPI.aquaListShared();
   if (!result?.success) {
-    sharedEl.replaceChildren(el('div', 'meta', errorText(result, 'Shared claims could not be loaded.')));
+    sharedEl.replaceChildren();
+    if (!isLocked(result)) sharedEl.appendChild(el('div', 'meta', errorText(result, 'Shared claims could not be loaded.')));
     return;
   }
   const shared = result.shared || [];
@@ -755,7 +779,8 @@ function renderIssued(entry) {
 async function loadIssued() {
   const result = await window.freedomAPI.aquaListIssued();
   if (!result?.success) {
-    issuedEl.replaceChildren(el('div', 'meta', errorText(result, 'Issued attestations could not be loaded.')));
+    issuedEl.replaceChildren();
+    if (!isLocked(result)) issuedEl.appendChild(el('div', 'meta', errorText(result, 'Issued attestations could not be loaded.')));
     return;
   }
   const issued = result.issued || [];

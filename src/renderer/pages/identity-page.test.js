@@ -9,7 +9,7 @@ const HOSTILE = `"><img src=x onerror=alert(1) data-xss="1">'<b>&amp;`;
 const IDS = {
   'claims-list': 'div', 'claims-empty': 'div', 'shared-claims': 'div', 'issued-list': 'div',
   'status-wallet': 'span', 'status-service': 'span', 'status-caps': 'span', 'claims-count': 'span', 'shared-count': 'span', 'issued-count': 'span',
-  'unlock-row': 'div', 'unlock-btn': 'button', 'status-notice': 'div', 'wallet-line': 'p',
+  'status-lock': 'span', 'locked-card': 'div', 'locked-title': 'div', 'locked-text': 'div', 'unlock-btn': 'button', 'status-notice': 'div', 'wallet-line': 'p',
   'nav-claims': 'button', 'nav-attest': 'button', 'nav-issued': 'button', 'nav-requests': 'button', 'panel-claims': 'section', 'panel-attest': 'section', 'panel-issued': 'section', 'panel-requests': 'section',
   // Add a claim
   'add-claim-btn': 'button', 'add-claim-dialog': 'dialog', 'add-claim-close': 'button', 'claim-form': 'form', 'claim-kind': 'div',
@@ -86,28 +86,53 @@ describe('freedom://identity', () => {
     expect(page.elements['status-wallet'].textContent).toBe('0xabc');
   });
 
-  test('a locked vault is said plainly, and a missing one differently', async () => {
+  test('a locked vault is said once, on the card with the Unlock button, and the lists stay empty', async () => {
     const locked = { success: false, error: { code: 'VAULT_LOCKED', message: 'Unlock your vault' } };
     const lockedApi = api({
-      aquaStatus: async () => ({ success: true, nodeUrl: 'u', wallet: null, vaultUnlocked: false, hasVault: true }),
+      aquaStatus: async () => ({ success: true, nodeUrl: 'u', wallet: { address: '0xabc' }, vaultUnlocked: false, hasVault: true }),
       aquaListClaims: async () => locked,
+      aquaListIssued: async () => locked,
     });
     const page = await run(lockedApi);
-    expect(page.elements['status-notice'].textContent).toContain('locked');
-    expect(page.elements['status-notice'].classList.contains('hidden')).toBe(false);
-    expect(page.elements['claims-list'].textContent).toContain('Unlock your wallet');
-    expect(page.elements['unlock-row'].classList.contains('hidden')).toBe(false);
+    expect(page.elements['locked-card'].classList.contains('hidden')).toBe(false);
+    expect(page.elements['locked-title'].textContent).toContain('locked');
+    expect(page.elements['unlock-btn'].classList.contains('hidden')).toBe(false);
+    // The address is public and still shown, marked as locked.
+    expect(page.elements['status-wallet'].textContent).toBe('0xabc');
+    expect(page.elements['status-lock'].classList.contains('hidden')).toBe(false);
+    // Nowhere else repeats it.
+    expect(page.elements['status-notice'].classList.contains('hidden')).toBe(true);
+    expect(page.elements['claims-list'].children).toHaveLength(0);
+    expect(page.elements['claims-empty'].classList.contains('hidden')).toBe(true);
+    expect(page.elements['shared-claims'].children).toHaveLength(0);
+    expect(page.elements['issued-list'].children).toHaveLength(0);
+    expect(page.elements['add-claim-btn'].disabled).toBe(true);
+    expect(page.elements['request-open-btn'].disabled).toBe(true);
     // The page polls for an unlock made elsewhere while the vault is locked.
     expect(page.timers.length).toBeGreaterThan(0);
     await page.elements['unlock-btn'].fire('click');
     expect(lockedApi.aquaUnlock).toHaveBeenCalled();
+  });
 
-    const fresh = await run(api({
+  test('a missing vault is said on the same card, without an Unlock button', async () => {
+    const locked = { success: false, error: { code: 'VAULT_LOCKED', message: 'Unlock your vault' } };
+    const page = await run(api({
       aquaStatus: async () => ({ success: true, nodeUrl: 'u', wallet: null, vaultUnlocked: false, hasVault: false }),
       aquaListClaims: async () => locked,
     }));
-    expect(fresh.elements['claims-list'].textContent).toContain('Set up your wallet');
-    expect(fresh.elements['unlock-row'].classList.contains('hidden')).toBe(true);
+    expect(page.elements['locked-card'].classList.contains('hidden')).toBe(false);
+    expect(page.elements['locked-text'].textContent).toContain('Set up your wallet');
+    expect(page.elements['unlock-btn'].classList.contains('hidden')).toBe(true);
+    expect(page.elements['status-lock'].classList.contains('hidden')).toBe(true);
+    expect(page.elements['claims-list'].children).toHaveLength(0);
+    expect(page.elements['add-claim-btn'].disabled).toBe(true);
+  });
+
+  test('an unlocked wallet shows no lock anywhere', async () => {
+    const page = await run(api());
+    expect(page.elements['locked-card'].classList.contains('hidden')).toBe(true);
+    expect(page.elements['status-lock'].classList.contains('hidden')).toBe(true);
+    expect(page.elements['add-claim-btn'].disabled).toBeFalsy();
   });
 
   test('renders a claim with hostile payload as text and labels it Self-signed, never verified', async () => {

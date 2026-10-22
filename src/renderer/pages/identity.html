@@ -261,11 +261,8 @@
         white-space: nowrap;
         max-width: 380px;
       }
-      .status-card .unlock {
+      .status-card .badge {
         margin-left: auto;
-        display: flex;
-        gap: 10px;
-        align-items: center;
       }
       .notice {
         display: flex;
@@ -576,6 +573,18 @@
         font-size: 14px;
         color: var(--text);
       }
+      .empty.locked {
+        margin-bottom: 28px;
+        display: grid;
+        justify-items: center;
+        gap: 8px;
+      }
+      .empty.locked .ico {
+        margin-bottom: 2px;
+      }
+      .empty.locked .btn {
+        margin-top: 6px;
+      }
 
       /* Forms */
       .form {
@@ -864,17 +873,23 @@
             <span class="ico ico-server" aria-hidden="true"></span>
             <span class="value" id="status-service">—</span>
           </div>
+          <span class="badge hidden" id="status-lock"><span class="ico ico-lock" aria-hidden="true"></span>Locked</span>
           <div class="status-item meta" id="status-caps"></div>
           <p class="meta hidden" id="wallet-line"></p>
-          <div class="unlock hidden" id="unlock-row">
-            <span class="meta">Claims are readable only while the wallet is unlocked.</span>
-            <button type="button" class="btn primary" id="unlock-btn">
-              <span class="ico ico-unlock" aria-hidden="true"></span>Unlock wallet
-            </button>
-          </div>
         </div>
 
         <div class="notice hidden" id="status-notice"></div>
+
+        <!-- The one place the locked (or missing) wallet is said: the lists
+             below stay empty until it opens. -->
+        <div class="empty locked hidden" id="locked-card">
+          <span class="ico ico-lock" aria-hidden="true"></span>
+          <div class="empty-title" id="locked-title">Your wallet is locked</div>
+          <div class="meta" id="locked-text">Claims are kept encrypted with your wallet seed, so they are readable only while it is unlocked.</div>
+          <button type="button" class="btn primary" id="unlock-btn">
+            <span class="ico ico-unlock" aria-hidden="true"></span>Unlock wallet
+          </button>
+        </div>
 
         <section class="section panel active" id="panel-claims" data-nav="claims">
           <div class="section-head">
