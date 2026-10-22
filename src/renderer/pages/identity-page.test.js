@@ -170,11 +170,29 @@ describe('freedom://identity', () => {
     expect(card.querySelector('.badge').textContent).toBe('Attested');
     expect(card.querySelector('.badge').classList.contains('attested')).toBe(true);
     const box = card.querySelector('.attestation');
-    expect(box.textContent).toContain('did:pkh:eip155:1:0xserver');
+    // The attester is shortened to its address, with the whole DID on hover.
+    expect(box.querySelector('.who').textContent).toBe('0xserver');
+    expect(box.querySelector('.who').title).toBe('did:pkh:eip155:1:0xserver');
+    expect(box.querySelector('.badge').textContent).toBe('Verified');
     expect(box.querySelector('.words').textContent).toBe(HOSTILE);
+    // The words fold to two lines and open on click.
+    await box.querySelector('.words').fire('click');
+    expect(box.querySelector('.words').classList.contains('expanded')).toBe(true);
     expect(box.querySelector('.source').textContent).toBe('Service');
     expect(box.querySelector('.source').querySelector('.ico-server')).not.toBeNull();
     expect(page.document.htmlWrites).toHaveLength(0);
+  });
+
+  test('a failed attestation carries one Not verified chip and its reason, and does not count', async () => {
+    const failed = claim({ attestations: [{ tip: '0x1', attesterDid: 'did:pkh:eip155:1:0x0ca27C8a817291673dce4020BAd3b5dc1DDE1109', context: 'words', source: 'service', verification: { isValid: false, status: 'FAILED' } }] });
+    const page = await run(api({ aquaListClaims: async () => ({ success: true, claims: [failed] }) }));
+    const card = page.elements['claims-list'].querySelector('.card');
+    expect(card.querySelector('.badge').textContent).toBe('Self-signed');
+    const box = card.querySelector('.attestation');
+    expect(box.classList.contains('invalid')).toBe(true);
+    expect(box.querySelector('.who').textContent).toBe('0x0ca2…1109');
+    expect(box.querySelector('.badge').textContent).toBe('Not verified');
+    expect(box.querySelector('.state').textContent).toBe('Not verified: FAILED');
   });
 
   test('two valid attestations are counted on the badge', async () => {
@@ -325,6 +343,7 @@ describe('freedom://identity attestation', () => {
     expect(box.querySelector('.source').textContent).toBe('Peer');
     expect(box.querySelector('.source').querySelector('.ico-user')).not.toBeNull();
     expect(box.classList.contains('pending')).toBe(true);
+    expect(box.querySelector('.badge').textContent).toBe('Pending');
     expect(box.textContent).toContain('Import it to verify');
     expect(page.elements['claims-list'].querySelector('.badge').textContent).toBe('Self-signed');
   });

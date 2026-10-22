@@ -427,9 +427,9 @@
       .attestation {
         display: grid;
         grid-template-columns: auto 1fr auto;
-        gap: 4px 10px;
+        gap: 6px 10px;
         align-items: center;
-        padding: 8px 12px;
+        padding: 10px 12px;
         border-left: 3px solid var(--success);
         background: var(--bg-raised);
         border-radius: 6px;
@@ -453,12 +453,27 @@
         min-width: 0;
       }
       .attestation .words {
-        grid-column: 2 / 4;
+        grid-column: 1 / 4;
         color: var(--text);
+        font-size: 13px;
+        line-height: 1.45;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        overflow: hidden;
+        cursor: pointer;
+      }
+      .attestation .words.expanded {
+        -webkit-line-clamp: unset;
+        display: block;
       }
       .attestation .state {
-        grid-column: 2 / 4;
+        grid-column: 1 / 4;
         font-size: 12px;
+      }
+      .badge.pending {
+        border-color: var(--warn);
+        color: var(--warn);
       }
       .attestation .state.ok {
         color: var(--success);

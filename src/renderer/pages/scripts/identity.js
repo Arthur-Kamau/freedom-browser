@@ -170,7 +170,15 @@ function sharedType(templateName, payload) {
 function formatTime(iso) {
   if (!iso) return '';
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? String(iso) : date.toLocaleString();
+  if (Number.isNaN(date.getTime())) return String(iso);
+  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+// A DID shown in a row: its address part, with the whole DID on hover.
+function shortDid(did) {
+  const s = String(did || '');
+  const addr = s.slice(s.lastIndexOf(':') + 1);
+  return addr.length > 14 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr || s;
 }
 
 function showNotice(kind, message) {
@@ -324,6 +332,8 @@ function claimHead(type, value, subParts, badgeNode) {
   return head;
 }
 
+// One attestation: who, a state chip, and their words folded to two lines
+// until clicked. The failure reason or the pending hint is one small line.
 function renderAttestation(a) {
   const state = a.verification?.isValid ? 'ok' : a.pending ? 'wait' : 'bad';
   const box = el('div', state === 'ok' ? 'attestation' : state === 'wait' ? 'attestation pending' : 'attestation invalid');
@@ -332,20 +342,30 @@ function renderAttestation(a) {
   source.appendChild(icon(service ? 'server' : 'user'));
   source.appendChild(document.createTextNode(service ? 'Service' : 'Peer'));
   box.appendChild(source);
-  box.appendChild(el('span', 'who mono', a.attesterDid || '(unknown attester)'));
-  box.appendChild(icon(state === 'ok' ? 'check-circle' : state === 'wait' ? 'clock' : 'x-circle'));
-  if (a.context) box.appendChild(el('div', 'words', a.context));
+  const who = el('span', 'who mono', a.attesterDid ? shortDid(a.attesterDid) : '(unknown attester)');
+  who.title = a.attesterDid || '';
+  box.appendChild(who);
   box.appendChild(
-    el(
-      'div',
-      `state ${state}`,
-      state === 'ok'
-        ? 'Attestation verified'
-        : state === 'wait'
-          ? 'Recorded by the service; the attester holds the tree. Import it to verify.'
-          : `Attestation not verified: ${a.verification?.status || 'unknown'}`
-    )
+    state === 'ok'
+      ? badge('attested', 'check-circle', 'Verified')
+      : state === 'wait'
+        ? badge('pending', 'clock', 'Pending')
+        : badge('invalid', 'x-circle', 'Not verified')
   );
+  if (a.context) {
+    const words = el('div', 'words', a.context);
+    words.title = 'Show more';
+    words.addEventListener('click', () => {
+      const open = words.classList.toggle('expanded');
+      words.title = open ? 'Show less' : 'Show more';
+    });
+    box.appendChild(words);
+  }
+  if (state === 'wait') {
+    box.appendChild(el('div', 'state wait', 'Recorded by the service; the attester holds the tree. Import it to verify.'));
+  } else if (state === 'bad') {
+    box.appendChild(el('div', 'state bad', `Not verified: ${a.verification?.status || 'unknown'}`));
+  }
   return box;
 }
 
@@ -353,17 +373,16 @@ function renderClaim(claim) {
   const card = el('div', 'card');
   card.dataset.id = claim.id;
 
-  const rev = el('span', 'mono', shortHash(claim.tip));
-  rev.title = claim.tip || '';
   card.appendChild(
-    claimHead(claim.type, claimValue(claim), [TYPE_LABELS[claim.type] || claim.type, '·', `signed ${formatTime(claim.signedAt)}`, '·', rev], statusBadge(claim))
+    claimHead(claim.type, claimValue(claim), [TYPE_LABELS[claim.type] || claim.type, '·', `signed ${formatTime(claim.signedAt)}`], statusBadge(claim))
   );
 
   const body = el('div', 'claim-body');
   const verification = claim.verification || {};
   if (verification.isValid) {
+    const status = verification.status && verification.status !== 'OK' ? ` (${verification.status})` : '';
     body.appendChild(
-      statusLine('ok', 'check-circle', `Chain and signature verified (${verification.status || 'OK'}), ${formatTime(verification.checkedAt)}`)
+      statusLine('ok', 'check-circle', `Chain and signature verified${status} · ${formatTime(verification.checkedAt)}`)
     );
   } else {
     body.appendChild(statusLine('bad', 'x-circle', `Not verified: ${verification.status || 'unknown'}`));
@@ -669,13 +688,12 @@ function renderShared(entry) {
   const card = el('div', 'card');
   card.dataset.tip = entry.tip;
   const type = sharedType(entry.templateName, entry.payload);
-  const rev = el('span', 'mono', shortHash(entry.tip));
-  rev.title = entry.tip || '';
-  card.appendChild(claimHead(type, sharedValue(entry), [TYPE_LABELS[type], '·', rev]));
+  card.appendChild(claimHead(type, sharedValue(entry), [TYPE_LABELS[type], '·', 'shared with you']));
   const body = el('div', 'claim-body');
   const tech = el('div', 'tech-rows');
   techRow(tech, 'Subject', (entry.payload && entry.payload.signer_did) || '');
   techRow(tech, 'Shared by', entry.sender || '');
+  techRow(tech, 'Revision', entry.tip || '');
   body.appendChild(tech);
   card.appendChild(body);
   const actions = el('div', 'actions');
