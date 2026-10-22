@@ -35,6 +35,12 @@ const codeStatus = document.getElementById('code-status');
 const formError = document.getElementById('form-error');
 const createBtn = document.getElementById('create-btn');
 const cancelBtn = document.getElementById('cancel-btn');
+const requestInput = document.getElementById('request-input');
+const requestBtn = document.getElementById('request-btn');
+const requestStatus = document.getElementById('request-status');
+const responseBox = document.getElementById('response-box');
+const responseOutput = document.getElementById('response-output');
+const responseCopy = document.getElementById('response-copy');
 
 const TYPE_LABELS = { name: 'Name', email: 'Email', phone: 'Phone', domain: 'Domain' };
 const OTP_TYPES = new Set(['email', 'phone']);
@@ -544,6 +550,38 @@ async function loadIssued() {
   }
   issuedEl.replaceChildren(...issued.map(renderIssued));
 }
+
+// ── Disclosure: a request pasted by the user ─────────────────────────────
+
+async function reviewRequest() {
+  const text = requestInput.value.trim();
+  if (!text) {
+    requestStatus.textContent = 'Paste the request first.';
+    return;
+  }
+  requestBtn.disabled = true;
+  requestStatus.textContent = 'Decide in the sidebar…';
+  responseBox.classList.add('hidden');
+  try {
+    const result = await window.freedomAPI.aquaRespondToRequest(text);
+    if (!result?.success) {
+      requestStatus.textContent = errorText(result, 'The request could not be answered.');
+      return;
+    }
+    responseOutput.value = JSON.stringify(result.response, null, 2);
+    responseBox.classList.remove('hidden');
+    const count = (result.response.claims || []).length;
+    requestStatus.textContent = count === 0 ? 'No claims shared' : `${count} claim${count === 1 ? '' : 's'} shared. Send the response to whoever asked.`;
+  } finally {
+    requestBtn.disabled = false;
+  }
+}
+
+requestBtn.addEventListener('click', reviewRequest);
+responseCopy.addEventListener('click', async () => {
+  await window.freedomAPI.copyText(responseOutput.value);
+  requestStatus.textContent = 'Response copied.';
+});
 
 // ── Form ─────────────────────────────────────────────────────────────────
 

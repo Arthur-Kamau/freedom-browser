@@ -3136,6 +3136,49 @@
               </div>
             </div>
 
+            <!-- Aqua identity disclosure consent sub-screen -->
+            <div id="sidebar-aqua-disclose" class="sidebar-subscreen sidebar-modal hidden">
+              <div
+                class="subscreen-header"
+                data-back="aqua-disclose-back"
+                data-title="Share Identity"
+              ></div>
+
+              <div class="subscreen-content" id="aqua-disclose-content">
+                <div class="dapp-sign-origin">
+                  <div class="dapp-sign-site" id="aqua-disclose-site">example.com</div>
+                  <div class="dapp-sign-action">asks for identity claims</div>
+                </div>
+
+                <div class="aqua-disclose-purpose" id="aqua-disclose-purpose"></div>
+
+                <div class="aqua-disclose-list" id="aqua-disclose-list"></div>
+
+                <div class="dapp-sign-warning">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="16" x2="12" y2="12" />
+                    <line x1="12" y1="8" x2="12.01" y2="8" />
+                  </svg>
+                  <span
+                    >Only the ticked claims leave this browser, with their signatures and attestations,
+                    so the requester can verify them. Untick anything you do not want to share.</span
+                  >
+                </div>
+
+                <div class="dapp-sign-error hidden" id="aqua-disclose-error"></div>
+
+                <div class="dapp-sign-actions">
+                  <button type="button" class="dapp-sign-reject-btn" id="aqua-disclose-reject">
+                    Reject
+                  </button>
+                  <button type="button" class="dapp-sign-approve-btn" id="aqua-disclose-share">
+                    Share
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <!-- x402 Payment Approval sub-screen -->
             <div id="sidebar-x402-approval" class="sidebar-subscreen sidebar-modal hidden">
               <div

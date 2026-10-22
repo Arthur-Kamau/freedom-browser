@@ -197,3 +197,47 @@ describe('registerAquaIpc attestation channels', () => {
     expect(broadcastToAllWebContents).toHaveBeenCalledTimes(4);
   });
 });
+
+describe('disclosure channels', () => {
+  const FIXTURE = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '__fixtures__', 'name-claim.aqua.json'), 'utf8'));
+  const [OBJ] = Object.entries(FIXTURE.revisions).find(([, r]) => r.payloads);
+  const CLAIM = { id: 'c1', type: 'name', address: ADDRESS, signerDid: `did:pkh:eip155:1:${ADDRESS}`, payload: FIXTURE.revisions[OBJ].payloads, tree: FIXTURE, signedAt: '2026-10-22T12:00:00Z', verification: { isValid: true }, attestations: [] };
+
+  test('prepare matches the request against the stored claims, build applies the ticks through the worker', async () => {
+    const sent = [];
+    const deps = createAquaDeps({ nodeUrl: 'https://aqua.test', sendToChrome: (c, p) => sent.push({ c, p }) });
+    deps.service.listClaims = jest.fn(async () => [CLAIM]);
+    const prepared = await deps.prepareDisclosure({ request: { aqua: 1, need: ['name'], optional: ['email'] }, address: ADDRESS });
+    expect(prepared.entries.map((e) => [e.type, e.claimId])).toEqual([['name', 'c1'], ['email', null]]);
+    const response = await deps.buildDisclosure({ request: { aqua: 1, need: ['name'], nonce: 'n' }, selections: [{ type: 'name', claimId: 'c1' }], address: ADDRESS });
+    expect(response.nonce).toBe('n');
+    expect(response.claims[0].claim.revisions[OBJ].disclosure).toBe('Full');
+    await require('./aqua-wasm').shutdown();
+  });
+
+  test('a pasted request goes to the chrome and settles on its answer', async () => {
+    const sent = [];
+    const deps = createAquaDeps({ nodeUrl: 'https://aqua.test', sendToChrome: (c, p) => sent.push({ c, p }), signTimeoutMs: 1000 });
+    const promise = deps.manualDisclosure('{"aqua":1,"need":[{"type":"name","fields":["given_name"]}],"purpose":"hi"}');
+    await new Promise((r) => setImmediate(r));
+    expect(sent[0].c).toBe(IPC.AQUA_DISCLOSURE_REQUEST);
+    expect(sent[0].p).toMatchObject({ address: ADDRESS, requester: { label: 'Pasted request' }, request: { aqua: 1, need: [{ type: 'name', fields: ['given_name'] }], optional: [], purpose: 'hi' } });
+    expect(deps.settleDisclosure({ requestId: sent[0].p.requestId, response: { aqua: 1, claims: [] } })).toBe(true);
+    await expect(promise).resolves.toEqual({ aqua: 1, claims: [] });
+    const rejected = deps.manualDisclosure({ aqua: 1, need: ['email'] });
+    await new Promise((r) => setImmediate(r));
+    deps.settleDisclosure({ requestId: sent[1].p.requestId, error: { message: 'User rejected the request' } });
+    await expect(rejected).rejects.toThrow('User rejected');
+    await expect(deps.manualDisclosure('nope')).rejects.toThrow('valid JSON');
+  });
+
+  test('the handlers map a malformed request to INVALID_REQUEST', async () => {
+    const deps = { nodeUrl: 'https://aqua.test', service: {}, settleSignature: jest.fn(), settleDisclosure: jest.fn(),
+      prepareDisclosure: async () => { throw new (require('./disclosure').DisclosureRequestError)('Request names nothing it needs'); } };
+    registerAquaIpc({ createDeps: () => deps, log: { error: () => {} } });
+    const { invoke, on } = handlers();
+    expect(await invoke(IPC.AQUA_DISCLOSURE_PREPARE, {})).toMatchObject({ success: false, error: { code: 'INVALID_REQUEST' } });
+    on.get(IPC.AQUA_DISCLOSURE_MANUAL_RESPONSE)({}, { requestId: 'r', response: {} });
+    expect(deps.settleDisclosure).toHaveBeenCalledWith({ requestId: 'r', response: {} });
+  });
+});

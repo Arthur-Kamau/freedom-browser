@@ -82,7 +82,8 @@
               reject(new Error('Request timed out'));
             }
           },
-          method === 'eth_sendTransaction' ? 300000 : 60000
+          // Both wait on a decision the user makes on the sidebar.
+          method === 'eth_sendTransaction' || method === 'aqua_requestDisclosure' ? 300000 : 60000
         );
       });
     },

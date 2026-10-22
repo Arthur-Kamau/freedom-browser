@@ -11,6 +11,7 @@
  */
 
 import { showDappConnect, getSelectedChainId, setSelectedChainId, updateConnectionBanner, showDappTxApproval, showDappSignApproval, showVaultUnlock, updateSwarmConnectionBanner, updateX402ConnectionBanner } from './wallet-ui.js';
+import { showAquaDisclosure } from './wallet/aqua-disclose.js';
 import { buildDappTxContext, extractSelector } from './wallet/dapp-tx.js';
 import { isSafeAccount, GNOSIS_CHAIN_ID } from './wallet/wallet-utils.js';
 import { openSafeMessageBoard, abandonSafeMessageBoard } from './wallet/safe-signing.js';
@@ -299,6 +300,19 @@ async function handleProviderRequest(webview, request) {
       } else {
         result = await showDappSignApproval(webview, permissionKey, method, params);
       }
+    } else if (method === 'aqua_requestDisclosure') {
+      // Identity disclosure (docs/aqua-disclosure.md): the connected wallet's
+      // claims are offered on the Share Identity screen; the response goes
+      // back to this document only, like any other result below.
+      const permission = await window.dappPermissions.getPermission(permissionKey);
+      if (!permission) {
+        throw { ...ERRORS.UNAUTHORIZED, message: 'Not connected. Call eth_requestAccounts first.' };
+      }
+      const walletsResult = await window.wallet.getDerivedWallets();
+      const wallets = walletsResult?.success ? walletsResult.wallets : [];
+      const address = wallets.find((w) => w.index === permission.walletIndex)?.address;
+      if (!address) throw { ...ERRORS.UNAUTHORIZED, message: 'Connected wallet unavailable' };
+      result = await showAquaDisclosure({ label: permissionKey, address, request: params?.[0] });
     } else if (method === 'eth_sign') {
       // Deprecated and dangerous - reject
       throw { ...ERRORS.UNSUPPORTED_METHOD, message: 'eth_sign is deprecated for security reasons' };

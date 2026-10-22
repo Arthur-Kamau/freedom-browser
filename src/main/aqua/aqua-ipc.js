@@ -21,10 +21,14 @@ const { broadcastToAllWebContents } = require('../lib/broadcast-to-all-webconten
 const { createAquaClient, DEFAULT_NODE_URL, AquaServiceError } = require('./aqua-client');
 const { createClaimsStore, ClaimsStoreLocked } = require('./claims-store');
 const { createClaimsService, ClaimInputError } = require('./claims-service');
+const disclosure = require('./disclosure');
+const wasm = require('./aqua-wasm');
 
 // A signature request waits for the user; a hardware wallet prompt can
 // take a while. Past this the request fails and the screen is withdrawn.
 const SIGN_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+// A pasted disclosure request waits on the same consent screen.
+const DISCLOSURE_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
 
 function configuredNodeUrl() {
   return process.env.FREEDOM_AQUA_NODE_URL || loadSettings()?.aquaNodeUrl || DEFAULT_NODE_URL;
@@ -122,6 +126,67 @@ function createAquaDeps({
     return true;
   }
 
+  // ── Disclosure ───────────────────────────────────────────────────────
+  // `prepare` and `build` serve the chrome's consent screen; `manual` is a
+  // pasted request from freedom://identity, parked here while the chrome
+  // shows the same screen and answers on the manual-response channel.
+  const pendingDisclosures = new Map();
+
+  async function prepareDisclosure({ request, address }) {
+    const parsed = disclosure.parseDisclosureRequest(request);
+    const claims = await service.listClaims();
+    return { request: parsed, entries: disclosure.matchClaims(parsed, claims, address) };
+  }
+
+  async function buildDisclosure({ request, selections, address }) {
+    const parsed = disclosure.parseDisclosureRequest(request);
+    const claims = await service.listClaims();
+    return disclosure.buildResponse({
+      request: parsed,
+      selections,
+      claims,
+      subjectAddress: address,
+      applyDisclosure: (tree, policy) => wasm.applyDisclosure(tree, policy),
+    });
+  }
+
+  async function manualDisclosure(requestText) {
+    const parsed = disclosure.parseDisclosureRequest(requestText);
+    const wallet = await getActiveWallet();
+    if (!wallet?.address) throw new Error('Set up a wallet before answering a disclosure request');
+    const requestId = crypto.randomUUID();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pendingDisclosures.delete(requestId);
+        reject(new Error('The disclosure request timed out'));
+      }, signTimeoutMs === SIGN_REQUEST_TIMEOUT_MS ? DISCLOSURE_REQUEST_TIMEOUT_MS : signTimeoutMs);
+      pendingDisclosures.set(requestId, { resolve, reject, timer });
+      try {
+        sendToChrome(IPC.AQUA_DISCLOSURE_REQUEST, {
+          requestId,
+          address: wallet.address,
+          walletIndex: wallet.index,
+          requester: { origin: null, label: 'Pasted request' },
+          request: { aqua: parsed.version, need: parsed.entries.filter((e) => e.required).map(entryToWire), optional: parsed.entries.filter((e) => !e.required).map(entryToWire), purpose: parsed.purpose, nonce: parsed.nonce },
+        });
+      } catch (err) {
+        clearTimeout(timer);
+        pendingDisclosures.delete(requestId);
+        reject(err);
+      }
+    });
+  }
+
+  function settleDisclosure({ requestId, response, error } = {}) {
+    const pending = pendingDisclosures.get(requestId);
+    if (!pending) return false;
+    clearTimeout(pending.timer);
+    pendingDisclosures.delete(requestId);
+    if (response && typeof response === 'object') pending.resolve(response);
+    else pending.reject(new Error(error?.message || error || 'The disclosure request was rejected'));
+    return true;
+  }
+
   const client = createAquaClient({
     baseUrl: nodeUrl,
     signMessage: (address, message) => requestSignature({ address, purpose: 'login', message, display: message }),
@@ -135,7 +200,25 @@ function createAquaDeps({
     log,
   });
 
-  return { nodeUrl, client, store, service, getActiveWallet, settleSignature, pendingSignatures };
+  return {
+    nodeUrl,
+    client,
+    store,
+    service,
+    getActiveWallet,
+    settleSignature,
+    pendingSignatures,
+    prepareDisclosure,
+    buildDisclosure,
+    manualDisclosure,
+    settleDisclosure,
+    pendingDisclosures,
+  };
+}
+
+/** A normalized request entry back in the wire shape the screen shows. */
+function entryToWire(entry) {
+  return entry.fields ? { type: entry.type, fields: entry.fields } : entry.type;
 }
 
 function describeError(err) {
@@ -143,6 +226,7 @@ function describeError(err) {
     return failure('VAULT_LOCKED', err.message);
   }
   if (err instanceof ClaimInputError) return failure('INVALID_INPUT', err.message, { field: err.field });
+  if (err instanceof disclosure.DisclosureRequestError) return failure('INVALID_REQUEST', err.message);
   if (err instanceof AquaServiceError) {
     return failure('SERVICE', err.message, { status: err.status, path: err.path });
   }
@@ -199,14 +283,24 @@ function registerAquaIpc({ createDeps = createAquaDeps, log = console } = {}) {
   handle(IPC.AQUA_ISSUED_LIST, async (d) => ({ issued: await d.service.listIssued() }));
   handle(IPC.AQUA_ISSUED_EXPORT, async (d, id) => ({ json: await d.service.exportIssued(id) }));
 
+  // Disclosure. prepare and build are chrome-only (not tiered for webviews);
+  // manual is the page's pasted request, answered by the chrome below.
+  handle(IPC.AQUA_DISCLOSURE_PREPARE, (d, args) => d.prepareDisclosure(args || {}));
+  handle(IPC.AQUA_DISCLOSURE_BUILD, async (d, args) => ({ response: await d.buildDisclosure(args || {}) }));
+  handle(IPC.AQUA_DISCLOSURE_MANUAL, async (d, requestText) => ({ response: await d.manualDisclosure(requestText) }));
+
   // The chrome's answer to a signing request. Only the chrome can reach
   // this channel (ipc-sender-policy: webviews are tiered, the chrome is not).
   ipcMain.on(IPC.AQUA_SIGN_RESPONSE, (_event, payload) => {
     if (!deps) return;
     deps.settleSignature(payload);
   });
+  ipcMain.on(IPC.AQUA_DISCLOSURE_MANUAL_RESPONSE, (_event, payload) => {
+    if (!deps) return;
+    deps.settleDisclosure(payload);
+  });
 
   return { current };
 }
 
-module.exports = { registerAquaIpc, createAquaDeps, configuredNodeUrl, addressOfDid, SIGN_REQUEST_TIMEOUT_MS };
+module.exports = { registerAquaIpc, createAquaDeps, configuredNodeUrl, addressOfDid, SIGN_REQUEST_TIMEOUT_MS, DISCLOSURE_REQUEST_TIMEOUT_MS };

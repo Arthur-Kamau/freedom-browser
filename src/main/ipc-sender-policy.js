@@ -93,6 +93,7 @@ const INTERNAL_CHANNELS = [
   'aqua:claims:share',
   'aqua:claims:verify-code',
   'aqua:claims:verify-dns',
+  'aqua:disclosure:manual',
   'aqua:issued:export',
   'aqua:issued:list',
   'aqua:shared:attest',

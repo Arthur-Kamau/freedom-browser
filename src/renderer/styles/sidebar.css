@@ -6665,3 +6665,74 @@
 [data-theme="light"] .safe-pending-row:hover {
   background: rgba(0, 0, 0, 0.06);
 }
+
+/* ── Aqua identity disclosure (Share Identity sub-screen) ───────────────── */
+.aqua-disclose-purpose {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 12px;
+  font-style: italic;
+}
+.aqua-disclose-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.aqua-disclose-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.aqua-disclose-row.missing {
+  opacity: 0.6;
+  cursor: default;
+}
+.aqua-disclose-check {
+  margin-top: 3px;
+}
+.aqua-disclose-body {
+  flex: 1;
+  min-width: 0;
+}
+.aqua-disclose-title {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.aqua-disclose-tag {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.aqua-disclose-value {
+  font-size: 13px;
+  color: var(--text);
+  margin-top: 2px;
+  word-break: break-word;
+}
+.aqua-disclose-meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.aqua-disclose-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 6px;
+}
+.aqua-disclose-field {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text);
+}

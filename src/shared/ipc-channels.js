@@ -444,6 +444,14 @@ module.exports = {
   AQUA_ISSUED_LIST: 'aqua:issued:list',
   AQUA_ISSUED_EXPORT: 'aqua:issued:export',
   AQUA_CLAIMS_CHANGED: 'aqua:claims-changed',
+  // Disclosure: the chrome's consent screen prepares and builds a response
+  // for a site's `aqua_requestDisclosure`; freedom://identity hands a pasted
+  // request to main, which routes it through the same screen.
+  AQUA_DISCLOSURE_PREPARE: 'aqua:disclosure:prepare',
+  AQUA_DISCLOSURE_BUILD: 'aqua:disclosure:build',
+  AQUA_DISCLOSURE_MANUAL: 'aqua:disclosure:manual',
+  AQUA_DISCLOSURE_REQUEST: 'aqua:disclosure-request',
+  AQUA_DISCLOSURE_MANUAL_RESPONSE: 'aqua:disclosure:manual-response',
   // Chrome-only: main asks the sidebar for a wallet signature over a claim
   // pre-image or a service sign-in message, and the sidebar answers.
   AQUA_SIGN_REQUEST: 'aqua:sign-request',

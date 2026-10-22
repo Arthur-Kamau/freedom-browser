@@ -1,0 +1,2 @@
+- Identity claims: sign statements about yourself that a site or another person can verify, at `freedom://identity` ([Arthur-Kamau/freedom-browser#3](https://github.com/Arthur-Kamau/freedom-browser/pull/3))
+  - A site that is connected to your wallet can ask for claims with `aqua_requestDisclosure`; the sidebar's Share Identity screen lists what it asks for against the claims you hold, you tick what to release, and only those leave the browser, with the SDK's proofs for any fields you hold back; a request can also be pasted on the page and the response copied out

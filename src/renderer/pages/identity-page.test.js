@@ -7,7 +7,8 @@ const { runPageScript } = require('../../../test/helpers/page-script-harness');
 
 const HOSTILE = `"><img src=x onerror=alert(1) data-xss="1">'<b>&amp;`;
 const IDS = {
-  claims: 'div', 'claims-empty': 'div', 'shared-claims': 'div', issued: 'div', 'status-notice': 'div', 'wallet-line': 'p', 'claim-form': 'form', 'claim-type': 'select',
+  claims: 'div', 'claims-empty': 'div', 'shared-claims': 'div', issued: 'div',
+  'request-input': 'textarea', 'request-btn': 'button', 'request-status': 'span', 'response-box': 'div', 'response-output': 'textarea', 'response-copy': 'button', 'status-notice': 'div', 'wallet-line': 'p', 'claim-form': 'form', 'claim-type': 'select',
   'fields-name': 'div', 'fields-email': 'div', 'fields-phone': 'div', 'fields-domain': 'div',
   'given-name': 'input', 'family-name': 'input', 'middle-name': 'input', nickname: 'input', email: 'input',
   'phone-number': 'input', domain: 'input', code: 'input', 'code-section': 'div', 'send-code-btn': 'button',
@@ -257,5 +258,39 @@ describe('freedom://identity attestation', () => {
     const page = await run(api({ aquaStatus: async () => ({ success: true, nodeUrl: 'u', wallet: { address: '0xabc' }, vaultUnlocked: true, hasVault: true, service: { reachable: true, serviceDid: null, outOfBandVerification: false } }) }));
     expect(page.elements['wallet-line'].textContent).toContain('no email or phone verification');
     expect(page.elements['shared-claims'].textContent).toContain('Nothing has been shared');
+  });
+});
+
+describe('freedom://identity disclosure', () => {
+  const runWith = async (freedomAPI) => {
+    const page = await runPageScript('identity', { ids: IDS, freedomAPI, confirm: () => true });
+    page.elements['claim-form'].reset = () => {};
+    return page;
+  };
+
+  test('a pasted request goes to main and the response comes back as text to copy', async () => {
+    const freedomAPI = api({ aquaRespondToRequest: jest.fn(async () => ({ success: true, response: { aqua: 1, claims: [{ type: 'name' }], missing: [] } })) });
+    const page = await runWith(freedomAPI);
+    await page.elements['request-btn'].fire('click');
+    expect(freedomAPI.aquaRespondToRequest).not.toHaveBeenCalled();
+    page.elements['request-input'].value = ' {"aqua":1,"need":["name"]} ';
+    await page.elements['request-btn'].fire('click');
+    await page.flush();
+    expect(freedomAPI.aquaRespondToRequest).toHaveBeenCalledWith('{"aqua":1,"need":["name"]}');
+    expect(page.elements['response-box'].classList.contains('hidden')).toBe(false);
+    expect(JSON.parse(page.elements['response-output'].value).claims).toHaveLength(1);
+    expect(page.elements['request-status'].textContent).toContain('1 claim shared');
+    await page.elements['response-copy'].fire('click');
+    expect(freedomAPI.copyText).toHaveBeenCalledWith(page.elements['response-output'].value);
+  });
+
+  test('a refused request is reported as text', async () => {
+    const freedomAPI = api({ aquaRespondToRequest: jest.fn(async () => ({ success: false, error: { code: 'INVALID_REQUEST', message: HOSTILE } })) });
+    const page = await runWith(freedomAPI);
+    page.elements['request-input'].value = '{}';
+    await page.elements['request-btn'].fire('click');
+    await page.flush();
+    expect(page.elements['request-status'].textContent).toBe(HOSTILE);
+    expect(page.elements['response-box'].classList.contains('hidden')).toBe(true);
   });
 });

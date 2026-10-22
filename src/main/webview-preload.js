@@ -1129,6 +1129,11 @@ contextBridge.exposeInMainWorld('freedomAPI', {
   aquaExportIssued: guardInternal('aquaExportIssued', (id) =>
     ipcRenderer.invoke('aqua:issued:export', id)
   ),
+  // A disclosure request the user pasted; main shows the consent screen in
+  // the sidebar and resolves with the response once the user decides.
+  aquaRespondToRequest: guardInternal('aquaRespondToRequest', (requestText) =>
+    ipcRenderer.invoke('aqua:disclosure:manual', requestText)
+  ),
 
   // Token registry — used by the payments page to resolve asset
   // metadata (symbol, decimals) per chainId:address.

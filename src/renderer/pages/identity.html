@@ -359,6 +359,21 @@
     <h2>Attestations you issued</h2>
     <div id="issued"></div>
 
+    <h2>Respond to a request</h2>
+    <p class="meta">
+      A site asks for claims through its wallet connection and you decide in the sidebar. Someone can also
+      hand you a request as text; paste it here and the same screen opens.
+    </p>
+    <div class="inline-form" id="request-form">
+      <textarea id="request-input" aria-label="Disclosure request JSON" placeholder='{"aqua":1,"need":["email"],"purpose":"…","nonce":"…"}'></textarea>
+      <button type="button" class="btn primary" id="request-btn">Review request</button>
+      <span class="inline-note" id="request-status"></span>
+    </div>
+    <div class="inline-form hidden" id="response-box">
+      <textarea id="response-output" aria-label="Disclosure response JSON" readonly></textarea>
+      <button type="button" class="btn" id="response-copy">Copy response</button>
+    </div>
+
     <h2>Add a claim</h2>
     <p class="meta">
       Freedom sends the claim to the identity service, you sign it with your wallet, and a copy is kept in
