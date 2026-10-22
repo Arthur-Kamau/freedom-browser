@@ -10,6 +10,13 @@ const sharedEl = document.getElementById('shared-claims');
 const issuedEl = document.getElementById('issued');
 const statusNotice = document.getElementById('status-notice');
 const walletLine = document.getElementById('wallet-line');
+const statusWallet = document.getElementById('status-wallet');
+const statusService = document.getElementById('status-service');
+const statusCaps = document.getElementById('status-caps');
+const addClaimToggle = document.getElementById('add-claim-toggle');
+const addClaimCard = document.getElementById('add-claim-card');
+const sharedCount = document.getElementById('shared-count');
+const issuedCount = document.getElementById('issued-count');
 const form = document.getElementById('claim-form');
 const typeSelect = document.getElementById('claim-type');
 const fieldGroups = {
@@ -211,33 +218,35 @@ function renderClaim(claim) {
   card.appendChild(rows);
 
   const actions = el('div', 'actions');
+  actions.appendChild(el('span', 'actions-label', 'Attestations'));
   if (claim.type === 'domain') {
-    const dnsBtn = el('button', 'btn', 'DNS record');
+    const dnsBtn = el('button', 'btn small', 'DNS record');
     dnsBtn.type = 'button';
     dnsBtn.addEventListener('click', () => showDnsInstructions(claim, card));
     actions.appendChild(dnsBtn);
-    const checkBtn = el('button', 'btn', 'Check DNS');
+    const checkBtn = el('button', 'btn small', 'Check DNS');
     checkBtn.type = 'button';
     checkBtn.addEventListener('click', () => verifyDns(claim));
     actions.appendChild(checkBtn);
   }
-  const shareBtn = el('button', 'btn', 'Share for attestation');
+  const shareBtn = el('button', 'btn small', 'Share for attestation');
   shareBtn.type = 'button';
   shareBtn.addEventListener('click', () => toggleShareForm(claim, card));
   actions.appendChild(shareBtn);
-  const pullBtn = el('button', 'btn', 'Pull attestations');
+  const pullBtn = el('button', 'btn small', 'Pull attestations');
   pullBtn.type = 'button';
   pullBtn.addEventListener('click', () => pullAttestations(claim));
   actions.appendChild(pullBtn);
-  const importBtn = el('button', 'btn', 'Import attestation');
+  const importBtn = el('button', 'btn small', 'Import attestation');
   importBtn.type = 'button';
   importBtn.addEventListener('click', () => toggleImportForm(claim, card));
   actions.appendChild(importBtn);
-  const refreshBtn = el('button', 'btn', 'Re-verify');
+  actions.appendChild(el('span', 'spacer'));
+  const refreshBtn = el('button', 'btn small', 'Re-verify');
   refreshBtn.type = 'button';
   refreshBtn.addEventListener('click', () => refreshClaim(claim));
   actions.appendChild(refreshBtn);
-  const removeBtn = el('button', 'btn danger', 'Remove');
+  const removeBtn = el('button', 'btn small danger', 'Remove');
   removeBtn.type = 'button';
   removeBtn.addEventListener('click', () => removeClaim(claim));
   actions.appendChild(removeBtn);
@@ -268,6 +277,9 @@ async function loadStatus() {
   if (!result?.success) {
     showNotice('warn', errorText(result, 'Identity claims are unavailable.'));
     walletLine.textContent = '';
+    statusWallet.textContent = '—';
+    statusService.textContent = '—';
+    statusCaps.textContent = '';
     return;
   }
   hideNotice();
@@ -280,9 +292,15 @@ async function loadStatus() {
   const parts = [];
   if (result.wallet?.address) parts.push(`Wallet ${result.wallet.address}`);
   parts.push(`Identity service ${result.nodeUrl}`);
-  if (result.service && result.service.reachable === false) parts.push('unreachable');
-  else if (!outOfBandVerification) parts.push('no email or phone verification on this service');
+  let caps = '';
+  if (result.service && result.service.reachable === false) caps = 'unreachable';
+  else if (!outOfBandVerification) caps = 'no email or phone verification on this service';
+  if (caps) parts.push(caps);
   walletLine.textContent = parts.join(' · ');
+  statusWallet.textContent = result.wallet?.address || 'none';
+  statusWallet.title = result.wallet?.address || '';
+  statusService.textContent = result.nodeUrl || '';
+  statusCaps.textContent = caps;
   if (!result.hasVault) {
     showNotice('warn', 'Set up your wallet in the sidebar before creating identity claims.');
   } else if (!result.vaultUnlocked) {
@@ -496,6 +514,7 @@ async function loadShared() {
     return;
   }
   const shared = result.shared || [];
+  sharedCount.textContent = String(shared.length);
   if (shared.length === 0) {
     sharedEl.replaceChildren(el('div', 'meta', 'Nothing has been shared with this wallet.'));
     return;
@@ -544,6 +563,7 @@ async function loadIssued() {
     return;
   }
   const issued = result.issued || [];
+  issuedCount.textContent = String(issued.length);
   if (issued.length === 0) {
     issuedEl.replaceChildren(el('div', 'meta', 'You have not attested anyone\'s claim yet.'));
     return;
@@ -709,6 +729,17 @@ async function createClaim() {
 function cancelForm() {
   form.reset();
   syncTypeFields();
+  addClaimCard.classList.add('hidden');
+}
+
+function toggleAddClaim() {
+  const opening = addClaimCard.classList.contains('hidden');
+  if (opening) {
+    addClaimCard.classList.remove('hidden');
+    syncTypeFields();
+  } else {
+    cancelForm();
+  }
 }
 
 // Enter in a field submits the form; the work hangs off the button so the
@@ -726,6 +757,7 @@ verifyCodeBtn.addEventListener('click', verifyCode);
 form.addEventListener('submit', onSubmit);
 createBtn.addEventListener('click', createClaim);
 cancelBtn.addEventListener('click', cancelForm);
+addClaimToggle.addEventListener('click', toggleAddClaim);
 
 if (typeof window.freedomAPI.onAquaClaimsChanged === 'function') {
   window.freedomAPI.onAquaClaimsChanged(() => {

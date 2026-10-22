@@ -47,27 +47,8 @@
         margin-bottom: 24px;
         font-size: 14px;
       }
-      h2 {
-        font-size: 16px;
-        font-weight: 600;
-        margin: 32px 0 12px;
-        color: var(--text-strong);
-      }
-      .notice {
-        background: var(--info-bg);
-        border: 1px solid var(--badge-info-border);
-        border-radius: 8px;
-        padding: 12px 16px;
-        font-size: 14px;
-        margin-bottom: 16px;
-      }
-      .notice.warn {
-        background: var(--badge-warn-bg);
-        border-color: var(--warn);
-      }
-      .notice.error {
-        background: var(--danger-bg);
-        border-color: var(--danger);
+      .page {
+        max-width: 880px;
       }
       .hidden {
         display: none !important;
@@ -81,6 +62,119 @@
         font-size: 12px;
         word-break: break-all;
       }
+
+      /* Status strip: wallet, service, and the one thing to do next. */
+      .status-card {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 24px;
+        align-items: center;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px 18px;
+        margin-bottom: 28px;
+        font-size: 13px;
+      }
+      .status-item {
+        display: flex;
+        gap: 6px;
+        align-items: baseline;
+        min-width: 0;
+      }
+      .status-item .label {
+        color: var(--text-muted);
+      }
+      .status-item .value {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 420px;
+      }
+      .notice {
+        background: var(--info-bg);
+        border: 1px solid var(--badge-info-border);
+        border-radius: 8px;
+        padding: 12px 16px;
+        font-size: 14px;
+        margin-bottom: 20px;
+      }
+      .notice.warn {
+        background: var(--badge-warn-bg);
+        border-color: var(--warn);
+      }
+      .notice.error {
+        background: var(--danger-bg);
+        border-color: var(--danger);
+      }
+
+      /* Sections */
+      .section {
+        margin-bottom: 36px;
+      }
+      .section-head {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      h2 {
+        font-size: 16px;
+        font-weight: 600;
+        margin: 0;
+        color: var(--text-strong);
+      }
+      .section-head .meta {
+        flex: 1;
+      }
+      details.section > summary {
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        padding: 12px 16px;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+      details.section > summary::-webkit-details-marker {
+        display: none;
+      }
+      details.section > summary::before {
+        content: '›';
+        display: inline-block;
+        width: 12px;
+        color: var(--text-muted);
+        transition: transform 0.15s;
+      }
+      details.section[open] > summary::before {
+        transform: rotate(90deg);
+      }
+      details.section[open] > summary {
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+      }
+      details.section > .section-body {
+        border: 1px solid var(--border);
+        border-top: 0;
+        border-radius: 0 0 10px 10px;
+        padding: 16px;
+        background: var(--bg-elev);
+      }
+      .count {
+        font-size: 12px;
+        color: var(--text-muted);
+        background: var(--bg-raised);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 1px 8px;
+      }
+
+      /* Claim cards */
       .card {
         background: var(--bg-card);
         border: 1px solid var(--border);
@@ -95,13 +189,17 @@
         flex-wrap: wrap;
       }
       .claim-type {
-        font-size: 12px;
+        font-size: 11px;
         text-transform: uppercase;
-        letter-spacing: 0.04em;
+        letter-spacing: 0.06em;
         color: var(--text-muted);
+        background: var(--bg-raised);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 2px 6px;
       }
       .claim-value {
-        font-size: 16px;
+        font-size: 17px;
         font-weight: 600;
         color: var(--text-strong);
         flex: 1;
@@ -125,15 +223,16 @@
         color: var(--danger);
       }
       .claim-rows {
-        margin-top: 10px;
+        margin-top: 12px;
         display: grid;
         gap: 6px;
         font-size: 13px;
       }
       .claim-row {
         display: grid;
-        grid-template-columns: 120px 1fr;
+        grid-template-columns: 110px 1fr;
         gap: 12px;
+        align-items: baseline;
       }
       .claim-row .label {
         color: var(--text-muted);
@@ -143,16 +242,35 @@
         border-left: 3px solid var(--success);
         background: var(--bg-raised);
         border-radius: 6px;
+        margin-bottom: 6px;
       }
       .attestation.invalid {
         border-left-color: var(--danger);
+      }
+      .source {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--text-muted);
+        margin-right: 8px;
       }
       .actions {
         display: flex;
         gap: 8px;
         margin-top: 14px;
         flex-wrap: wrap;
+        align-items: center;
       }
+      .actions .spacer {
+        flex: 1;
+      }
+      .actions-label {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-right: 4px;
+      }
+
+      /* Buttons: primary filled accent, secondary outlined, destructive outlined danger. */
       .btn {
         padding: 8px 14px;
         background: var(--bg-card);
@@ -174,6 +292,10 @@
         opacity: 0.6;
         cursor: default;
       }
+      .btn.small {
+        padding: 5px 10px;
+        font-size: 12px;
+      }
       .btn.primary {
         background: var(--accent);
         border-color: var(--accent);
@@ -190,13 +312,16 @@
       }
       .empty {
         text-align: center;
-        padding: 56px 24px;
+        padding: 48px 24px;
         color: var(--text-muted);
+        background: var(--bg-card);
+        border: 1px dashed var(--border);
+        border-radius: 10px;
       }
       .empty svg {
-        width: 48px;
-        height: 48px;
-        margin-bottom: 12px;
+        width: 44px;
+        height: 44px;
+        margin-bottom: 10px;
         opacity: 0.6;
       }
       .empty-title {
@@ -204,10 +329,18 @@
         margin-bottom: 4px;
         color: var(--text);
       }
+
+      /* Forms */
       .form {
         display: grid;
         gap: 14px;
         max-width: 560px;
+      }
+      .form-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 20px;
       }
       .field {
         display: grid;
@@ -220,7 +353,7 @@
       .field input,
       .field select {
         padding: 10px 14px;
-        background: var(--bg-card);
+        background: var(--bg-elev);
         border: 1px solid var(--border);
         border-radius: 8px;
         color: var(--text);
@@ -234,7 +367,7 @@
       }
       .field select {
         padding-right: 32px;
-        background: var(--bg-card) var(--select-chevron) no-repeat right 12px center;
+        background: var(--bg-elev) var(--select-chevron) no-repeat right 12px center;
         appearance: none;
         -webkit-appearance: none;
         cursor: pointer;
@@ -271,7 +404,7 @@
         flex: 1;
         min-width: 220px;
         padding: 8px 12px;
-        background: var(--bg-card);
+        background: var(--bg-elev);
         border: 1px solid var(--border);
         border-radius: 8px;
         color: var(--text);
@@ -297,13 +430,6 @@
         color: var(--text-muted);
         width: 100%;
       }
-      .source {
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: var(--text-muted);
-        margin-right: 8px;
-      }
       .dns-box {
         background: var(--bg-raised);
         border: 1px solid var(--border);
@@ -314,144 +440,185 @@
     </style>
   </head>
   <body>
-    <h1>
-      <svg
-        width="28"
-        height="28"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-        <circle cx="12" cy="7" r="4"></circle>
-      </svg>
-      Identity
-    </h1>
-    <p class="subtitle" id="subtitle">
-      Signed statements about you that a site or another person can verify without a central provider.
-    </p>
+    <div class="page">
+      <h1>
+        <svg
+          width="28"
+          height="28"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+          <circle cx="12" cy="7" r="4"></circle>
+        </svg>
+        Identity
+      </h1>
+      <p class="subtitle" id="subtitle">
+        Signed statements about you that a site or another person can verify without a central provider.
+      </p>
 
-    <div class="notice hidden" id="status-notice"></div>
-    <p class="meta" id="wallet-line"></p>
-
-    <h2>Your claims</h2>
-    <div class="empty hidden" id="claims-empty">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-        <circle cx="12" cy="7" r="4"></circle>
-      </svg>
-      <div class="empty-title">No claims yet</div>
-      <div>Add a name, email, phone or domain claim below.</div>
-    </div>
-    <div id="claims"></div>
-
-    <h2>Attest for someone else</h2>
-    <p class="meta">
-      Claims other people shared with your wallet on the identity service. Attesting signs a statement with
-      your wallet that you vouch for the claim; you then hand the attestation back to them, since only you can
-      download it.
-    </p>
-    <div id="shared-claims"></div>
-
-    <h2>Attestations you issued</h2>
-    <div id="issued"></div>
-
-    <h2>Respond to a request</h2>
-    <p class="meta">
-      A site asks for claims through its wallet connection and you decide in the sidebar. Someone can also
-      hand you a request as text; paste it here and the same screen opens.
-    </p>
-    <div class="inline-form" id="request-form">
-      <textarea id="request-input" aria-label="Disclosure request JSON" placeholder='{"aqua":1,"need":["email"],"purpose":"…","nonce":"…"}'></textarea>
-      <button type="button" class="btn primary" id="request-btn">Review request</button>
-      <span class="inline-note" id="request-status"></span>
-    </div>
-    <div class="inline-form hidden" id="response-box">
-      <textarea id="response-output" aria-label="Disclosure response JSON" readonly></textarea>
-      <button type="button" class="btn" id="response-copy">Copy response</button>
-    </div>
-
-    <h2>Add a claim</h2>
-    <p class="meta">
-      Freedom sends the claim to the identity service, you sign it with your wallet, and a copy is kept in
-      this profile. A claim is only self-signed until someone else attests it; email and phone claims are
-      attested by the service after you enter the code it sends.
-    </p>
-    <form class="form" id="claim-form" autocomplete="off">
-      <div class="field">
-        <label for="claim-type">Kind of claim</label>
-        <select id="claim-type">
-          <option value="name">Name</option>
-          <option value="email">Email address</option>
-          <option value="phone">Phone number</option>
-          <option value="domain">Domain</option>
-        </select>
+      <div class="status-card">
+        <div class="status-item">
+          <span class="label">Wallet</span>
+          <span class="value" id="status-wallet">—</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Identity service</span>
+          <span class="value" id="status-service">—</span>
+        </div>
+        <div class="status-item meta" id="status-caps"></div>
+        <p class="meta hidden" id="wallet-line"></p>
       </div>
 
-      <div id="fields-name">
-        <div class="field">
-          <label for="given-name">Given name</label>
-          <input type="text" id="given-name" maxlength="256" />
-        </div>
-        <div class="field">
-          <label for="family-name">Family name</label>
-          <input type="text" id="family-name" maxlength="256" />
-        </div>
-        <div class="field">
-          <label for="middle-name">Middle name (optional)</label>
-          <input type="text" id="middle-name" maxlength="256" />
-        </div>
-        <div class="field">
-          <label for="nickname">Nickname (optional)</label>
-          <input type="text" id="nickname" maxlength="256" />
-        </div>
-      </div>
+      <div class="notice hidden" id="status-notice"></div>
 
-      <div id="fields-email" class="hidden">
-        <div class="field">
-          <label for="email">Email address</label>
-          <input type="email" id="email" maxlength="320" />
+      <section class="section">
+        <div class="section-head">
+          <h2>Your claims</h2>
+          <span class="meta">Each one is signed by your wallet; a self-signed claim is not yet attested.</span>
+          <button type="button" class="btn primary" id="add-claim-toggle">Add a claim</button>
         </div>
-      </div>
-
-      <div id="fields-phone" class="hidden">
-        <div class="field">
-          <label for="phone-number">Phone number</label>
-          <input type="tel" id="phone-number" class="mono-input" maxlength="20" placeholder="+254712345678" />
-          <span class="help">International format with the country code, as in +254712345678.</span>
+        <div class="empty hidden" id="claims-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+          <div class="empty-title">No claims yet</div>
+          <div>Add a name, email, phone or domain claim</div>
         </div>
-      </div>
+        <div id="claims"></div>
 
-      <div id="fields-domain" class="hidden">
-        <div class="field">
-          <label for="domain">Domain name</label>
-          <input type="text" id="domain" class="mono-input" maxlength="253" placeholder="example.com" />
-          <span class="help">You will add a DNS TXT record to prove you control it.</span>
-        </div>
-      </div>
-
-      <div id="code-section" class="hidden">
-        <div class="code-row">
-          <div class="field">
-            <label for="code">Verification code</label>
-            <input type="text" id="code" class="mono-input" maxlength="16" inputmode="numeric" />
+        <div class="form-card hidden" id="add-claim-card">
+          <div class="section-head">
+            <h2>Add a claim</h2>
           </div>
-          <button type="button" class="btn" id="send-code-btn">Send code</button>
-          <button type="button" class="btn" id="verify-code-btn" disabled>Verify code</button>
+          <p class="meta">
+            Freedom sends the claim to the identity service, you sign it with your wallet, and a copy is kept in
+            this profile. Email and phone claims are attested by the service after you enter the code it sends.
+          </p>
+          <form class="form" id="claim-form" autocomplete="off">
+            <div class="field">
+              <label for="claim-type">Kind of claim</label>
+              <select id="claim-type">
+                <option value="name">Name</option>
+                <option value="email">Email address</option>
+                <option value="phone">Phone number</option>
+                <option value="domain">Domain</option>
+              </select>
+            </div>
+
+            <div id="fields-name">
+              <div class="field">
+                <label for="given-name">Given name</label>
+                <input type="text" id="given-name" maxlength="256" />
+              </div>
+              <div class="field">
+                <label for="family-name">Family name</label>
+                <input type="text" id="family-name" maxlength="256" />
+              </div>
+              <div class="field">
+                <label for="middle-name">Middle name (optional)</label>
+                <input type="text" id="middle-name" maxlength="256" />
+              </div>
+              <div class="field">
+                <label for="nickname">Nickname (optional)</label>
+                <input type="text" id="nickname" maxlength="256" />
+              </div>
+            </div>
+
+            <div id="fields-email" class="hidden">
+              <div class="field">
+                <label for="email">Email address</label>
+                <input type="email" id="email" maxlength="320" />
+              </div>
+            </div>
+
+            <div id="fields-phone" class="hidden">
+              <div class="field">
+                <label for="phone-number">Phone number</label>
+                <input type="tel" id="phone-number" class="mono-input" maxlength="20" placeholder="+254712345678" />
+                <span class="help">International format with the country code, as in +254712345678.</span>
+              </div>
+            </div>
+
+            <div id="fields-domain" class="hidden">
+              <div class="field">
+                <label for="domain">Domain name</label>
+                <input type="text" id="domain" class="mono-input" maxlength="253" placeholder="example.com" />
+                <span class="help">You will add a DNS TXT record to prove you control it.</span>
+              </div>
+            </div>
+
+            <div id="code-section" class="hidden">
+              <div class="code-row">
+                <div class="field">
+                  <label for="code">Verification code</label>
+                  <input type="text" id="code" class="mono-input" maxlength="16" inputmode="numeric" />
+                </div>
+                <button type="button" class="btn" id="send-code-btn">Send code</button>
+                <button type="button" class="btn" id="verify-code-btn" disabled>Verify code</button>
+              </div>
+              <span class="meta" id="code-status"></span>
+            </div>
+
+            <div class="field-error hidden" id="form-error"></div>
+
+            <div class="actions">
+              <button type="submit" class="btn primary" id="create-btn">Create and sign</button>
+              <button type="button" class="btn" id="cancel-btn">Cancel</button>
+            </div>
+          </form>
         </div>
-        <span class="meta" id="code-status"></span>
-      </div>
+      </section>
 
-      <div class="field-error hidden" id="form-error"></div>
+      <details class="section" id="shared-section">
+        <summary>
+          <h2>Attest for someone else</h2>
+          <span class="count" id="shared-count">0</span>
+          <span class="meta">Claims other people shared with your wallet</span>
+        </summary>
+        <div class="section-body">
+          <p class="meta">
+            Attesting signs a statement with your wallet that you vouch for the claim. You then hand the
+            attestation back to its owner, since only you can download it.
+          </p>
+          <div id="shared-claims"></div>
+        </div>
+      </details>
 
-      <div class="actions">
-        <button type="submit" class="btn primary" id="create-btn">Create and sign</button>
-        <button type="button" class="btn" id="cancel-btn">Cancel</button>
-      </div>
-    </form>
+      <details class="section" id="issued-section">
+        <summary>
+          <h2>Attestations you issued</h2>
+          <span class="count" id="issued-count">0</span>
+          <span class="meta">Copy one as JSON to send it to the claim's owner</span>
+        </summary>
+        <div class="section-body">
+          <div id="issued"></div>
+        </div>
+      </details>
+
+      <details class="section" id="request-section">
+        <summary>
+          <h2>Respond to a request</h2>
+          <span class="meta">A site asks through its wallet connection; a person can hand you a request as text</span>
+        </summary>
+        <div class="section-body">
+          <div class="inline-form" id="request-form">
+            <textarea id="request-input" aria-label="Disclosure request JSON" placeholder='{"aqua":1,"need":["email"],"purpose":"…","nonce":"…"}'></textarea>
+            <button type="button" class="btn primary" id="request-btn">Review request</button>
+            <span class="inline-note" id="request-status"></span>
+          </div>
+          <div class="inline-form hidden" id="response-box">
+            <textarea id="response-output" aria-label="Disclosure response JSON" readonly></textarea>
+            <button type="button" class="btn" id="response-copy">Copy response</button>
+          </div>
+        </div>
+      </details>
+    </div>
 
     <script src="scripts/identity.js"></script>
   </body>

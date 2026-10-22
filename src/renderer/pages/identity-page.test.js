@@ -8,6 +8,7 @@ const { runPageScript } = require('../../../test/helpers/page-script-harness');
 const HOSTILE = `"><img src=x onerror=alert(1) data-xss="1">'<b>&amp;`;
 const IDS = {
   claims: 'div', 'claims-empty': 'div', 'shared-claims': 'div', issued: 'div',
+  'status-wallet': 'span', 'status-service': 'span', 'status-caps': 'span', 'add-claim-toggle': 'button', 'add-claim-card': 'div', 'shared-count': 'span', 'issued-count': 'span',
   'request-input': 'textarea', 'request-btn': 'button', 'request-status': 'span', 'response-box': 'div', 'response-output': 'textarea', 'response-copy': 'button', 'status-notice': 'div', 'wallet-line': 'p', 'claim-form': 'form', 'claim-type': 'select',
   'fields-name': 'div', 'fields-email': 'div', 'fields-phone': 'div', 'fields-domain': 'div',
   'given-name': 'input', 'family-name': 'input', 'middle-name': 'input', nickname: 'input', email: 'input',
