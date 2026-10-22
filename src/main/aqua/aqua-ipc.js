@@ -187,6 +187,17 @@ function registerAquaIpc({ createDeps = createAquaDeps, log = console } = {}) {
   handle(IPC.AQUA_CLAIMS_VERIFY_CODE, (d, request) => d.service.verifyCode(request || {}));
   handle(IPC.AQUA_CLAIMS_DNS_INSTRUCTIONS, (d, id) => d.service.dnsInstructions(id));
   handle(IPC.AQUA_CLAIMS_VERIFY_DNS, async (d, id) => ({ claim: await d.service.verifyDns(id) }), { mutates: true });
+  // Attestation, owner side: share a claim, pull what the service recorded,
+  // import the tree an attester handed over.
+  handle(IPC.AQUA_CLAIMS_SHARE, async (d, id, recipient) => ({ claim: await d.service.shareForAttestation(id, recipient) }), { mutates: true });
+  handle(IPC.AQUA_CLAIMS_PULL_ATTESTATIONS, async (d, id) => ({ claim: await d.service.pullAttestations(id) }), { mutates: true });
+  handle(IPC.AQUA_CLAIMS_IMPORT_ATTESTATION, async (d, id, tree) => ({ claim: await d.service.importAttestation(id, tree) }), { mutates: true });
+  // Attestation, attester side: what was shared with this wallet, attest it,
+  // and hand the result back.
+  handle(IPC.AQUA_SHARED_LIST, async (d) => ({ shared: await d.service.listSharedClaims() }));
+  handle(IPC.AQUA_SHARED_ATTEST, async (d, request) => ({ issued: await d.service.attestSharedClaim(request || {}) }), { mutates: true });
+  handle(IPC.AQUA_ISSUED_LIST, async (d) => ({ issued: await d.service.listIssued() }));
+  handle(IPC.AQUA_ISSUED_EXPORT, async (d, id) => ({ json: await d.service.exportIssued(id) }));
 
   // The chrome's answer to a signing request. Only the chrome can reach
   // this channel (ipc-sender-policy: webviews are tiered, the chrome is not).

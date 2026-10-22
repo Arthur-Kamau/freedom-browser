@@ -436,6 +436,13 @@ module.exports = {
   AQUA_CLAIMS_VERIFY_CODE: 'aqua:claims:verify-code',
   AQUA_CLAIMS_DNS_INSTRUCTIONS: 'aqua:claims:dns-instructions',
   AQUA_CLAIMS_VERIFY_DNS: 'aqua:claims:verify-dns',
+  AQUA_CLAIMS_SHARE: 'aqua:claims:share',
+  AQUA_CLAIMS_PULL_ATTESTATIONS: 'aqua:claims:pull-attestations',
+  AQUA_CLAIMS_IMPORT_ATTESTATION: 'aqua:claims:import-attestation',
+  AQUA_SHARED_LIST: 'aqua:shared:list',
+  AQUA_SHARED_ATTEST: 'aqua:shared:attest',
+  AQUA_ISSUED_LIST: 'aqua:issued:list',
+  AQUA_ISSUED_EXPORT: 'aqua:issued:export',
   AQUA_CLAIMS_CHANGED: 'aqua:claims-changed',
   // Chrome-only: main asks the sidebar for a wallet signature over a claim
   // pre-image or a service sign-in message, and the sidebar answers.

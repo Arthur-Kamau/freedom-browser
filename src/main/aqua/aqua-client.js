@@ -198,6 +198,64 @@ function createAquaClient({ baseUrl = DEFAULT_NODE_URL, signMessage, fetchImpl, 
           session: s,
         })),
 
+    // ── Attestation (peer, through a share contract) ──────────────────
+    /**
+     * Share a claim with another account so it can attest it (the service's
+     * AS-REQ-0020: an account attests only what it can read). `hash` is the
+     * contract id the recipient reads it under.
+     */
+    shareTree: (address, { hash, recipient, genesis, tip, fileName }) =>
+      withSession(address, (s) =>
+        request('POST', '/api/share/contracts', {
+          body: { hash, recipients: [recipient], option: 'latest', items: [{ genesis_hash: genesis, latest: tip, file_name: fileName }] },
+          session: s,
+        })),
+    /** Share contracts addressed to `address` (claims others want attested). */
+    listSharesReceived: (address) =>
+      withSession(address, (s) =>
+        request('GET', `/api/share/contracts?receiver=${encodeURIComponent(address)}`, { session: s })),
+    /** A shared contract's trees as the service presents them: payload, revisions, template name. */
+    sharedData: (address, hash) =>
+      withSession(address, (s) => request('GET', `/api/share/data/${encodeURIComponent(hash)}`, { session: s })),
+    attestPrepare: (address, tip, { context }) =>
+      withSession(address, (s) => request('POST', `/api/claims/${tip}/attest/prepare`, { body: { context }, session: s })),
+    attestComplete: (address, tip, { message_hex, signature }) =>
+      withSession(address, (s) =>
+        request('POST', `/api/claims/${tip}/attest/complete`, {
+          body: { message_hex, signature, wallet_address: address },
+          session: s,
+        })),
+    /** Attestations recorded against one of the caller's own claims (owner only). */
+    listAttestations: (address, tip) =>
+      withSession(address, (s) => request('GET', `/api/claims/${tip}/attestations`, { session: s })),
+
+    // ── Service identity and capabilities (no session) ────────────────
+    /** The service's own signing identity, which issues email, phone and DNS attestations. */
+    nodeIdentity: () => request('GET', '/node/identity'),
+    /**
+     * What this service can do beyond storing trees. A bare aqua-node serves
+     * `/node/*` but not the aquafier `/api/claims/*` family, so email and
+     * phone verification are reported absent rather than failing later.
+     */
+    async capabilities() {
+      let identity;
+      try {
+        identity = await request('GET', '/node/identity');
+      } catch {
+        identity = null;
+      }
+      // The status route is unauthenticated on aquafier; a bare node answers
+      // 404 and an unreachable service answers nothing. Either way: absent.
+      let outOfBand;
+      try {
+        const status = await request('GET', '/api/claims/twilio-status');
+        outOfBand = Boolean(status) && typeof status === 'object';
+      } catch {
+        outOfBand = false;
+      }
+      return { reachable: identity !== null, serviceDid: identity?.did || null, outOfBandVerification: outOfBand };
+    },
+
     // ── Trees ──────────────────────────────────────────────────────────
     /** The artifact ZIP for a tree: its chain, linked chains and assets. */
     downloadTree: (address, tip) =>

@@ -171,3 +171,29 @@ describe('registerAquaIpc', () => {
     expect(built).toEqual(['https://aqua.test', 'https://other.test']);
   });
 });
+
+describe('registerAquaIpc attestation channels', () => {
+  test('owner and attester channels are registered and broadcast on mutation', async () => {
+    const service = {
+      shareForAttestation: jest.fn(async () => ({ id: 'c1', shares: [{}] })),
+      pullAttestations: jest.fn(async () => ({ id: 'c1' })),
+      importAttestation: jest.fn(async () => ({ id: 'c1' })),
+      listSharedClaims: jest.fn(async () => [{ tip: '0xt' }]),
+      attestSharedClaim: jest.fn(async () => ({ id: 'a1' })),
+      listIssued: jest.fn(async () => []),
+      exportIssued: jest.fn(async () => '{"revisions":{}}'),
+    };
+    registerAquaIpc({ createDeps: () => ({ nodeUrl: 'https://aqua.test', service, settleSignature: jest.fn() }), log: { error: () => {} } });
+    const { invoke } = handlers();
+    expect(await invoke(IPC.AQUA_CLAIMS_SHARE, 'c1', '0xabc')).toEqual({ success: true, claim: { id: 'c1', shares: [{}] } });
+    expect(service.shareForAttestation).toHaveBeenCalledWith('c1', '0xabc');
+    expect(await invoke(IPC.AQUA_CLAIMS_PULL_ATTESTATIONS, 'c1')).toMatchObject({ success: true });
+    expect(await invoke(IPC.AQUA_CLAIMS_IMPORT_ATTESTATION, 'c1', '{}')).toMatchObject({ success: true });
+    expect(service.importAttestation).toHaveBeenCalledWith('c1', '{}');
+    expect(await invoke(IPC.AQUA_SHARED_LIST)).toEqual({ success: true, shared: [{ tip: '0xt' }] });
+    expect(await invoke(IPC.AQUA_SHARED_ATTEST, { contractHash: 'h', tip: '0xt', context: 'x' })).toEqual({ success: true, issued: { id: 'a1' } });
+    expect(await invoke(IPC.AQUA_ISSUED_LIST)).toEqual({ success: true, issued: [] });
+    expect(await invoke(IPC.AQUA_ISSUED_EXPORT, 'a1')).toEqual({ success: true, json: '{"revisions":{}}' });
+    expect(broadcastToAllWebContents).toHaveBeenCalledTimes(4);
+  });
+});

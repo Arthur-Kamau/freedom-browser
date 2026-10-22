@@ -6,6 +6,8 @@
 
 const claimsEl = document.getElementById('claims');
 const claimsEmpty = document.getElementById('claims-empty');
+const sharedEl = document.getElementById('shared-claims');
+const issuedEl = document.getElementById('issued');
 const statusNotice = document.getElementById('status-notice');
 const walletLine = document.getElementById('wallet-line');
 const form = document.getElementById('claim-form');
@@ -44,6 +46,10 @@ let busy = false;
 // From the last status read: whether this profile has a wallet at all, so a
 // locked-store answer reads as "set one up" rather than "unlock it".
 let hasVault = true;
+// Whether the configured service runs the email/phone code round trip; a
+// bare node does not, so those claim kinds are offered only when it does.
+let outOfBandVerification = true;
+let activeAddress = '';
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -80,7 +86,7 @@ function formatTime(iso) {
 }
 
 function showNotice(kind, message) {
-  statusNotice.className = `notice ${kind}`;
+  statusNotice.className = kind ? `notice ${kind}` : 'notice';
   statusNotice.textContent = message;
   statusNotice.classList.remove('hidden');
 }
@@ -176,10 +182,21 @@ function renderClaim(claim) {
     const list = el('div', null);
     for (const a of attestations) {
       const box = el('div', a.verification?.isValid === false ? 'attestation invalid' : 'attestation');
-      box.appendChild(el('div', 'mono', a.attesterDid || '(unknown attester)'));
+      const who = el('div', null);
+      who.appendChild(el('span', 'source', a.source === 'service' ? 'Service' : 'Peer'));
+      who.appendChild(el('span', 'mono', a.attesterDid || '(unknown attester)'));
+      box.appendChild(who);
       if (a.context) box.appendChild(el('div', 'meta', a.context));
       box.appendChild(
-        el('div', 'meta', a.verification?.isValid ? 'Attestation verified' : `Attestation not verified: ${a.verification?.status || 'unknown'}`)
+        el(
+          'div',
+          'meta',
+          a.verification?.isValid
+            ? 'Attestation verified'
+            : a.pending
+              ? 'Recorded by the service; the attester holds the tree. Import it below to verify.'
+              : `Attestation not verified: ${a.verification?.status || 'unknown'}`
+        )
       );
       list.appendChild(box);
     }
@@ -198,6 +215,18 @@ function renderClaim(claim) {
     checkBtn.addEventListener('click', () => verifyDns(claim));
     actions.appendChild(checkBtn);
   }
+  const shareBtn = el('button', 'btn', 'Share for attestation');
+  shareBtn.type = 'button';
+  shareBtn.addEventListener('click', () => toggleShareForm(claim, card));
+  actions.appendChild(shareBtn);
+  const pullBtn = el('button', 'btn', 'Pull attestations');
+  pullBtn.type = 'button';
+  pullBtn.addEventListener('click', () => pullAttestations(claim));
+  actions.appendChild(pullBtn);
+  const importBtn = el('button', 'btn', 'Import attestation');
+  importBtn.type = 'button';
+  importBtn.addEventListener('click', () => toggleImportForm(claim, card));
+  actions.appendChild(importBtn);
   const refreshBtn = el('button', 'btn', 'Re-verify');
   refreshBtn.type = 'button';
   refreshBtn.addEventListener('click', () => refreshClaim(claim));
@@ -237,9 +266,16 @@ async function loadStatus() {
   }
   hideNotice();
   hasVault = result.hasVault !== false;
+  activeAddress = (result.vaultUnlocked && result.wallet?.address) || '';
+  outOfBandVerification = result.service ? result.service.outOfBandVerification !== false : true;
+  for (const option of typeSelect.querySelectorAll('option')) {
+    if (option.value === 'email' || option.value === 'phone') option.disabled = !outOfBandVerification;
+  }
   const parts = [];
   if (result.wallet?.address) parts.push(`Wallet ${result.wallet.address}`);
   parts.push(`Identity service ${result.nodeUrl}`);
+  if (result.service && result.service.reachable === false) parts.push('unreachable');
+  else if (!outOfBandVerification) parts.push('no email or phone verification on this service');
   walletLine.textContent = parts.join(' · ');
   if (!result.hasVault) {
     showNotice('warn', 'Set up your wallet in the sidebar before creating identity claims.');
@@ -288,6 +324,225 @@ async function verifyDns(claim) {
   if (!result?.success) showNotice('error', errorText(result, 'The DNS check failed.'));
   else hideNotice();
   await loadClaims();
+}
+
+// ── Attestation: owner side ──────────────────────────────────────────────
+
+function removeForms(card) {
+  for (const form of card.querySelectorAll('.inline-form')) form.remove();
+}
+
+function toggleShareForm(claim, card) {
+  const existing = card.querySelector('.inline-form.share');
+  removeForms(card);
+  if (existing) return;
+  const form = el('div', 'inline-form share');
+  const input = el('input', 'mono-input');
+  input.type = 'text';
+  input.placeholder = "Attester's wallet address (0x…)";
+  input.setAttribute('aria-label', "Attester's wallet address");
+  form.appendChild(input);
+  const btn = el('button', 'btn primary', 'Share');
+  btn.type = 'button';
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    const result = await window.freedomAPI.aquaShareClaim(claim.id, input.value.trim());
+    btn.disabled = false;
+    if (!result?.success) {
+      showNotice('error', errorText(result, 'The claim could not be shared.'));
+      return;
+    }
+    hideNotice();
+    showNotice('', `Shared. Ask the attester to open freedom://identity, attest it under "Attest for someone else", and send you the attestation.`);
+    await loadClaims();
+  });
+  form.appendChild(btn);
+  form.appendChild(
+    el('span', 'inline-note', 'The attester needs an account on the same identity service, under that wallet.')
+  );
+  card.appendChild(form);
+  input.autofocus = true;
+}
+
+async function pullAttestations(claim) {
+  const result = await window.freedomAPI.aquaPullAttestations(claim.id);
+  if (!result?.success) showNotice('error', errorText(result, 'Attestations could not be fetched.'));
+  else hideNotice();
+  await loadClaims();
+}
+
+function toggleImportForm(claim, card) {
+  const existing = card.querySelector('.inline-form.import');
+  removeForms(card);
+  if (existing) return;
+  const form = el('div', 'inline-form import');
+  const area = el('textarea', null);
+  area.placeholder = 'Paste the attestation tree JSON the attester sent you';
+  area.setAttribute('aria-label', 'Attestation tree JSON');
+  form.appendChild(area);
+  const file = el('input', null);
+  file.type = 'file';
+  file.accept = '.json,application/json';
+  file.setAttribute('aria-label', 'Attestation file');
+  file.addEventListener('change', () => {
+    const chosen = file.files && file.files[0];
+    if (!chosen) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      area.value = String(reader.result || '');
+    };
+    reader.readAsText(chosen);
+  });
+  form.appendChild(file);
+  const btn = el('button', 'btn primary', 'Import');
+  btn.type = 'button';
+  btn.addEventListener('click', async () => {
+    const json = area.value.trim();
+    if (!json) {
+      showNotice('error', 'Paste or choose the attestation first.');
+      return;
+    }
+    btn.disabled = true;
+    const result = await window.freedomAPI.aquaImportAttestation(claim.id, json);
+    btn.disabled = false;
+    if (!result?.success) {
+      showNotice('error', errorText(result, 'The attestation could not be imported.'));
+      return;
+    }
+    hideNotice();
+    await loadClaims();
+  });
+  form.appendChild(btn);
+  card.appendChild(form);
+  area.autofocus = true;
+}
+
+// ── Attestation: attester side ───────────────────────────────────────────
+
+function sharedValue(entry) {
+  const p = entry.payload || {};
+  return (
+    [p.given_name, p.middle_name, p.family_name].filter(Boolean).join(' ') ||
+    p.email ||
+    p.phone_number ||
+    p.domain_name ||
+    p.provider_id ||
+    entry.fileName ||
+    ''
+  );
+}
+
+function renderShared(entry) {
+  const card = el('div', 'card');
+  card.dataset.tip = entry.tip;
+  const head = el('div', 'claim-head');
+  head.appendChild(el('span', 'claim-type', entry.templateName || 'claim'));
+  head.appendChild(el('span', 'claim-value', sharedValue(entry)));
+  card.appendChild(head);
+  const rows = el('div', 'claim-rows');
+  rows.appendChild(row('Subject', el('span', 'mono', (entry.payload && entry.payload.signer_did) || '')));
+  rows.appendChild(row('Shared by', el('span', 'mono', entry.sender || '')));
+  const tip = el('span', 'mono', shortHash(entry.tip));
+  tip.title = entry.tip;
+  rows.appendChild(row('Revision', tip));
+  card.appendChild(rows);
+  const form = el('div', 'inline-form attest');
+  const input = el('input', null);
+  input.type = 'text';
+  input.placeholder = 'What you vouch for, in your words';
+  input.setAttribute('aria-label', 'Attestation words');
+  input.maxLength = 1200;
+  form.appendChild(input);
+  const btn = el('button', 'btn primary', 'Attest with my wallet');
+  btn.type = 'button';
+  btn.addEventListener('click', async () => {
+    const context = input.value.trim();
+    if (!context) {
+      showNotice('error', 'Say in your own words what you are vouching for.');
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Waiting for your signature…';
+    const result = await window.freedomAPI.aquaAttestShared({ contractHash: entry.contractHash, tip: entry.tip, context });
+    btn.disabled = false;
+    btn.textContent = 'Attest with my wallet';
+    if (!result?.success) {
+      showNotice('error', errorText(result, 'The attestation could not be made.'));
+      return;
+    }
+    hideNotice();
+    showNotice('', 'Attested. Send the attestation under "Attestations you issued" to the claim\'s owner.');
+    await loadIssued();
+  });
+  form.appendChild(btn);
+  card.appendChild(form);
+  return card;
+}
+
+async function loadShared() {
+  if (!activeAddress) {
+    sharedEl.replaceChildren(el('div', 'meta', 'Set up and unlock your wallet to see claims shared with you.'));
+    return;
+  }
+  const result = await window.freedomAPI.aquaListShared();
+  if (!result?.success) {
+    sharedEl.replaceChildren(el('div', 'meta', errorText(result, 'Shared claims could not be loaded.')));
+    return;
+  }
+  const shared = result.shared || [];
+  if (shared.length === 0) {
+    sharedEl.replaceChildren(el('div', 'meta', 'Nothing has been shared with this wallet.'));
+    return;
+  }
+  sharedEl.replaceChildren(...shared.map(renderShared));
+}
+
+function renderIssued(entry) {
+  const card = el('div', 'card');
+  card.dataset.id = entry.id;
+  const head = el('div', 'claim-head');
+  head.appendChild(el('span', 'claim-type', entry.templateName || 'attestation'));
+  const p = entry.subjectPayload || {};
+  head.appendChild(el('span', 'claim-value', sharedValue({ payload: p, fileName: '' }) || shortHash(entry.claimTip)));
+  head.appendChild(el('span', entry.verification?.isValid ? 'pill attested' : 'pill', entry.verification?.isValid ? 'Signed' : 'Not verified'));
+  card.appendChild(head);
+  const rows = el('div', 'claim-rows');
+  rows.appendChild(row('Subject', el('span', 'mono', entry.subjectDid || '')));
+  rows.appendChild(row('Your words', entry.context || ''));
+  const tip = el('span', 'mono', shortHash(entry.tip));
+  tip.title = entry.tip || '';
+  rows.appendChild(row('Attestation', tip));
+  rows.appendChild(row('Issued', formatTime(entry.createdAt)));
+  card.appendChild(rows);
+  const actions = el('div', 'actions');
+  const copyBtn = el('button', 'btn', 'Copy JSON');
+  copyBtn.type = 'button';
+  copyBtn.addEventListener('click', async () => {
+    const result = await window.freedomAPI.aquaExportIssued(entry.id);
+    if (!result?.success) {
+      showNotice('error', errorText(result, 'The attestation could not be exported.'));
+      return;
+    }
+    await window.freedomAPI.copyText(result.json);
+    showNotice('', "Copied. Send it to the claim's owner; they import it under the claim.");
+  });
+  actions.appendChild(copyBtn);
+  card.appendChild(actions);
+  return card;
+}
+
+async function loadIssued() {
+  const result = await window.freedomAPI.aquaListIssued();
+  if (!result?.success) {
+    issuedEl.replaceChildren(el('div', 'meta', errorText(result, 'Issued attestations could not be loaded.')));
+    return;
+  }
+  const issued = result.issued || [];
+  if (issued.length === 0) {
+    issuedEl.replaceChildren(el('div', 'meta', 'You have not attested anyone\'s claim yet.'));
+    return;
+  }
+  issuedEl.replaceChildren(...issued.map(renderIssued));
 }
 
 // ── Form ─────────────────────────────────────────────────────────────────
@@ -436,9 +691,9 @@ cancelBtn.addEventListener('click', cancelForm);
 
 if (typeof window.freedomAPI.onAquaClaimsChanged === 'function') {
   window.freedomAPI.onAquaClaimsChanged(() => {
-    loadStatus().then(loadClaims);
+    loadStatus().then(() => Promise.all([loadClaims(), loadShared(), loadIssued()]));
   });
 }
 
 syncTypeFields();
-loadStatus().then(loadClaims);
+loadStatus().then(() => Promise.all([loadClaims(), loadShared(), loadIssued()]));

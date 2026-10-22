@@ -69,7 +69,7 @@ function open(key, envelope) {
 }
 
 function emptyState() {
-  return { version: STORE_VERSION, claims: [] };
+  return { version: STORE_VERSION, claims: [], issued: [] };
 }
 
 function canonicalDid(did) {
@@ -102,6 +102,7 @@ function createClaimsStore({ dataDir, getSeed, isOwnDid }) {
     const envelope = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     const state = JSON.parse(open(key, envelope));
     if (!state || !Array.isArray(state.claims)) throw new Error('Corrupt claims store');
+    if (!Array.isArray(state.issued)) state.issued = [];
     return state;
   }
 
@@ -158,6 +159,39 @@ function createClaimsStore({ dataDir, getSeed, isOwnDid }) {
       const before = state.claims.length;
       state.claims = state.claims.filter((claim) => claim.id !== id);
       if (state.claims.length === before) return false;
+      await save(state);
+      return true;
+    },
+
+    // ── Attestations this profile issued for other people's claims ─────
+    // Kept apart from `claims`: an attestation is about someone else's
+    // subject, so it must never be listed as one of the user's own claims
+    // (AS-REQ-0013). The attester holds the only copy the service lets it
+    // download, which is what it hands back to the claim's owner.
+    async listIssued() {
+      return (await load()).issued;
+    },
+
+    async addIssued(record) {
+      if (!record || typeof record !== 'object' || typeof record.id !== 'string' || !record.id) {
+        throw new Error('Issued attestation needs an id');
+      }
+      if (!record.tree || typeof record.tree !== 'object' || typeof record.tree.revisions !== 'object') {
+        throw new Error('Issued attestation needs its Aqua tree');
+      }
+      const state = await load();
+      const index = state.issued.findIndex((entry) => entry.id === record.id);
+      if (index >= 0) state.issued[index] = record;
+      else state.issued.push(record);
+      await save(state);
+      return record;
+    },
+
+    async removeIssued(id) {
+      const state = await load();
+      const before = state.issued.length;
+      state.issued = state.issued.filter((entry) => entry.id !== id);
+      if (state.issued.length === before) return false;
       await save(state);
       return true;
     },

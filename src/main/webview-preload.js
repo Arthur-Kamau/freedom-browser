@@ -1112,6 +1112,23 @@ contextBridge.exposeInMainWorld('freedomAPI', {
     ipcRenderer.invoke('aqua:claims:dns-instructions', id)
   ),
   aquaVerifyDns: guardInternal('aquaVerifyDns', (id) => ipcRenderer.invoke('aqua:claims:verify-dns', id)),
+  aquaShareClaim: guardInternal('aquaShareClaim', (id, recipient) =>
+    ipcRenderer.invoke('aqua:claims:share', id, recipient)
+  ),
+  aquaPullAttestations: guardInternal('aquaPullAttestations', (id) =>
+    ipcRenderer.invoke('aqua:claims:pull-attestations', id)
+  ),
+  aquaImportAttestation: guardInternal('aquaImportAttestation', (id, tree) =>
+    ipcRenderer.invoke('aqua:claims:import-attestation', id, tree)
+  ),
+  aquaListShared: guardInternal('aquaListShared', () => ipcRenderer.invoke('aqua:shared:list')),
+  aquaAttestShared: guardInternal('aquaAttestShared', (request) =>
+    ipcRenderer.invoke('aqua:shared:attest', request)
+  ),
+  aquaListIssued: guardInternal('aquaListIssued', () => ipcRenderer.invoke('aqua:issued:list')),
+  aquaExportIssued: guardInternal('aquaExportIssued', (id) =>
+    ipcRenderer.invoke('aqua:issued:export', id)
+  ),
 
   // Token registry — used by the payments page to resolve asset
   // metadata (symbol, decimals) per chainId:address.

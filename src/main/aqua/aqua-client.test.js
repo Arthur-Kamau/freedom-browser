@@ -197,3 +197,48 @@ describe('createAquaClient claim calls', () => {
     await expect(client.verifyTree({})).rejects.toThrow('ECONNREFUSED');
   });
 });
+
+describe('createAquaClient attestation calls', () => {
+  test('shareTree builds a latest-option contract for one recipient', async () => {
+    const { client, service } = makeClient({ 'POST /api/share/contracts': { success: true, hash: 'h1' } });
+    await client.shareTree(ADDRESS, { hash: 'h1', recipient: '0xabc', genesis: '0xg', tip: '0xt', fileName: 'claim' });
+    expect(service.calls.find((c) => c.key === 'POST /api/share/contracts').body).toEqual({
+      hash: 'h1', recipients: ['0xabc'], option: 'latest', items: [{ genesis_hash: '0xg', latest: '0xt', file_name: 'claim' }],
+    });
+  });
+
+  test('shares received are listed for the caller, and a contract\'s data is read by hash', async () => {
+    const { client, service } = makeClient({
+      'GET /api/share/contracts': { success: true, contracts: [{ hash: 'h1' }], total: 1 },
+      'GET /api/share/data/h1': { success: true, contract: { hash: 'h1' }, trees: [] },
+    });
+    expect((await client.listSharesReceived(ADDRESS)).contracts).toHaveLength(1);
+    expect((await client.sharedData(ADDRESS, 'h1')).contract.hash).toBe('h1');
+    const list = service.calls.find((c) => c.key === 'GET /api/share/contracts');
+    expect(service.fetchImpl.mock.calls.find(([url]) => url.includes('/api/share/contracts?'))[0]).toContain(`receiver=${ADDRESS}`);
+    expect(list.headers.nonce).toBe('session-1');
+  });
+
+  test('attest prepare and complete bind the attester address and context', async () => {
+    const { client, service } = makeClient({
+      'POST /api/claims/0xt/attest/prepare': { message_hex: '0x7b7d', message_utf8: '{}', signer_did: 'did:pkh:eip155:1:' + ADDRESS },
+      'POST /api/claims/0xt/attest/complete': { success: true, attestation_tip: '0xa', claim_tip: '0xt' },
+      'GET /api/claims/0xt/attestations': { success: true, attestations: [], total: 0 },
+    });
+    await client.attestPrepare(ADDRESS, '0xt', { context: 'I know them' });
+    await client.attestComplete(ADDRESS, '0xt', { message_hex: '0x7b7d', signature: '0xs' });
+    expect(service.calls.find((c) => c.key === 'POST /api/claims/0xt/attest/prepare').body).toEqual({ context: 'I know them' });
+    expect(service.calls.find((c) => c.key === 'POST /api/claims/0xt/attest/complete').body).toEqual({ message_hex: '0x7b7d', signature: '0xs', wallet_address: ADDRESS });
+    expect((await client.listAttestations(ADDRESS, '0xt')).attestations).toEqual([]);
+  });
+
+  test('capabilities reports a bare node as reachable without out-of-band verification', async () => {
+    const full = makeClient({ 'GET /node/identity': { did: 'did:pkh:eip155:1:0xnode' }, 'GET /api/claims/twilio-status': { enabled: true } });
+    expect(await full.client.capabilities()).toEqual({ reachable: true, serviceDid: 'did:pkh:eip155:1:0xnode', outOfBandVerification: true });
+    const bare = makeClient({ 'GET /node/identity': { did: 'did:pkh:eip155:1:0xnode' } });
+    expect(await bare.client.capabilities()).toEqual({ reachable: true, serviceDid: 'did:pkh:eip155:1:0xnode', outOfBandVerification: false });
+    const down = createAquaClient({ baseUrl: 'https://aqua.test', fetchImpl: async () => { throw new Error('down'); }, signMessage: async () => '0x' });
+    expect(await down.capabilities()).toEqual({ reachable: false, serviceDid: null, outOfBandVerification: false });
+    expect(full.signMessage).not.toHaveBeenCalled();
+  });
+});
