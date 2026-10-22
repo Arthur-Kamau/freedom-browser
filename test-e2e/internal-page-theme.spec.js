@@ -21,6 +21,7 @@ const PAGES = [
   // light) in #256, so `h1` flips with the theme here like the rows above and
   // exercises the accent that change standardised.
   { name: 'payments', url: 'freedom://payments', file: '/pages/payments.html', probe: 'h1' },
+  { name: 'identity', url: 'freedom://identity', file: '/pages/identity.html', probe: 'h1' },
   { name: 'profiles', url: 'freedom://profiles', file: '/pages/profiles.html', probe: 'h1' },
   { name: 'settings', url: 'freedom://settings', file: '/pages/settings.html', probe: 'body' },
 ];

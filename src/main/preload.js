@@ -609,6 +609,20 @@ contextBridge.exposeInMainWorld('ledger', {
 // Remote (phone) signing: main publishes signing jobs here; the renderer
 // session broker (lib/wallet/remote-session.js) shows the QR, tunnels the
 // request to the phone over openlv, and responds with the result.
+// Aqua identity claims: main asks the sidebar to sign a claim's pre-image or
+// a service sign-in message (src/main/aqua/aqua-ipc.js); the sidebar's
+// approval screen answers with the signature or a rejection.
+contextBridge.exposeInMainWorld('aqua', {
+  // Main asks the chrome for a wallet signature. Returns a disposer.
+  onSignRequest: (callback) => {
+    const handler = (_event, request) => callback(request);
+    ipcRenderer.on('aqua:sign-request', handler);
+    return () => ipcRenderer.removeListener('aqua:sign-request', handler);
+  },
+  // { requestId, signature } or { requestId, error: { message } }.
+  respondToSignRequest: (payload) => ipcRenderer.send('aqua:sign-response', payload),
+});
+
 contextBridge.exposeInMainWorld('remoteSigner', {
   // Main asks the renderer to run a signing job. Returns a disposer.
   onRequest: (callback) => {

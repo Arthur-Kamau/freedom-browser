@@ -1,0 +1,4 @@
+- Identity claims: sign statements about yourself that a site or another person can verify, at `freedom://identity` ([#757](https://github.com/solardev-xyz/freedom-browser/pull/757))
+  - A name, email, phone or domain claim is an Aqua tree built by the identity service and signed by your wallet on the sidebar's Sign Message screen; email and phone claims need the one-time code the service sends, and come back with the service's own attestation
+  - Every claim is verified and kept in this profile, encrypted with a key from your wallet seed, so it is readable only while the wallet is unlocked; the identity service keeps its copy
+  - A claim you alone have signed is shown as Self-signed, never as verified; the service you use is a per-profile setting (`aquaNodeUrl`) and defaults to dev.aquafire.inblock.io

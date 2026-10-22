@@ -12,7 +12,12 @@ module.exports = {
     '/ipfs-bin/',
     '/test-e2e/.*\\.spec\\.js$',
   ],
-  collectCoverageFrom: ['src/**/*.js', '!src/**/*.test.js', '!src/renderer/vendor/**'],
+  collectCoverageFrom: [
+    'src/**/*.js',
+    '!src/**/*.test.js',
+    '!src/renderer/vendor/**',
+    '!src/main/aqua/vendor/**',
+  ],
   // Coverage thresholds are intentionally below typical "healthy" targets.
   // The Swarm publishing feature landed with heavily-tested services
   // (swarm-provider-ipc, feed-service, stamp-service, publish-service,

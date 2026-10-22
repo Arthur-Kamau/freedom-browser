@@ -1,8 +1,9 @@
 {
   "routable": {
-    "home": "home.html",
     "downloads": "downloads.html",
     "history": "history.html",
+    "home": "home.html",
+    "identity": "identity.html",
     "links": "links.html",
     "payments": "payments.html",
     "private": "private.html",

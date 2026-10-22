@@ -425,4 +425,20 @@ module.exports = {
   // Radicle node alias (chrome UI: sidebar Nodes tab)
   RADICLE_GET_ALIAS: 'radicle:get-alias',
   RADICLE_SET_ALIAS: 'radicle:set-alias',
+
+  // Aqua identity claims (freedom://identity page; main-process service)
+  AQUA_STATUS: 'aqua:status',
+  AQUA_CLAIMS_LIST: 'aqua:claims:list',
+  AQUA_CLAIMS_CREATE: 'aqua:claims:create',
+  AQUA_CLAIMS_REMOVE: 'aqua:claims:remove',
+  AQUA_CLAIMS_REFRESH: 'aqua:claims:refresh',
+  AQUA_CLAIMS_SEND_CODE: 'aqua:claims:send-code',
+  AQUA_CLAIMS_VERIFY_CODE: 'aqua:claims:verify-code',
+  AQUA_CLAIMS_DNS_INSTRUCTIONS: 'aqua:claims:dns-instructions',
+  AQUA_CLAIMS_VERIFY_DNS: 'aqua:claims:verify-dns',
+  AQUA_CLAIMS_CHANGED: 'aqua:claims-changed',
+  // Chrome-only: main asks the sidebar for a wallet signature over a claim
+  // pre-image or a service sign-in message, and the sidebar answers.
+  AQUA_SIGN_REQUEST: 'aqua:sign-request',
+  AQUA_SIGN_RESPONSE: 'aqua:sign-response',
 };

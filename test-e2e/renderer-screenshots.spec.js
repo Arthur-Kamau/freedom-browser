@@ -459,7 +459,7 @@ test.describe('renderer screenshots', () => {
         );
         await shot('27-error-page', { mask: [...scrollbar, ...countdown] });
 
-        for (const [i, page] of ['downloads', 'history', 'profiles', 'payments'].entries()) {
+        for (const [i, page] of ['downloads', 'history', 'profiles', 'payments', 'identity'].entries()) {
           await go(window, `freedom://${page}`, 1_800);
           await shot(`${50 + i}-page-${page}`);
         }

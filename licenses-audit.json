@@ -277,6 +277,30 @@
       ]
     },
     {
+      "name": "aqua-rs-sdk",
+      "version": "7.0.0",
+      "type": "vendored-bundle",
+      "scope": "runtime",
+      "source": { "ecosystem": "git", "url": "https://github.com/inblockio/aqua-rs-sdk" },
+      "license": {
+        "spdx": ["Apache-2.0"],
+        "raw": "Apache-2.0",
+        "license_files": ["LICENSE"],
+        "notice_required": true
+      },
+      "vendored_path": "src/main/aqua/vendor/aqua-rs-sdk/aqua_rs_sdk_bg.wasm",
+      "bundled_with_app": true,
+      "linking_or_integration": "wasm-module-in-worker-thread",
+      "risk": "green",
+      "issues": [
+        {
+          "kind": "notice",
+          "details": "Apache-2.0 WASM build of the Aqua Protocol SDK, compiled from tag v7.0.0 (src/main/aqua/vendor/aqua-rs-sdk/PROVENANCE) and loaded in a main-process worker thread; the crate's LICENSE ships beside it.",
+          "recommended_fix": "Attributed in NOTICES."
+        }
+      ]
+    },
+    {
       "name": "better-sqlite3",
       "version": "13.0.3",
       "type": "direct",

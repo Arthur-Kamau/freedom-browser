@@ -1,0 +1,26 @@
+{
+  "name": "aqua-rs-sdk",
+  "collaborators": [
+    "dalmasonto<https://github.com/dalmasonto>",
+    "Arthur-Kamau<https://github.com/Arthur-Kamau>"
+  ],
+  "description": "Aqua protocol library to sign, timestamp, and verify aqua chains.",
+  "version": "7.0.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/inblockio/aqua-rs-sdk"
+  },
+  "files": [
+    "aqua_rs_sdk_bg.wasm",
+    "aqua_rs_sdk.js",
+    "aqua_rs_sdk.d.ts"
+  ],
+  "main": "aqua_rs_sdk.js",
+  "homepage": "https://github.com/inblockio/aqua-rs-sdk",
+  "types": "aqua_rs_sdk.d.ts",
+  "keywords": [
+    "aqua",
+    "aqua-protocol"
+  ]
+}

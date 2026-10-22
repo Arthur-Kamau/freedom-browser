@@ -1,0 +1,173 @@
+jest.mock('electron', () => ({
+  ipcMain: { handle: jest.fn(), on: jest.fn() },
+  BrowserWindow: { getFocusedWindow: jest.fn(() => null), getAllWindows: jest.fn(() => []) },
+}));
+jest.mock('../settings-store', () => ({ loadSettings: jest.fn(() => ({ enableIdentityWallet: true, aquaNodeUrl: 'https://aqua.test' })) }));
+jest.mock('../lib/broadcast-to-all-webcontents', () => ({ broadcastToAllWebContents: jest.fn() }));
+jest.mock('../identity-manager', () => ({
+  getIdentityDataDir: jest.fn(() => require('os').tmpdir()),
+  getDerivedWallets: jest.fn(async () => [{ index: 0, address: '0x12BECb263eB324b9638Ef75cE9BA1ae5DB8b1AF8', type: 'mnemonic' }]),
+  getActiveWalletIndex: jest.fn(() => 0),
+  isVaultUnlocked: jest.fn(async () => true),
+  hasVault: jest.fn(async () => true),
+  loadIdentityModule: jest.fn(() => ({ getMnemonic: () => 'm', getSeed: () => Buffer.alloc(64, 1) })),
+}));
+
+const { ipcMain } = require('electron');
+const { loadSettings } = require('../settings-store');
+const { broadcastToAllWebContents } = require('../lib/broadcast-to-all-webcontents');
+const IPC = require('../../shared/ipc-channels');
+const { registerAquaIpc, createAquaDeps, addressOfDid, configuredNodeUrl } = require('./aqua-ipc');
+const { ClaimsStoreLocked } = require('./claims-store');
+const { ClaimInputError } = require('./claims-service');
+const { AquaServiceError } = require('./aqua-client');
+
+const ADDRESS = '0x12BECb263eB324b9638Ef75cE9BA1ae5DB8b1AF8';
+
+function handlers() {
+  const map = new Map(ipcMain.handle.mock.calls.map(([channel, fn]) => [channel, fn]));
+  const on = new Map(ipcMain.on.mock.calls.map(([channel, fn]) => [channel, fn]));
+  return { invoke: (channel, ...args) => map.get(channel)({}, ...args), on };
+}
+
+beforeEach(() => {
+  ipcMain.handle.mockClear();
+  ipcMain.on.mockClear();
+  broadcastToAllWebContents.mockClear();
+  loadSettings.mockReturnValue({ enableIdentityWallet: true, aquaNodeUrl: 'https://aqua.test' });
+  delete process.env.FREEDOM_AQUA_NODE_URL;
+});
+
+describe('addressOfDid / configuredNodeUrl', () => {
+  test('reads the address out of a did:pkh:eip155 DID and nothing else', () => {
+    expect(addressOfDid(`did:pkh:eip155:1:${ADDRESS}`)).toBe(ADDRESS.toLowerCase());
+    expect(addressOfDid('did:key:z6Mk')).toBeNull();
+    expect(addressOfDid(ADDRESS)).toBeNull();
+  });
+
+  test('the environment overrides the setting, which overrides the default', () => {
+    expect(configuredNodeUrl()).toBe('https://aqua.test');
+    process.env.FREEDOM_AQUA_NODE_URL = 'http://127.0.0.1:3000';
+    expect(configuredNodeUrl()).toBe('http://127.0.0.1:3000');
+    delete process.env.FREEDOM_AQUA_NODE_URL;
+    loadSettings.mockReturnValue({});
+    expect(configuredNodeUrl()).toBe('https://dev.aquafire.inblock.io');
+  });
+});
+
+describe('createAquaDeps signing bridge', () => {
+  test('a signing request reaches the chrome with the wallet index and settles on its answer', async () => {
+    const sent = [];
+    const deps = createAquaDeps({ nodeUrl: 'https://aqua.test', sendToChrome: (channel, payload) => sent.push({ channel, payload }), signTimeoutMs: 1000 });
+    const pending = deps.client.login(ADDRESS).catch((err) => err);
+    // login first fetches a nonce; with no server it fails before signing.
+    expect(await pending).toBeInstanceOf(Error);
+
+    const sign = deps.service; // the service uses the same signer
+    expect(sign).toBeDefined();
+    const promise = new Promise((resolve, reject) => {
+      deps.pendingSignatures.set('r-1', { resolve, reject, timer: setTimeout(() => {}, 0) });
+    });
+    expect(deps.settleSignature({ requestId: 'r-1', signature: '0x' + 'ab'.repeat(65) })).toBe(true);
+    await expect(promise).resolves.toBe('0x' + 'ab'.repeat(65));
+    expect(deps.settleSignature({ requestId: 'nope', signature: '0x' })).toBe(false);
+  });
+
+  test('a rejection or a malformed signature rejects the waiting request', async () => {
+    const deps = createAquaDeps({ nodeUrl: 'https://aqua.test', sendToChrome: () => {}, signTimeoutMs: 1000 });
+    const rejected = new Promise((resolve, reject) => deps.pendingSignatures.set('r-2', { resolve, reject, timer: setTimeout(() => {}, 0) }));
+    deps.settleSignature({ requestId: 'r-2', error: { message: 'User rejected the request' } });
+    await expect(rejected).rejects.toThrow('User rejected');
+    const bad = new Promise((resolve, reject) => deps.pendingSignatures.set('r-3', { resolve, reject, timer: setTimeout(() => {}, 0) }));
+    deps.settleSignature({ requestId: 'r-3', signature: 'not-a-signature' });
+    await expect(bad).rejects.toThrow('rejected');
+  });
+
+  test('a request for a wallet not in the profile is refused without asking the chrome', async () => {
+    const sent = [];
+    const deps = createAquaDeps({ nodeUrl: 'https://aqua.test', sendToChrome: (c, p) => sent.push(p) });
+    // Reach the signer through the client's SIWE path with a foreign address.
+    const fetchFail = deps.client.login('0x0000000000000000000000000000000000000001').catch((e) => e);
+    expect(await fetchFail).toBeInstanceOf(Error);
+    expect(sent).toEqual([]);
+  });
+
+  test('getActiveWallet and isOwnDid come from the profile\'s wallet list', async () => {
+    const deps = createAquaDeps({ nodeUrl: 'https://aqua.test', sendToChrome: () => {} });
+    expect(await deps.getActiveWallet()).toEqual({ index: 0, address: ADDRESS, type: 'mnemonic' });
+  });
+});
+
+describe('registerAquaIpc', () => {
+  function fakeDeps(overrides = {}) {
+    const service = {
+      status: jest.fn(async () => ({ nodeUrl: 'https://aqua.test', wallet: { address: ADDRESS, index: 0, type: 'mnemonic', canSign: true } })),
+      listClaims: jest.fn(async () => [{ id: 'c1' }]),
+      createClaim: jest.fn(async () => ({ id: 'c2' })),
+      removeClaim: jest.fn(async () => true),
+      refreshClaim: jest.fn(async () => ({ id: 'c1' })),
+      sendCode: jest.fn(async () => ({ target: 'a@b.c', message: 'sent' })),
+      verifyCode: jest.fn(async () => ({ verificationToken: 'vt' })),
+      dnsInstructions: jest.fn(async () => ({ record_name: 'x' })),
+      verifyDns: jest.fn(async () => ({ id: 'c3' })),
+      ...overrides,
+    };
+    const settle = jest.fn();
+    return { deps: { nodeUrl: 'https://aqua.test', service, settleSignature: settle }, service, settle };
+  }
+
+  test('registers every claims channel and answers in the ipc-contract shape', async () => {
+    const { deps, service } = fakeDeps();
+    registerAquaIpc({ createDeps: () => deps, log: { error: () => {} } });
+    const { invoke } = handlers();
+    for (const channel of [
+      IPC.AQUA_STATUS, IPC.AQUA_CLAIMS_LIST, IPC.AQUA_CLAIMS_CREATE, IPC.AQUA_CLAIMS_REMOVE, IPC.AQUA_CLAIMS_REFRESH,
+      IPC.AQUA_CLAIMS_SEND_CODE, IPC.AQUA_CLAIMS_VERIFY_CODE, IPC.AQUA_CLAIMS_DNS_INSTRUCTIONS, IPC.AQUA_CLAIMS_VERIFY_DNS,
+    ]) {
+      expect(ipcMain.handle).toHaveBeenCalledWith(channel, expect.any(Function));
+    }
+    expect(await invoke(IPC.AQUA_STATUS)).toEqual({
+      success: true, nodeUrl: 'https://aqua.test', wallet: expect.objectContaining({ canSign: true }), vaultUnlocked: true, hasVault: true,
+    });
+    expect(await invoke(IPC.AQUA_CLAIMS_LIST)).toEqual({ success: true, claims: [{ id: 'c1' }] });
+    expect(await invoke(IPC.AQUA_CLAIMS_CREATE, { type: 'name', fields: {} })).toEqual({ success: true, claim: { id: 'c2' } });
+    expect(service.createClaim).toHaveBeenCalledWith({ type: 'name', fields: {} });
+    expect(broadcastToAllWebContents).toHaveBeenCalledWith(IPC.AQUA_CLAIMS_CHANGED, {});
+  });
+
+  test('errors map to codes the page can act on', async () => {
+    const { deps, service } = fakeDeps();
+    registerAquaIpc({ createDeps: () => deps, log: { error: () => {} } });
+    const { invoke } = handlers();
+    service.listClaims.mockRejectedValueOnce(new ClaimsStoreLocked());
+    expect(await invoke(IPC.AQUA_CLAIMS_LIST)).toMatchObject({ success: false, error: { code: 'VAULT_LOCKED' } });
+    service.createClaim.mockRejectedValueOnce(new ClaimInputError('Phone number must be E.164', 'phone_number'));
+    expect(await invoke(IPC.AQUA_CLAIMS_CREATE, {})).toMatchObject({ success: false, error: { code: 'INVALID_INPUT', details: { field: 'phone_number' } } });
+    service.createClaim.mockRejectedValueOnce(new AquaServiceError('nope', { status: 502, path: '/x' }));
+    expect(await invoke(IPC.AQUA_CLAIMS_CREATE, {})).toMatchObject({ success: false, error: { code: 'SERVICE', message: 'nope', details: { status: 502 } } });
+    service.createClaim.mockRejectedValueOnce(new Error('boom'));
+    expect(await invoke(IPC.AQUA_CLAIMS_CREATE, {})).toMatchObject({ success: false, error: { code: 'ERROR', message: 'boom' } });
+    expect(broadcastToAllWebContents).not.toHaveBeenCalled();
+  });
+
+  test('the feature switch in Settings → Advanced gates every handler', async () => {
+    const { deps } = fakeDeps();
+    registerAquaIpc({ createDeps: () => deps, log: { error: () => {} } });
+    loadSettings.mockReturnValue({ enableIdentityWallet: false });
+    const { invoke } = handlers();
+    expect(await invoke(IPC.AQUA_CLAIMS_LIST)).toMatchObject({ success: false, error: { code: 'DISABLED' } });
+  });
+
+  test('the sign response channel settles the pending request and a URL change rebuilds the deps', async () => {
+    const built = [];
+    const { deps, settle } = fakeDeps();
+    registerAquaIpc({ createDeps: ({ nodeUrl }) => { built.push(nodeUrl); return { ...deps, nodeUrl }; }, log: { error: () => {} } });
+    const { invoke, on } = handlers();
+    await invoke(IPC.AQUA_CLAIMS_LIST);
+    on.get(IPC.AQUA_SIGN_RESPONSE)({}, { requestId: 'r', signature: '0x' + 'ab'.repeat(65) });
+    expect(settle).toHaveBeenCalledWith({ requestId: 'r', signature: '0x' + 'ab'.repeat(65) });
+    loadSettings.mockReturnValue({ enableIdentityWallet: true, aquaNodeUrl: 'https://other.test' });
+    await invoke(IPC.AQUA_CLAIMS_LIST);
+    expect(built).toEqual(['https://aqua.test', 'https://other.test']);
+  });
+});

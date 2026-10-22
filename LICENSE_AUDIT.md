@@ -147,12 +147,13 @@ Versions here are the pinned values in the repo, not observed downloads; each ro
 
 These are pre-built third-party files committed into the repo. They are **not** covered by the "npm dependencies" line in `NOTICES` and need their own attribution — the gap that let a GPL-3.0 library ship unnoticed.
 
-| File                                               | Component                                                                | Version       | License                  | Risk       |
-| -------------------------------------------------- | ------------------------------------------------------------------------ | ------------- | ------------------------ | ---------- |
-| `openlv.esm.js`                                    | OpenLV (`@openlv/{core,session,signaling,transport}`) + `websocket-mqtt` | 0.2.0 / 0.0.7 | LGPL-3.0-only / LGPL-3.0 | **Orange** |
-| `highlight.min.js`, `hljs-github-{dark,light}.css` | highlight.js                                                             | 11.11.1       | BSD-3-Clause             | Green      |
-| `marked.min.js`                                    | marked                                                                   | 15.0.7        | MIT                      | Green      |
-| `purify.min.js`                                    | DOMPurify                                                                | 3.2.5         | MPL-2.0 OR Apache-2.0    | Green      |
+| File                                                 | Component                                                                 | Version       | License                  | Risk       |
+| ---------------------------------------------------- | ------------------------------------------------------------------------- | ------------- | ------------------------ | ---------- |
+| `openlv.esm.js`                                      | OpenLV (`@openlv/{core,session,signaling,transport}`) + `websocket-mqtt`  | 0.2.0 / 0.0.7 | LGPL-3.0-only / LGPL-3.0 | **Orange** |
+| `highlight.min.js`, `hljs-github-{dark,light}.css`   | highlight.js                                                              | 11.11.1       | BSD-3-Clause             | Green      |
+| `marked.min.js`                                      | marked                                                                    | 15.0.7        | MIT                      | Green      |
+| `purify.min.js`                                      | DOMPurify                                                                 | 3.2.5         | MPL-2.0 OR Apache-2.0    | Green      |
+| `src/main/aqua/vendor/aqua-rs-sdk/` (`.wasm` + glue) | aqua-rs-sdk (Aqua Protocol SDK, WASM build; `PROVENANCE` pins tag v7.0.0) | 7.0.0         | Apache-2.0               | Green      |
 
 ### The LGPL question: OpenLV
 
