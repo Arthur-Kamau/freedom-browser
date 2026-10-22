@@ -7,8 +7,9 @@ const { runPageScript } = require('../../../test/helpers/page-script-harness');
 
 const HOSTILE = `"><img src=x onerror=alert(1) data-xss="1">'<b>&amp;`;
 const IDS = {
-  claims: 'div', 'claims-empty': 'div', 'shared-claims': 'div', issued: 'div',
+  'claims-list': 'div', 'claims-empty': 'div', 'shared-claims': 'div', 'issued-list': 'div',
   'status-wallet': 'span', 'status-service': 'span', 'status-caps': 'span', 'add-claim-toggle': 'button', 'add-claim-card': 'div', 'shared-count': 'span', 'issued-count': 'span',
+  'nav-claims': 'button', 'nav-attest': 'button', 'nav-issued': 'button', 'nav-requests': 'button', 'panel-claims': 'section', 'panel-attest': 'section', 'panel-issued': 'section', 'panel-requests': 'section',
   'request-input': 'textarea', 'request-btn': 'button', 'request-status': 'span', 'response-box': 'div', 'response-output': 'textarea', 'response-copy': 'button', 'status-notice': 'div', 'wallet-line': 'p', 'claim-form': 'form', 'claim-type': 'select',
   'fields-name': 'div', 'fields-email': 'div', 'fields-phone': 'div', 'fields-domain': 'div',
   'given-name': 'input', 'family-name': 'input', 'middle-name': 'input', nickname: 'input', email: 'input',
@@ -60,7 +61,7 @@ describe('freedom://identity', () => {
   test('shows the empty state and the wallet line', async () => {
     const page = await run(api());
     expect(page.elements['claims-empty'].classList.contains('hidden')).toBe(false);
-    expect(page.elements.claims.children).toHaveLength(0);
+    expect(page.elements['claims-list'].children).toHaveLength(0);
     expect(page.elements['wallet-line'].textContent).toContain('Wallet 0xabc');
     expect(page.elements['wallet-line'].textContent).toContain('https://aqua.test');
   });
@@ -73,29 +74,29 @@ describe('freedom://identity', () => {
     }));
     expect(page.elements['status-notice'].textContent).toContain('locked');
     expect(page.elements['status-notice'].classList.contains('hidden')).toBe(false);
-    expect(page.elements.claims.textContent).toContain('Unlock your wallet');
+    expect(page.elements['claims-list'].textContent).toContain('Unlock your wallet');
 
     const fresh = await run(api({
       aquaStatus: async () => ({ success: true, nodeUrl: 'u', wallet: null, vaultUnlocked: false, hasVault: false }),
       aquaListClaims: async () => locked,
     }));
-    expect(fresh.elements.claims.textContent).toContain('Set up your wallet');
+    expect(fresh.elements['claims-list'].textContent).toContain('Set up your wallet');
   });
 
   test('renders a claim with hostile payload as text and labels it Self-signed, never verified', async () => {
     const page = await run(api({ aquaListClaims: async () => ({ success: true, claims: [claim()] }) }));
     expect(page.elements['claims-empty'].classList.contains('hidden')).toBe(true);
-    const card = page.elements.claims.querySelector('.card');
+    const card = page.elements['claims-list'].querySelector('.card');
     expect(card.querySelector('.claim-value').textContent).toBe(`${HOSTILE} Freedom`);
     expect(card.querySelector('.pill').textContent).toBe('Self-signed');
-    expect(page.elements.claims.textContent).not.toMatch(/verified by|Verified$/);
-    expect(page.elements.claims.textContent).toContain('Only you have signed this claim');
+    expect(page.elements['claims-list'].textContent).not.toMatch(/verified by|Verified$/);
+    expect(page.elements['claims-list'].textContent).toContain('Only you have signed this claim');
   });
 
   test('an attested claim lists the attester and their words, as text', async () => {
     const attested = claim({ attestations: [{ tip: '0x1', attesterDid: 'did:pkh:eip155:1:0xserver', context: HOSTILE, verification: { isValid: true } }] });
     const page = await run(api({ aquaListClaims: async () => ({ success: true, claims: [attested] }) }));
-    const card = page.elements.claims.querySelector('.card');
+    const card = page.elements['claims-list'].querySelector('.card');
     expect(card.querySelector('.pill').textContent).toBe('Attested');
     expect(card.querySelector('.attestation').textContent).toContain('did:pkh:eip155:1:0xserver');
     expect(card.querySelector('.attestation').textContent).toContain(HOSTILE);
@@ -103,8 +104,8 @@ describe('freedom://identity', () => {
 
   test('a failed verification is flagged on the pill', async () => {
     const page = await run(api({ aquaListClaims: async () => ({ success: true, claims: [claim({ verification: { isValid: false, status: 'Chain broken' } })] }) }));
-    expect(page.elements.claims.querySelector('.pill').textContent).toBe('Verification failed');
-    expect(page.elements.claims.textContent).toContain('Not verified: Chain broken');
+    expect(page.elements['claims-list'].querySelector('.pill').textContent).toBe('Verification failed');
+    expect(page.elements['claims-list'].textContent).toContain('Not verified: Chain broken');
   });
 
   test('creating a name claim sends the fields and reloads', async () => {
@@ -162,7 +163,7 @@ describe('freedom://identity', () => {
   test('Remove asks first and keeps the claim when declined', async () => {
     const freedomAPI = api({ aquaListClaims: async () => ({ success: true, claims: [claim()] }) });
     const page = await run(freedomAPI, () => false);
-    await page.elements.claims.querySelector('.btn.danger').fire('click');
+    await page.elements['claims-list'].querySelector('.btn.danger').fire('click');
     await page.flush();
     expect(freedomAPI.aquaRemoveClaim).not.toHaveBeenCalled();
   });
@@ -170,7 +171,7 @@ describe('freedom://identity', () => {
   test('a domain claim shows its DNS record as text', async () => {
     const freedomAPI = api({ aquaListClaims: async () => ({ success: true, claims: [claim({ type: 'domain', payload: { domain_name: 'example.com' }, domainVerification: 'pending' })] }) });
     const page = await run(freedomAPI);
-    const card = page.elements.claims.querySelector('.card');
+    const card = page.elements['claims-list'].querySelector('.card');
     expect(card.textContent).toContain('pending');
     const dnsBtn = card.querySelectorAll('.btn').find((b) => b.textContent === 'DNS record');
     await dnsBtn.fire('click');
@@ -186,16 +187,16 @@ describe('freedom://identity attestation', () => {
   test('a pending peer attestation says the attester holds the tree, with its source', async () => {
     const pending = claim({ attestations: [{ tip: '0x1', attesterDid: 'did:pkh:eip155:1:0xpeer', context: HOSTILE, source: 'peer', pending: true, verification: { isValid: false, status: 'held' } }] });
     const page = await run(api({ aquaListClaims: async () => ({ success: true, claims: [pending] }) }));
-    const box = page.elements.claims.querySelector('.attestation');
+    const box = page.elements['claims-list'].querySelector('.attestation');
     expect(box.querySelector('.source').textContent).toBe('Peer');
     expect(box.textContent).toContain('Import it below to verify');
-    expect(page.elements.claims.querySelector('.pill').textContent).toBe('Self-signed');
+    expect(page.elements['claims-list'].querySelector('.pill').textContent).toBe('Self-signed');
   });
 
   test('sharing sends the attester address and pulling refreshes', async () => {
     const freedomAPI = api({ aquaListClaims: async () => ({ success: true, claims: [claim()] }) });
     const page = await run(freedomAPI);
-    const card = page.elements.claims.querySelector('.card');
+    const card = page.elements['claims-list'].querySelector('.card');
     await buttonNamed(card, 'Share for attestation').fire('click');
     const input = card.querySelector('.inline-form.share').querySelector('input');
     input.value = ' 0xC412d3047AffD97dC51C5C52E2588Ae4238CbF88 ';
@@ -203,7 +204,7 @@ describe('freedom://identity attestation', () => {
     await page.flush();
     expect(freedomAPI.aquaShareClaim).toHaveBeenCalledWith('c1', '0xC412d3047AffD97dC51C5C52E2588Ae4238CbF88');
     expect(page.elements['status-notice'].textContent).toContain('Shared');
-    const fresh = page.elements.claims.querySelector('.card');
+    const fresh = page.elements['claims-list'].querySelector('.card');
     await buttonNamed(fresh, 'Pull attestations').fire('click');
     expect(freedomAPI.aquaPullAttestations).toHaveBeenCalledWith('c1');
   });
@@ -214,7 +215,7 @@ describe('freedom://identity attestation', () => {
       aquaImportAttestation: jest.fn(async () => ({ success: false, error: { code: 'INVALID_INPUT', message: HOSTILE } })),
     });
     const page = await run(freedomAPI);
-    const card = page.elements.claims.querySelector('.card');
+    const card = page.elements['claims-list'].querySelector('.card');
     await buttonNamed(card, 'Import attestation').fire('click');
     await buttonNamed(card, 'Import').fire('click');
     expect(freedomAPI.aquaImportAttestation).not.toHaveBeenCalled();
@@ -246,7 +247,7 @@ describe('freedom://identity attestation', () => {
       aquaListIssued: async () => ({ success: true, issued: [{ id: 'a1', tip: '0xa', claimTip: '0xt', subjectDid: 'did:pkh:eip155:1:0xowner', context: HOSTILE, createdAt: '2026-10-22T12:00:00Z', verification: { isValid: true }, subjectPayload: { given_name: 'S', family_name: 'P' } }] }),
     });
     const page = await run(freedomAPI);
-    const card = page.elements.issued.querySelector('.card');
+    const card = page.elements['issued-list'].querySelector('.card');
     expect(card.textContent).toContain(HOSTILE);
     expect(card.querySelector('.pill').textContent).toBe('Signed');
     await buttonNamed(card, 'Copy JSON').fire('click');
@@ -293,5 +294,19 @@ describe('freedom://identity disclosure', () => {
     await page.flush();
     expect(page.elements['request-status'].textContent).toBe(HOSTILE);
     expect(page.elements['response-box'].classList.contains('hidden')).toBe(true);
+  });
+});
+
+describe('freedom://identity left nav', () => {
+  test('opens on claims, switches panels on click, and follows the hash', async () => {
+    const page = await run(api());
+    expect(page.elements['panel-claims'].classList.contains('active')).toBe(true);
+    expect(page.elements['panel-attest'].classList.contains('active')).toBe(false);
+    await page.elements['nav-attest'].fire('click');
+    expect(page.elements['nav-attest'].classList.contains('active')).toBe(true);
+    expect(page.elements['panel-attest'].classList.contains('active')).toBe(true);
+    expect(page.elements['panel-claims'].classList.contains('active')).toBe(false);
+    const deep = await runPageScript('identity', { ids: IDS, freedomAPI: api(), windowExtras: { location: { href: 'x', search: '', hash: '#requests' } } });
+    expect(deep.elements['panel-requests'].classList.contains('active')).toBe(true);
   });
 });

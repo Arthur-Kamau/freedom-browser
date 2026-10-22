@@ -4,10 +4,10 @@
 // shown here came from the identity service or the user, so rows are built
 // with DOM APIs and textContent, never HTML strings (#432).
 
-const claimsEl = document.getElementById('claims');
+const claimsEl = document.getElementById('claims-list');
 const claimsEmpty = document.getElementById('claims-empty');
 const sharedEl = document.getElementById('shared-claims');
-const issuedEl = document.getElementById('issued');
+const issuedEl = document.getElementById('issued-list');
 const statusNotice = document.getElementById('status-notice');
 const walletLine = document.getElementById('wallet-line');
 const statusWallet = document.getElementById('status-wallet');
@@ -377,7 +377,7 @@ function toggleShareForm(claim, card) {
       return;
     }
     hideNotice();
-    showNotice('', `Shared. Ask the attester to open freedom://identity, attest it under "Attest for someone else", and send you the attestation.`);
+    showNotice('', 'Shared. Ask the attester to open freedom://identity#attest, attest it there, and send you the attestation.');
     await loadClaims();
   });
   form.appendChild(btn);
@@ -495,7 +495,7 @@ function renderShared(entry) {
       return;
     }
     hideNotice();
-    showNotice('', 'Attested. Send the attestation under "Attestations you issued" to the claim\'s owner.');
+    showNotice('', "Attested. Send the attestation from the Issued section to the claim's owner.");
     await loadIssued();
   });
   form.appendChild(btn);
@@ -596,6 +596,38 @@ async function reviewRequest() {
     requestBtn.disabled = false;
   }
 }
+
+// ── Left nav: one panel at a time, addressed by hash (freedom://identity#attest) ──
+
+const NAV_TARGETS = ['claims', 'attest', 'issued', 'requests'];
+
+// The hash names a panel, never an element: no element carries one of
+// these ids, so a hash navigation never scrolls to an anchor. The content
+// column starts at the top on every switch regardless.
+function showPanel(target) {
+  const name = NAV_TARGETS.includes(target) ? target : 'claims';
+  for (const t of NAV_TARGETS) {
+    document.getElementById(`panel-${t}`)?.classList.toggle('active', t === name);
+    document.getElementById(`nav-${t}`)?.classList.toggle('active', t === name);
+  }
+  const layout = document.querySelector('.layout');
+  if (layout && typeof layout.scrollTop === 'number') layout.scrollTop = 0;
+  return name;
+}
+
+function routeFromHash() {
+  const hash = typeof window.location?.hash === 'string' ? window.location.hash.replace(/^#/, '') : '';
+  showPanel(hash);
+}
+
+for (const t of NAV_TARGETS) {
+  document.getElementById(`nav-${t}`)?.addEventListener('click', () => {
+    showPanel(t);
+    if (window.location && typeof window.location.hash === 'string') window.location.hash = t;
+  });
+}
+if (typeof window.addEventListener === 'function') window.addEventListener('hashchange', routeFromHash);
+routeFromHash();
 
 requestBtn.addEventListener('click', reviewRequest);
 responseCopy.addEventListener('click', async () => {

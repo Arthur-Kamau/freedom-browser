@@ -27,9 +27,84 @@
           sans-serif;
         background: var(--page-gradient);
         color: var(--text);
-        padding: 48px;
         box-sizing: border-box;
         min-height: 100vh;
+      }
+      /* Same layout as Settings: a sticky left nav and a content column. */
+      .layout {
+        display: grid;
+        grid-template-columns: 240px 1fr;
+        height: 100vh;
+        overflow-y: auto;
+      }
+      .layout:focus {
+        outline: none;
+      }
+      .sidebar {
+        position: sticky;
+        top: 0;
+        align-self: start;
+        height: 100vh;
+        padding: 40px 20px 40px 32px;
+        border-right: 1px solid var(--border);
+        background: var(--sidebar-translucent);
+        backdrop-filter: blur(6px);
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .sidebar-title {
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+        margin: 0 0 4px 12px;
+      }
+      .nav {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 12px;
+        border-radius: 8px;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 14px;
+        background: transparent;
+        border: 0;
+        text-align: left;
+        font-family: inherit;
+        transition:
+          background 0.1s,
+          color 0.1s;
+      }
+      .nav-item:hover {
+        background: var(--bg-card);
+        color: var(--text);
+      }
+      .nav-item.active {
+        background: var(--accent-muted);
+        color: var(--accent);
+      }
+      .nav-item svg {
+        flex-shrink: 0;
+      }
+      .nav-item .count {
+        margin-left: auto;
+      }
+      .content {
+        padding: 48px 56px 80px 56px;
+        max-width: 880px;
+      }
+      .panel {
+        display: none;
+      }
+      .panel.active {
+        display: block;
       }
       /* Same header as every other internal page (#256). */
       h1 {
@@ -46,9 +121,6 @@
         color: var(--text-muted);
         margin-bottom: 24px;
         font-size: 14px;
-      }
-      .page {
-        max-width: 880px;
       }
       .hidden {
         display: none !important;
@@ -129,41 +201,6 @@
       }
       .section-head .meta {
         flex: 1;
-      }
-      details.section > summary {
-        cursor: pointer;
-        list-style: none;
-        display: flex;
-        align-items: baseline;
-        gap: 10px;
-        padding: 12px 16px;
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-      }
-      details.section > summary::-webkit-details-marker {
-        display: none;
-      }
-      details.section > summary::before {
-        content: '›';
-        display: inline-block;
-        width: 12px;
-        color: var(--text-muted);
-        transition: transform 0.15s;
-      }
-      details.section[open] > summary::before {
-        transform: rotate(90deg);
-      }
-      details.section[open] > summary {
-        border-bottom-left-radius: 0;
-        border-bottom-right-radius: 0;
-      }
-      details.section > .section-body {
-        border: 1px solid var(--border);
-        border-top: 0;
-        border-radius: 0 0 10px 10px;
-        padding: 16px;
-        background: var(--bg-elev);
       }
       .count {
         font-size: 12px;
@@ -440,173 +477,202 @@
     </style>
   </head>
   <body>
-    <div class="page">
-      <h1>
-        <svg
-          width="28"
-          height="28"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-          <circle cx="12" cy="7" r="4"></circle>
-        </svg>
-        Identity
-      </h1>
-      <p class="subtitle" id="subtitle">
-        Signed statements about you that a site or another person can verify without a central provider.
-      </p>
+    <div class="layout" tabindex="-1">
+      <aside class="sidebar">
+        <h2 class="sidebar-title">Identity</h2>
+        <nav class="nav" id="nav">
+          <button type="button" class="nav-item active" id="nav-claims" data-target="claims">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            Your claims
+          </button>
+          <button type="button" class="nav-item" id="nav-attest" data-target="attest">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3l8 4v5c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V7z"></path>
+              <path d="M9 12l2 2 4-4"></path>
+            </svg>
+            Attest for others
+            <span class="count" id="shared-count">0</span>
+          </button>
+          <button type="button" class="nav-item" id="nav-issued" data-target="issued">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+              <path d="M14 3v6h6"></path>
+            </svg>
+            Issued
+            <span class="count" id="issued-count">0</span>
+          </button>
+          <button type="button" class="nav-item" id="nav-requests" data-target="requests">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            Requests
+          </button>
+        </nav>
+      </aside>
 
-      <div class="status-card">
-        <div class="status-item">
-          <span class="label">Wallet</span>
-          <span class="value" id="status-wallet">—</span>
-        </div>
-        <div class="status-item">
-          <span class="label">Identity service</span>
-          <span class="value" id="status-service">—</span>
-        </div>
-        <div class="status-item meta" id="status-caps"></div>
-        <p class="meta hidden" id="wallet-line"></p>
-      </div>
-
-      <div class="notice hidden" id="status-notice"></div>
-
-      <section class="section">
-        <div class="section-head">
-          <h2>Your claims</h2>
-          <span class="meta">Each one is signed by your wallet; a self-signed claim is not yet attested.</span>
-          <button type="button" class="btn primary" id="add-claim-toggle">Add a claim</button>
-        </div>
-        <div class="empty hidden" id="claims-empty">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <main class="content">
+        <h1>
+          <svg
+            width="28"
+            height="28"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
             <circle cx="12" cy="7" r="4"></circle>
           </svg>
-          <div class="empty-title">No claims yet</div>
-          <div>Add a name, email, phone or domain claim</div>
-        </div>
-        <div id="claims"></div>
+          Identity
+        </h1>
+        <p class="subtitle" id="subtitle">
+          Signed statements about you that a site or another person can verify without a central provider.
+        </p>
 
-        <div class="form-card hidden" id="add-claim-card">
-          <div class="section-head">
-            <h2>Add a claim</h2>
+        <div class="status-card">
+          <div class="status-item">
+            <span class="label">Wallet</span>
+            <span class="value" id="status-wallet">—</span>
           </div>
-          <p class="meta">
-            Freedom sends the claim to the identity service, you sign it with your wallet, and a copy is kept in
-            this profile. Email and phone claims are attested by the service after you enter the code it sends.
-          </p>
-          <form class="form" id="claim-form" autocomplete="off">
-            <div class="field">
-              <label for="claim-type">Kind of claim</label>
-              <select id="claim-type">
-                <option value="name">Name</option>
-                <option value="email">Email address</option>
-                <option value="phone">Phone number</option>
-                <option value="domain">Domain</option>
-              </select>
-            </div>
-
-            <div id="fields-name">
-              <div class="field">
-                <label for="given-name">Given name</label>
-                <input type="text" id="given-name" maxlength="256" />
-              </div>
-              <div class="field">
-                <label for="family-name">Family name</label>
-                <input type="text" id="family-name" maxlength="256" />
-              </div>
-              <div class="field">
-                <label for="middle-name">Middle name (optional)</label>
-                <input type="text" id="middle-name" maxlength="256" />
-              </div>
-              <div class="field">
-                <label for="nickname">Nickname (optional)</label>
-                <input type="text" id="nickname" maxlength="256" />
-              </div>
-            </div>
-
-            <div id="fields-email" class="hidden">
-              <div class="field">
-                <label for="email">Email address</label>
-                <input type="email" id="email" maxlength="320" />
-              </div>
-            </div>
-
-            <div id="fields-phone" class="hidden">
-              <div class="field">
-                <label for="phone-number">Phone number</label>
-                <input type="tel" id="phone-number" class="mono-input" maxlength="20" placeholder="+254712345678" />
-                <span class="help">International format with the country code, as in +254712345678.</span>
-              </div>
-            </div>
-
-            <div id="fields-domain" class="hidden">
-              <div class="field">
-                <label for="domain">Domain name</label>
-                <input type="text" id="domain" class="mono-input" maxlength="253" placeholder="example.com" />
-                <span class="help">You will add a DNS TXT record to prove you control it.</span>
-              </div>
-            </div>
-
-            <div id="code-section" class="hidden">
-              <div class="code-row">
-                <div class="field">
-                  <label for="code">Verification code</label>
-                  <input type="text" id="code" class="mono-input" maxlength="16" inputmode="numeric" />
-                </div>
-                <button type="button" class="btn" id="send-code-btn">Send code</button>
-                <button type="button" class="btn" id="verify-code-btn" disabled>Verify code</button>
-              </div>
-              <span class="meta" id="code-status"></span>
-            </div>
-
-            <div class="field-error hidden" id="form-error"></div>
-
-            <div class="actions">
-              <button type="submit" class="btn primary" id="create-btn">Create and sign</button>
-              <button type="button" class="btn" id="cancel-btn">Cancel</button>
-            </div>
-          </form>
+          <div class="status-item">
+            <span class="label">Identity service</span>
+            <span class="value" id="status-service">—</span>
+          </div>
+          <div class="status-item meta" id="status-caps"></div>
+          <p class="meta hidden" id="wallet-line"></p>
         </div>
-      </section>
 
-      <details class="section" id="shared-section">
-        <summary>
-          <h2>Attest for someone else</h2>
-          <span class="count" id="shared-count">0</span>
-          <span class="meta">Claims other people shared with your wallet</span>
-        </summary>
-        <div class="section-body">
+        <div class="notice hidden" id="status-notice"></div>
+
+        <section class="section panel active" id="panel-claims" data-nav="claims">
+          <div class="section-head">
+            <h2>Your claims</h2>
+            <span class="meta">Each one is signed by your wallet; a self-signed claim is not yet attested.</span>
+            <button type="button" class="btn primary" id="add-claim-toggle">Add a claim</button>
+          </div>
+          <div class="empty hidden" id="claims-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <div class="empty-title">No claims yet</div>
+            <div>Add a name, email, phone or domain claim</div>
+          </div>
+          <div id="claims-list"></div>
+
+          <div class="form-card hidden" id="add-claim-card">
+            <div class="section-head">
+              <h2>Add a claim</h2>
+            </div>
+            <p class="meta">
+              Freedom sends the claim to the identity service, you sign it with your wallet, and a copy is kept in
+              this profile. Email and phone claims are attested by the service after you enter the code it sends.
+            </p>
+            <form class="form" id="claim-form" autocomplete="off">
+              <div class="field">
+                <label for="claim-type">Kind of claim</label>
+                <select id="claim-type">
+                  <option value="name">Name</option>
+                  <option value="email">Email address</option>
+                  <option value="phone">Phone number</option>
+                  <option value="domain">Domain</option>
+                </select>
+              </div>
+
+              <div id="fields-name">
+                <div class="field">
+                  <label for="given-name">Given name</label>
+                  <input type="text" id="given-name" maxlength="256" />
+                </div>
+                <div class="field">
+                  <label for="family-name">Family name</label>
+                  <input type="text" id="family-name" maxlength="256" />
+                </div>
+                <div class="field">
+                  <label for="middle-name">Middle name (optional)</label>
+                  <input type="text" id="middle-name" maxlength="256" />
+                </div>
+                <div class="field">
+                  <label for="nickname">Nickname (optional)</label>
+                  <input type="text" id="nickname" maxlength="256" />
+                </div>
+              </div>
+
+              <div id="fields-email" class="hidden">
+                <div class="field">
+                  <label for="email">Email address</label>
+                  <input type="email" id="email" maxlength="320" />
+                </div>
+              </div>
+
+              <div id="fields-phone" class="hidden">
+                <div class="field">
+                  <label for="phone-number">Phone number</label>
+                  <input type="tel" id="phone-number" class="mono-input" maxlength="20" placeholder="+254712345678" />
+                  <span class="help">International format with the country code, as in +254712345678.</span>
+                </div>
+              </div>
+
+              <div id="fields-domain" class="hidden">
+                <div class="field">
+                  <label for="domain">Domain name</label>
+                  <input type="text" id="domain" class="mono-input" maxlength="253" placeholder="example.com" />
+                  <span class="help">You will add a DNS TXT record to prove you control it.</span>
+                </div>
+              </div>
+
+              <div id="code-section" class="hidden">
+                <div class="code-row">
+                  <div class="field">
+                    <label for="code">Verification code</label>
+                    <input type="text" id="code" class="mono-input" maxlength="16" inputmode="numeric" />
+                  </div>
+                  <button type="button" class="btn" id="send-code-btn">Send code</button>
+                  <button type="button" class="btn" id="verify-code-btn" disabled>Verify code</button>
+                </div>
+                <span class="meta" id="code-status"></span>
+              </div>
+
+              <div class="field-error hidden" id="form-error"></div>
+
+              <div class="actions">
+                <button type="submit" class="btn primary" id="create-btn">Create and sign</button>
+                <button type="button" class="btn" id="cancel-btn">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section class="section panel" id="panel-attest" data-nav="attest">
+          <div class="section-head">
+            <h2>Attest for someone else</h2>
+            <span class="meta">Claims other people shared with your wallet on the identity service.</span>
+          </div>
           <p class="meta">
             Attesting signs a statement with your wallet that you vouch for the claim. You then hand the
             attestation back to its owner, since only you can download it.
           </p>
           <div id="shared-claims"></div>
-        </div>
-      </details>
+        </section>
 
-      <details class="section" id="issued-section">
-        <summary>
-          <h2>Attestations you issued</h2>
-          <span class="count" id="issued-count">0</span>
-          <span class="meta">Copy one as JSON to send it to the claim's owner</span>
-        </summary>
-        <div class="section-body">
-          <div id="issued"></div>
-        </div>
-      </details>
+        <section class="section panel" id="panel-issued" data-nav="issued">
+          <div class="section-head">
+            <h2>Attestations you issued</h2>
+            <span class="meta">Copy one as JSON to send it to the claim's owner.</span>
+          </div>
+          <div id="issued-list"></div>
+        </section>
 
-      <details class="section" id="request-section">
-        <summary>
-          <h2>Respond to a request</h2>
-          <span class="meta">A site asks through its wallet connection; a person can hand you a request as text</span>
-        </summary>
-        <div class="section-body">
+        <section class="section panel" id="panel-requests" data-nav="requests">
+          <div class="section-head">
+            <h2>Respond to a request</h2>
+            <span class="meta">A site asks through its wallet connection; a person can hand you a request as text.</span>
+          </div>
           <div class="inline-form" id="request-form">
             <textarea id="request-input" aria-label="Disclosure request JSON" placeholder='{"aqua":1,"need":["email"],"purpose":"…","nonce":"…"}'></textarea>
             <button type="button" class="btn primary" id="request-btn">Review request</button>
@@ -616,8 +682,8 @@
             <textarea id="response-output" aria-label="Disclosure response JSON" readonly></textarea>
             <button type="button" class="btn" id="response-copy">Copy response</button>
           </div>
-        </div>
-      </details>
+        </section>
+      </main>
     </div>
 
     <script src="scripts/identity.js"></script>
