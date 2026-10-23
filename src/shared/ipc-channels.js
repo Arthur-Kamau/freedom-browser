@@ -428,6 +428,11 @@ module.exports = {
 
   // Aqua identity claims (freedom://identity page; main-process service)
   AQUA_STATUS: 'aqua:status',
+  // Settings → Identity: does an Aqua identity service answer at this URL?
+  AQUA_SERVICE_PROBE: 'aqua:service:probe',
+  // freedom://identity signs in to the service before it shows anything
+  // that needs a session; the signature is confirmed in the sidebar.
+  AQUA_SERVICE_SIGN_IN: 'aqua:service:sign-in',
   AQUA_CLAIMS_LIST: 'aqua:claims:list',
   AQUA_CLAIMS_CREATE: 'aqua:claims:create',
   AQUA_CLAIMS_REMOVE: 'aqua:claims:remove',

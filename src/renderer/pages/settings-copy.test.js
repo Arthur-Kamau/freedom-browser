@@ -335,7 +335,15 @@ describe('settings.html Advanced holds only the experiments (#275)', () => {
     expect(identity).toMatch(/<h2 class="section-title">Identity<\/h2>/);
     expect(identity).toContain('Enable Identity &amp; Wallet under Advanced to use identity claims.');
     expect(rowLabels(identity)).toEqual(['Identity service', 'Export your claims', 'Remove your claims']);
-    expect(identity).toContain('id="aqua-node-url"');
+    expect(SOURCE).toContain('id="aqua-node-url"');
+    // The row shows the address and one Edit button; the editing happens in
+    // a modal whose Save checks the service first and whose Cancel restores.
+    expect(identity).toContain('id="aqua-node-url-current"');
+    expect(identity).toMatch(/<button type="button" class="btn" id="aqua-node-url-edit">Edit<\/button>/);
+    expect(SOURCE).toMatch(/<dialog class="modal" id="aqua-node-url-dialog"/);
+    expect(SOURCE).toMatch(/<button type="button" class="btn primary" id="aqua-node-url-save">Save<\/button>/);
+    expect(SOURCE).toMatch(/<button type="button" class="btn" id="aqua-node-url-cancel">Cancel<\/button>/);
+    expect(SOURCE).toContain('freedomAPI.aquaProbeService?.(value)');
     // Remove all is destructive (#284): danger, filled light red, and it says its verb.
     expect(identity).toMatch(/<button type="button" class="btn danger filled" id="aqua-claims-remove-all">\s*Remove all\s*<\/button>/);
     expect(identity).toMatch(/<button type="button" class="btn" id="aqua-claims-export">\s*Export all\s*<\/button>/);

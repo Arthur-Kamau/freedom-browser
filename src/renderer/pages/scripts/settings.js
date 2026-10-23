@@ -1682,6 +1682,7 @@ const applyFormState = (settings) => {
   if (identityFields.nodeUrl !== document.activeElement) {
     savedNodeUrl = settings.aquaNodeUrl || '';
     identityFields.nodeUrl.value = savedNodeUrl;
+    showSavedNodeUrl();
   }
   applyIdentityPanelState();
   fields.showIpfsProgressStatus.checked = settings.showIpfsProgressStatus === true;
@@ -2149,15 +2150,25 @@ swarmCacheSelect?.addEventListener('change', async () => {
   setSwarmCacheStatus(message);
 });
 
-// ── Identity (Advanced → Identity) ──────────────────────────────────────
-// The identity service address commits the way the profile name does: when
-// the field is left or Enter is hit, and only when it parses as an http(s)
-// URL, so a half-typed value never reaches the store. Export and Remove all
-// go through main, which owns the claims and the save dialog.
+// ── Identity ─────────────────────────────────────────────────────────────
+// The identity service address is shown on its row and changed in a
+// modal. Save asks main to probe the address first — an Aqua identity
+// service has to answer there — and only then stores it, so a typo or a
+// dead host is refused in the modal rather than saved. (Settings apply on
+// change elsewhere; this one needs the check, so it keeps an explicit Save,
+// like the item editors.) Export and Remove all go through main, which owns
+// the claims and the save dialog.
 const identityFields = {
   offNote: $('identity-off'),
   controls: $('identity-controls'),
+  nodeUrlCurrent: $('aqua-node-url-current'),
+  nodeUrlDialog: $('aqua-node-url-dialog'),
   nodeUrl: $('aqua-node-url'),
+  nodeUrlEdit: $('aqua-node-url-edit'),
+  nodeUrlSave: $('aqua-node-url-save'),
+  nodeUrlCancel: $('aqua-node-url-cancel'),
+  nodeUrlClose: $('aqua-node-url-close'),
+  nodeUrlCheck: $('aqua-node-url-check'),
   nodeUrlStatus: $('aqua-node-url-status'),
   exportBtn: $('aqua-claims-export'),
   removeAllBtn: $('aqua-claims-remove-all'),
@@ -2179,15 +2190,58 @@ const applyIdentityPanelState = () => {
   if (identityFields.controls) identityFields.controls.hidden = !on;
 };
 
-const commitNodeUrl = async () => {
+const claimsErrorText = (result, fallback) => {
+  const err = result?.error;
+  if (err?.code === 'VAULT_LOCKED') return 'Unlock your wallet first.';
+  return err?.message || fallback;
+};
+
+// Native <dialog>; the unit-test DOM has no showModal, so the open state
+// falls back to the property the browser would set itself.
+const openNodeUrlDialog = () => {
+  const dialog = identityFields.nodeUrlDialog;
+  if (!dialog) return;
+  if (typeof dialog.showModal === 'function') {
+    if (!dialog.open) dialog.showModal();
+  } else {
+    dialog.open = true;
+  }
+};
+
+const closeNodeUrlDialog = () => {
+  const dialog = identityFields.nodeUrlDialog;
+  if (!dialog) return;
+  if (typeof dialog.close === 'function') dialog.close();
+  else dialog.open = false;
+};
+
+const showSavedNodeUrl = () => {
+  if (identityFields.nodeUrlCurrent) identityFields.nodeUrlCurrent.textContent = savedNodeUrl;
+};
+
+const startNodeUrlEdit = () => {
+  setIdentityStatus(identityFields.nodeUrlStatus, '', null);
+  setIdentityStatus(identityFields.nodeUrlCheck, '', null);
+  identityFields.nodeUrl.value = savedNodeUrl;
+  openNodeUrlDialog();
+  identityFields.nodeUrl?.focus?.();
+};
+
+const cancelNodeUrlEdit = () => {
+  identityFields.nodeUrl.value = savedNodeUrl;
+  setIdentityStatus(identityFields.nodeUrlCheck, '', null);
+  closeNodeUrlDialog();
+};
+
+const saveNodeUrl = async () => {
   const input = identityFields.nodeUrl;
   if (!input) return;
-  setIdentityStatus(identityFields.nodeUrlStatus, '', null);
   const value = input.value.trim().replace(/\/+$/, '');
   if (!value || value === savedNodeUrl) {
-    input.value = savedNodeUrl;
+    cancelNodeUrlEdit();
     return;
   }
+  const check = identityFields.nodeUrlCheck;
   const protocol = (() => {
     try {
       return new URL(value).protocol;
@@ -2196,38 +2250,60 @@ const commitNodeUrl = async () => {
     }
   })();
   if (!/^https?:$/.test(protocol)) {
-    setIdentityStatus(identityFields.nodeUrlStatus, 'Enter the service address as a full http or https URL.', 'error');
+    setIdentityStatus(check, 'Enter the service address as a full http or https URL.', 'error');
     return;
   }
-  const ok = await freedomAPI.saveSettings({ aquaNodeUrl: value });
-  if (!ok) {
-    setIdentityStatus(identityFields.nodeUrlStatus, 'The identity service was not saved.', 'error');
-    return;
+  identityFields.nodeUrlSave.disabled = true;
+  setIdentityStatus(check, `Checking ${value}…`, 'testing');
+  try {
+    const probe = await freedomAPI.aquaProbeService?.(value);
+    if (!probe?.success) {
+      setIdentityStatus(check, claimsErrorText(probe, 'The service could not be checked.'), 'error');
+      return;
+    }
+    if (!probe.reachable) {
+      setIdentityStatus(check, `Nothing answered at ${probe.url}. Check the address and that the service is up.`, 'error');
+      return;
+    }
+    if (!probe.compatible) {
+      setIdentityStatus(check, `${probe.url} answered, but not as an Aqua identity service. Not saved.`, 'error');
+      return;
+    }
+    const ok = await freedomAPI.saveSettings({ aquaNodeUrl: probe.url });
+    if (!ok) {
+      setIdentityStatus(check, 'The identity service was not saved.', 'error');
+      return;
+    }
+    savedNodeUrl = probe.url;
+    input.value = probe.url;
+    showSavedNodeUrl();
+    closeNodeUrlDialog();
+    setIdentityStatus(
+      identityFields.nodeUrlStatus,
+      probe.outOfBandVerification
+        ? 'Saved. New claims use this service.'
+        : 'Saved. This service runs no email or phone verification, so only name and domain claims are offered.',
+      'success'
+    );
+  } finally {
+    identityFields.nodeUrlSave.disabled = false;
   }
-  savedNodeUrl = value;
-  input.value = value;
-  setIdentityStatus(identityFields.nodeUrlStatus, 'Saved. New claims use this service.', 'success');
 };
 
-identityFields.nodeUrl?.addEventListener('blur', () => {
-  commitNodeUrl();
+identityFields.nodeUrlEdit?.addEventListener('click', startNodeUrlEdit);
+identityFields.nodeUrlSave?.addEventListener('click', saveNodeUrl);
+identityFields.nodeUrlCancel?.addEventListener('click', cancelNodeUrlEdit);
+identityFields.nodeUrlClose?.addEventListener('click', cancelNodeUrlEdit);
+// Escape closes a native dialog by itself; the field is reset on close.
+identityFields.nodeUrlDialog?.addEventListener('close', () => {
+  identityFields.nodeUrl.value = savedNodeUrl;
 });
 identityFields.nodeUrl?.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
     event.preventDefault();
-    identityFields.nodeUrl.blur();
-  } else if (event.key === 'Escape') {
-    event.preventDefault();
-    identityFields.nodeUrl.value = savedNodeUrl;
-    identityFields.nodeUrl.blur();
+    saveNodeUrl();
   }
 });
-
-const claimsErrorText = (result, fallback) => {
-  const err = result?.error;
-  if (err?.code === 'VAULT_LOCKED') return 'Unlock your wallet first.';
-  return err?.message || fallback;
-};
 
 identityFields.exportBtn?.addEventListener('click', async () => {
   identityFields.exportBtn.disabled = true;

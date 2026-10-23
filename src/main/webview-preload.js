@@ -1094,6 +1094,10 @@ contextBridge.exposeInMainWorld('freedomAPI', {
   // in a wallet signature, which main routes to the sidebar's approval
   // screen; the page only ever sees the stored result.
   aquaStatus: guardInternal('aquaStatus', () => ipcRenderer.invoke('aqua:status')),
+  // Settings → Identity checks a service before saving its address.
+  aquaProbeService: guardInternal('aquaProbeService', (url) => ipcRenderer.invoke('aqua:service:probe', url)),
+  // One wallet signature, confirmed in the sidebar; resolves once the service holds a session.
+  aquaSignIn: guardInternal('aquaSignIn', () => ipcRenderer.invoke('aqua:service:sign-in')),
   aquaListClaims: guardInternal('aquaListClaims', () => ipcRenderer.invoke('aqua:claims:list')),
   aquaCreateClaim: guardInternal('aquaCreateClaim', (request) =>
     ipcRenderer.invoke('aqua:claims:create', request)

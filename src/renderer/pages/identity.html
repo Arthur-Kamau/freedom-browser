@@ -10,7 +10,7 @@
     <link
       rel="icon"
       type="image/svg+xml"
-      href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjOGI5NDllIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTIwIDIxdi0yYTQgNCAwIDAgMC00LTRIOGE0IDQgMCAwIDAtNCA0djIiLz48Y2lyY2xlIGN4PSIxMiIgY3k9IjciIHI9IjQiLz48L3N2Zz4="
+      href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjOGI5NDllIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTMgN1Y1YTIgMiAwIDAgMSAyLTJoMiIvPjxwYXRoIGQ9Ik0xNyAzaDJhMiAyIDAgMCAxIDIgMnYyIi8+PHBhdGggZD0iTTIxIDE3djJhMiAyIDAgMCAxLTIgMmgtMiIvPjxwYXRoIGQ9Ik03IDIxSDVhMiAyIDAgMCAxLTItMnYtMiIvPjxwYXRoIGQ9Ik04IDE0czEuNSAyIDQgMiA0LTIgNC0yIi8+PHBhdGggZD0iTTkgOWguMDEiLz48cGF0aCBkPSJNMTUgOWguMDEiLz48L3N2Zz4="
     />
     <link rel="stylesheet" href="styles/theme.css" />
     <style>
@@ -600,6 +600,10 @@
       .empty.locked .btn {
         margin-top: 6px;
       }
+      .empty.locked .actions {
+        margin-top: 0;
+        justify-content: center;
+      }
 
       /* Forms */
       .form {
@@ -725,8 +729,7 @@
         box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
       }
       dialog.modal::backdrop {
-        /* theme-literal: the scrim over the page, read as alpha on either palette */
-        background: rgba(0, 0, 0, 0.5);
+        background: var(--modal-backdrop);
       }
       .modal-head {
         display: flex;
@@ -827,8 +830,13 @@
         <nav class="nav" id="nav">
           <button type="button" class="nav-item active" id="nav-claims" data-target="claims">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-              <circle cx="12" cy="7" r="4"></circle>
+              <path d="M3 7V5a2 2 0 0 1 2-2h2"></path>
+              <path d="M17 3h2a2 2 0 0 1 2 2v2"></path>
+              <path d="M21 17v2a2 2 0 0 1-2 2h-2"></path>
+              <path d="M7 21H5a2 2 0 0 1-2-2v-2"></path>
+              <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+              <path d="M9 9h.01"></path>
+              <path d="M15 9h.01"></path>
             </svg>
             Your claims
             <span class="count" id="claims-count">0</span>
@@ -870,8 +878,13 @@
             stroke-linecap="round"
             stroke-linejoin="round"
           >
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-            <circle cx="12" cy="7" r="4"></circle>
+            <path d="M3 7V5a2 2 0 0 1 2-2h2"></path>
+            <path d="M17 3h2a2 2 0 0 1 2 2v2"></path>
+            <path d="M21 17v2a2 2 0 0 1-2 2h-2"></path>
+            <path d="M7 21H5a2 2 0 0 1-2-2v-2"></path>
+            <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+            <path d="M9 9h.01"></path>
+            <path d="M15 9h.01"></path>
           </svg>
           Identity
         </h1>
@@ -894,6 +907,34 @@
         </div>
 
         <div class="notice hidden" id="status-notice"></div>
+
+        <!-- The identity service did not answer: nothing on this page works
+             until it does, so say so once and offer the setting. -->
+        <div class="empty locked hidden" id="service-down">
+          <span class="ico ico-server" aria-hidden="true"></span>
+          <div class="empty-title">The identity service did not answer</div>
+          <div class="meta" id="service-down-text"></div>
+          <div class="actions">
+            <button type="button" class="btn" id="service-retry-btn">
+              <span class="ico ico-refresh" aria-hidden="true"></span>Try again
+            </button>
+            <button type="button" class="btn primary" id="service-settings-btn">
+              <span class="ico ico-server" aria-hidden="true"></span>Change identity service
+            </button>
+          </div>
+        </div>
+
+        <!-- The service holds no session for this wallet yet: nothing that
+             needs one is shown until the sign-in message is signed. -->
+        <div class="empty locked hidden" id="signin-card">
+          <span class="ico ico-pen" aria-hidden="true"></span>
+          <div class="empty-title">Sign in to the identity service</div>
+          <div class="meta" id="signin-text"></div>
+          <button type="button" class="btn primary" id="signin-btn">
+            <span class="ico ico-pen" aria-hidden="true"></span>Sign in with my wallet
+          </button>
+          <div class="field-error hidden" id="signin-error"></div>
+        </div>
 
         <!-- The one place the locked (or missing) wallet is said: the lists
              below stay empty until it opens. -->

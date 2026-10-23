@@ -9,7 +9,7 @@ const HOSTILE = `"><img src=x onerror=alert(1) data-xss="1">'<b>&amp;`;
 const IDS = {
   'claims-list': 'div', 'claims-empty': 'div', 'shared-claims': 'div', 'issued-list': 'div',
   'status-wallet': 'span', 'status-service': 'span', 'status-caps': 'span', 'claims-count': 'span', 'shared-count': 'span', 'issued-count': 'span',
-  'status-lock': 'span', 'locked-card': 'div', 'locked-title': 'div', 'locked-text': 'div', 'unlock-btn': 'button', 'status-notice': 'div', 'wallet-line': 'p',
+  'status-lock': 'span', 'signin-card': 'div', 'signin-text': 'div', 'signin-btn': 'button', 'signin-error': 'div', 'service-down': 'div', 'service-down-text': 'div', 'service-retry-btn': 'button', 'service-settings-btn': 'button', 'locked-card': 'div', 'locked-title': 'div', 'locked-text': 'div', 'unlock-btn': 'button', 'status-notice': 'div', 'wallet-line': 'p',
   'nav-claims': 'button', 'nav-attest': 'button', 'nav-issued': 'button', 'nav-requests': 'button', 'panel-claims': 'section', 'panel-attest': 'section', 'panel-issued': 'section', 'panel-requests': 'section',
   // Add a claim
   'add-claim-btn': 'button', 'add-claim-dialog': 'dialog', 'add-claim-close': 'button', 'claim-form': 'form', 'claim-kind': 'div',
@@ -39,7 +39,8 @@ function claim(overrides = {}) {
 
 function api(overrides = {}) {
   return {
-    aquaStatus: jest.fn(async () => ({ success: true, nodeUrl: 'https://aqua.test', wallet: { address: '0xabc', canSign: true }, vaultUnlocked: true, hasVault: true })),
+    aquaStatus: jest.fn(async () => ({ success: true, nodeUrl: 'https://aqua.test', wallet: { address: '0xabc', canSign: true }, vaultUnlocked: true, hasVault: true, signedIn: true })),
+    aquaSignIn: jest.fn(async () => ({ success: true, signedIn: true, did: 'did:pkh:eip155:1:0xabc' })),
     aquaListClaims: jest.fn(async () => ({ success: true, claims: [] })),
     aquaCreateClaim: jest.fn(async () => ({ success: true, claim: claim() })),
     aquaRemoveClaim: jest.fn(async () => ({ success: true, removed: true })),
@@ -57,6 +58,7 @@ function api(overrides = {}) {
     aquaExportIssued: jest.fn(async () => ({ success: true, json: '{"revisions":{}}' })),
     copyText: jest.fn(async () => true),
     aquaUnlock: jest.fn(async () => ({ success: true, unlocked: true })),
+    openInNewTab: jest.fn(),
     onAquaClaimsChanged: jest.fn(),
     ...overrides,
   };
@@ -126,6 +128,94 @@ describe('freedom://identity', () => {
     expect(page.elements['status-lock'].classList.contains('hidden')).toBe(true);
     expect(page.elements['claims-list'].children).toHaveLength(0);
     expect(page.elements['add-claim-btn'].disabled).toBe(true);
+  });
+
+  test('an open wallet with no service session shows the sign-in card and loads nothing until signed', async () => {
+    let signedIn = false;
+    const freedomAPI = api({
+      aquaStatus: jest.fn(async () => ({ success: true, nodeUrl: 'https://aqua.test', wallet: { address: '0xabc', canSign: true }, vaultUnlocked: true, hasVault: true, signedIn })),
+      aquaSignIn: jest.fn(async () => {
+        signedIn = true;
+        return { success: true, signedIn: true };
+      }),
+      aquaListClaims: jest.fn(async () => ({ success: true, claims: [claim()] })),
+    });
+    const page = await run(freedomAPI);
+    expect(page.elements['signin-card'].classList.contains('hidden')).toBe(false);
+    expect(page.elements['signin-text'].textContent).toContain('https://aqua.test');
+    expect(page.elements['add-claim-btn'].disabled).toBe(true);
+    // Nothing that needs a session was fetched, and no claims are shown.
+    expect(freedomAPI.aquaListClaims).not.toHaveBeenCalled();
+    expect(freedomAPI.aquaListShared).not.toHaveBeenCalled();
+    expect(page.elements['claims-list'].children).toHaveLength(0);
+
+    await page.elements['signin-btn'].fire('click');
+    await page.flush();
+    expect(freedomAPI.aquaSignIn).toHaveBeenCalledTimes(1);
+    expect(page.elements['signin-card'].classList.contains('hidden')).toBe(true);
+    expect(page.elements['claims-list'].children).toHaveLength(1);
+    expect(page.elements['add-claim-btn'].disabled).toBe(false);
+  });
+
+  test('a refused sign-in keeps the card up with the reason, as text', async () => {
+    const freedomAPI = api({
+      aquaStatus: jest.fn(async () => ({ success: true, nodeUrl: 'u', wallet: { address: '0xabc' }, vaultUnlocked: true, hasVault: true, signedIn: false })),
+      aquaSignIn: jest.fn(async () => ({ success: false, error: { code: 'ERROR', message: HOSTILE } })),
+    });
+    const page = await run(freedomAPI);
+    await page.elements['signin-btn'].fire('click');
+    await page.flush();
+    expect(page.elements['signin-card'].classList.contains('hidden')).toBe(false);
+    expect(page.elements['signin-error'].textContent).toBe(HOSTILE);
+    expect(page.document.htmlWrites).toHaveLength(0);
+  });
+
+  test('unlocking from the page goes straight on to the sign-in signature, and only then to the claims', async () => {
+    let unlocked = false;
+    let signedIn = false;
+    const calls = [];
+    const freedomAPI = api({
+      aquaStatus: jest.fn(async () => ({ success: true, nodeUrl: 'u', wallet: { address: '0xabc' }, vaultUnlocked: unlocked, hasVault: true, signedIn })),
+      aquaUnlock: jest.fn(async () => {
+        calls.push('unlock');
+        unlocked = true;
+        return { success: true, unlocked: true };
+      }),
+      aquaSignIn: jest.fn(async () => {
+        calls.push('sign-in');
+        signedIn = true;
+        return { success: true, signedIn: true };
+      }),
+      aquaListClaims: jest.fn(async () => {
+        calls.push('claims');
+        return { success: true, claims: [] };
+      }),
+    });
+    const page = await run(freedomAPI);
+    expect(page.elements['locked-card'].classList.contains('hidden')).toBe(false);
+    await page.elements['unlock-btn'].fire('click');
+    await page.flush();
+    expect(calls).toEqual(['unlock', 'sign-in', 'claims']);
+    expect(page.elements['signin-card'].classList.contains('hidden')).toBe(true);
+    expect(page.elements['locked-card'].classList.contains('hidden')).toBe(true);
+  });
+
+  test('a service that does not answer is said once, with Try again and the way to Settings', async () => {
+    const freedomAPI = api({
+      aquaStatus: jest.fn(async () => ({ success: true, nodeUrl: 'https://down.test', wallet: { address: '0xabc' }, vaultUnlocked: true, hasVault: true, service: { reachable: false, serviceDid: null, outOfBandVerification: false } })),
+    });
+    const page = await run(freedomAPI);
+    expect(page.elements['service-down'].classList.contains('hidden')).toBe(false);
+    expect(page.elements['service-down-text'].textContent).toContain('https://down.test');
+    expect(page.elements['status-caps'].textContent).toBe('unreachable');
+    await page.elements['service-settings-btn'].fire('click');
+    expect(freedomAPI.openInNewTab).toHaveBeenCalledWith('freedom://settings/identity');
+    await page.elements['service-retry-btn'].fire('click');
+    await page.flush();
+    expect(freedomAPI.aquaStatus).toHaveBeenCalledTimes(2);
+
+    const up = await run(api());
+    expect(up.elements['service-down'].classList.contains('hidden')).toBe(true);
   });
 
   test('an unlocked wallet shows no lock anywhere and enables the actions', async () => {
@@ -439,7 +529,7 @@ describe('freedom://identity attestation', () => {
   });
 
   test('a service without out-of-band verification withholds email and phone claims', async () => {
-    const page = await run(api({ aquaStatus: async () => ({ success: true, nodeUrl: 'u', wallet: { address: '0xabc' }, vaultUnlocked: true, hasVault: true, service: { reachable: true, serviceDid: null, outOfBandVerification: false } }) }));
+    const page = await run(api({ aquaStatus: async () => ({ success: true, nodeUrl: 'u', wallet: { address: '0xabc' }, vaultUnlocked: true, hasVault: true, signedIn: true, service: { reachable: true, serviceDid: null, outOfBandVerification: false } }) }));
     expect(page.elements['wallet-line'].textContent).toContain('no email or phone verification');
     expect(page.elements['kind-email'].disabled).toBe(true);
     expect(page.elements['kind-phone'].disabled).toBe(true);

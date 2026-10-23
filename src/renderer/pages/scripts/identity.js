@@ -20,6 +20,15 @@ const claimsCount = $('claims-count');
 const sharedCount = $('shared-count');
 const issuedCount = $('issued-count');
 const statusLock = $('status-lock');
+const signinCard = $('signin-card');
+const signinText = $('signin-text');
+const signinBtn = $('signin-btn');
+const signinError = $('signin-error');
+const serviceDown = $('service-down');
+const serviceDownText = $('service-down-text');
+const serviceRetryBtn = $('service-retry-btn');
+const serviceSettingsBtn = $('service-settings-btn');
+const SETTINGS_IDENTITY_URL = 'freedom://settings/identity';
 const lockedCard = $('locked-card');
 const lockedTitle = $('locked-title');
 const lockedText = $('locked-text');
@@ -111,6 +120,10 @@ let hasVault = true;
 // bare node does not, so those claim kinds are offered only when it does.
 let outOfBandVerification = true;
 let activeAddress = '';
+// Whether the service holds a session for the active wallet. Until it does
+// the page shows the sign-in card and loads nothing that would need one.
+let signedIn = false;
+let serviceReachable = true;
 // The claim or shared entry a modal is open for.
 let current = null;
 
@@ -488,8 +501,12 @@ async function loadStatus() {
   if (result.wallet?.address) parts.push(`Wallet ${result.wallet.address}`);
   parts.push(`Identity service ${result.nodeUrl}`);
   let caps = '';
-  if (result.service && result.service.reachable === false) caps = 'unreachable';
+  const down = Boolean(result.service && result.service.reachable === false);
+  serviceReachable = !down;
+  showServiceDown(down, result.nodeUrl);
+  if (down) caps = 'unreachable';
   else if (!outOfBandVerification) caps = 'no email or phone verification on this service';
+  signedIn = result.signedIn === true;
   if (caps) parts.push(caps);
   walletLine.textContent = parts.join(' · ');
   statusWallet.textContent = result.wallet?.address || 'none';
@@ -498,9 +515,62 @@ async function loadStatus() {
   statusCaps.textContent = caps;
   const locked = Boolean(result.hasVault && !result.vaultUnlocked);
   showLocked(!result.hasVault, locked);
+  showSignIn(Boolean(result.hasVault && result.vaultUnlocked && activeAddress && !down && !signedIn), result.nodeUrl);
   watchLock(locked);
   if (result.hasVault && result.vaultUnlocked && result.wallet && result.wallet.canSign === false) {
     showNotice('warn', 'A multi-owner account cannot sign identity claims. Switch to another wallet.');
+  }
+}
+
+// The wallet is open but the service holds no session for it yet. The
+// page stays on this card until the sign-in message is signed, so the
+// sidebar's signature screen is never something the page has moved on from.
+function showSignIn(needed, nodeUrl) {
+  signinCard.classList.toggle('hidden', !needed);
+  if (needed) {
+    signinText.textContent = `Your wallet signs a message to sign in to ${nodeUrl || 'the identity service'}. Confirm it in the sidebar; nothing else is sent.`;
+    setError(signinError, '');
+  }
+  addClaimBtn.disabled = addClaimBtn.disabled || needed;
+  requestOpenBtn.disabled = requestOpenBtn.disabled || needed;
+}
+
+// Everything the page lists needs the vault open and, for the service's
+// side, a session: load only once both are there.
+async function loadAll() {
+  if (!signedIn) {
+    claimsEl.replaceChildren();
+    claimsEmpty.classList.add('hidden');
+    sharedEl.replaceChildren();
+    issuedEl.replaceChildren();
+    return;
+  }
+  await Promise.all([loadClaims(), loadShared(), loadIssued()]);
+}
+
+async function signIn() {
+  signinBtn.disabled = true;
+  setLabel(signinBtn, 'clock', 'Waiting for your signature…');
+  setError(signinError, '');
+  try {
+    const result = await window.freedomAPI.aquaSignIn();
+    if (!result?.success) {
+      setError(signinError, errorText(result, 'The sign-in was not confirmed.'));
+      return;
+    }
+  } finally {
+    signinBtn.disabled = false;
+    setLabel(signinBtn, 'pen', 'Sign in with my wallet');
+  }
+  await loadStatus();
+  await loadAll();
+}
+
+// The service did not answer: one card, with the setting that changes it.
+function showServiceDown(down, nodeUrl) {
+  serviceDown.classList.toggle('hidden', !down);
+  if (down) {
+    serviceDownText.textContent = `Freedom could not reach ${nodeUrl || 'the identity service'}. Claims cannot be created, verified or shared until it answers. Change the service under Settings → Identity.`;
   }
 }
 
@@ -513,8 +583,8 @@ function showLocked(missing, locked) {
   lockedCard.classList.toggle('hidden', !blocked);
   statusLock.classList.toggle('hidden', !locked);
   unlockBtn.classList.toggle('hidden', !locked);
-  addClaimBtn.disabled = blocked;
-  requestOpenBtn.disabled = blocked;
+  addClaimBtn.disabled = blocked || !serviceReachable;
+  requestOpenBtn.disabled = blocked || !serviceReachable;
   if (missing) {
     lockedTitle.textContent = 'No wallet yet';
     lockedText.textContent = 'Set up your wallet in the sidebar before creating identity claims.';
@@ -900,9 +970,27 @@ async function unlockWallet() {
     unlockBtn.disabled = false;
   }
   await loadStatus();
-  await Promise.all([loadClaims(), loadShared(), loadIssued()]);
+  // The unlock came from this page, so the sign-in message follows at once:
+  // password, then signature, and only then the claims.
+  if (!signedIn && !signinCard.classList.contains('hidden')) {
+    await signIn();
+    return;
+  }
+  await loadAll();
 }
 unlockBtn.addEventListener('click', unlockWallet);
+signinBtn.addEventListener('click', signIn);
+serviceRetryBtn.addEventListener('click', () => {
+  serviceRetryBtn.disabled = true;
+  loadStatus()
+    .then(loadAll)
+    .finally(() => {
+      serviceRetryBtn.disabled = false;
+    });
+});
+serviceSettingsBtn.addEventListener('click', () => {
+  window.freedomAPI.openInNewTab?.(SETTINGS_IDENTITY_URL);
+});
 
 // An unlock made elsewhere (the sidebar's own prompts, a signing flow) is
 // not announced to pages, so while the vault is locked the page re-reads
@@ -916,7 +1004,7 @@ function watchLock(locked) {
         clearInterval(lockPoll);
         lockPoll = null;
         await loadStatus();
-        await Promise.all([loadClaims(), loadShared(), loadIssued()]);
+        await loadAll();
       }
     }, 3000);
   } else if (!locked && lockPoll) {
@@ -1109,9 +1197,9 @@ responseCopy.addEventListener('click', async () => {
 
 if (typeof window.freedomAPI.onAquaClaimsChanged === 'function') {
   window.freedomAPI.onAquaClaimsChanged(() => {
-    loadStatus().then(() => Promise.all([loadClaims(), loadShared(), loadIssued()]));
+    loadStatus().then(loadAll);
   });
 }
 
 syncTypeFields();
-loadStatus().then(() => Promise.all([loadClaims(), loadShared(), loadIssued()]));
+loadStatus().then(loadAll);
