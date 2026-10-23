@@ -326,6 +326,7 @@ function registerAquaIpc({ createDeps = createAquaDeps, createProbeClient, log =
     hasVault: await identityManager.hasVault(),
   }));
   handle(IPC.AQUA_SERVICE_PROBE, (d, url) => probeService(url, createProbeClient));
+  handle(IPC.AQUA_SERVICE_SIGN_IN, (d) => d.service.signIn());
   handle(IPC.AQUA_CLAIMS_LIST, async (d) => ({ claims: await d.service.listClaims() }));
   handle(IPC.AQUA_CLAIMS_CREATE, async (d, request) => ({ claim: await d.service.createClaim(request || {}) }), { mutates: true });
   handle(IPC.AQUA_CLAIMS_REMOVE, async (d, id) => ({ removed: await d.service.removeClaim(id) }), { mutates: true });

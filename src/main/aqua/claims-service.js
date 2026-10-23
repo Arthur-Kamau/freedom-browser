@@ -273,7 +273,17 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
         wallet: wallet
           ? { address: wallet.address, index: wallet.index, type: wallet.type, canSign: wallet.type !== 'safe' }
           : null,
+        // Whether this wallet holds a session with the service: the page
+        // shows nothing that would need one until it does.
+        signedIn: Boolean(wallet && client.hasSession(wallet.address)),
       };
+    },
+
+    /** Sign in to the service as the active wallet: one wallet signature, confirmed in the sidebar. */
+    async signIn() {
+      const wallet = await activeWalletOrThrow();
+      const session = await client.login(wallet.address);
+      return { signedIn: true, did: session.did || null };
     },
 
     listClaims: () => store.list(),

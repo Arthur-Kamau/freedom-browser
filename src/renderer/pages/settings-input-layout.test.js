@@ -35,6 +35,8 @@ const SOURCE = [
 // button and are meant to stay at their natural width.
 const SIZING_WRAPPERS = [
   'rpc-row',
+  // The identity service address, in its modal: a column with its label.
+  'identity-service-field',
   'resolver-config-line',
   'search-provider-fields',
   'shortcut-toolbar',

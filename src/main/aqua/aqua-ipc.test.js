@@ -111,6 +111,7 @@ describe('registerAquaIpc', () => {
       verifyCode: jest.fn(async () => ({ verificationToken: 'vt' })),
       dnsInstructions: jest.fn(async () => ({ record_name: 'x' })),
       verifyDns: jest.fn(async () => ({ id: 'c3' })),
+      signIn: jest.fn(async () => ({ signedIn: true, did: 'did:pkh:eip155:1:0xabc' })),
       ...overrides,
     };
     const settle = jest.fn();
@@ -124,7 +125,7 @@ describe('registerAquaIpc', () => {
     for (const channel of [
       IPC.AQUA_STATUS, IPC.AQUA_CLAIMS_LIST, IPC.AQUA_CLAIMS_CREATE, IPC.AQUA_CLAIMS_REMOVE, IPC.AQUA_CLAIMS_REFRESH,
       IPC.AQUA_CLAIMS_SEND_CODE, IPC.AQUA_CLAIMS_VERIFY_CODE, IPC.AQUA_CLAIMS_DNS_INSTRUCTIONS, IPC.AQUA_CLAIMS_VERIFY_DNS,
-      IPC.AQUA_CLAIMS_EXPORT_ALL, IPC.AQUA_CLAIMS_REMOVE_ALL,
+      IPC.AQUA_CLAIMS_EXPORT_ALL, IPC.AQUA_CLAIMS_REMOVE_ALL, IPC.AQUA_SERVICE_SIGN_IN,
     ]) {
       expect(ipcMain.handle).toHaveBeenCalledWith(channel, expect.any(Function));
     }
@@ -132,6 +133,7 @@ describe('registerAquaIpc', () => {
       success: true, nodeUrl: 'https://aqua.test', wallet: expect.objectContaining({ canSign: true }), vaultUnlocked: true, hasVault: true,
     });
     expect(await invoke(IPC.AQUA_CLAIMS_LIST)).toEqual({ success: true, claims: [{ id: 'c1' }] });
+    expect(await invoke(IPC.AQUA_SERVICE_SIGN_IN)).toEqual({ success: true, signedIn: true, did: 'did:pkh:eip155:1:0xabc' });
     expect(await invoke(IPC.AQUA_CLAIMS_CREATE, { type: 'name', fields: {} })).toEqual({ success: true, claim: { id: 'c2' } });
     expect(service.createClaim).toHaveBeenCalledWith({ type: 'name', fields: {} });
     expect(broadcastToAllWebContents).toHaveBeenCalledWith(IPC.AQUA_CLAIMS_CHANGED, {});

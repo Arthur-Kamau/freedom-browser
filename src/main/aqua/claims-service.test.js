@@ -31,6 +31,8 @@ function setup({ wallet = { index: 0, address: ADDRESS, type: 'mnemonic' }, atte
   const store = createClaimsStore({ dataDir, getSeed: async () => SEED, isOwnDid: async (did) => did.toLowerCase() === DID.toLowerCase() });
   const client = {
     baseUrl: 'https://aqua.test',
+    hasSession: jest.fn(() => false),
+    login: jest.fn(async () => ({ nonce: 'n', did: null, expiresAt: null })),
     createNameClaim: jest.fn(async () => ({ success: true, tip: TIP, claim_type: 'name_claim' })),
     createEmailClaim: jest.fn(async () => ({ success: true, tip: TIP, claim_type: 'email_claim' })),
     createPhoneClaim: jest.fn(async () => ({ success: true, tip: TIP })),
@@ -197,13 +199,24 @@ describe('codes, refresh, removal, domains', () => {
     expect(verified.attestations.map((a) => a.tip)).toEqual([ATTESTATION_TIP]);
   });
 
-  test('status reports the service URL and whether the active wallet can sign', async () => {
-    const { service } = setup({ wallet: { index: 3, address: ADDRESS, type: 'ledger' } });
+  test('status reports the service URL, whether the active wallet can sign, and whether it is signed in', async () => {
+    const { service, client } = setup({ wallet: { index: 3, address: ADDRESS, type: 'ledger' } });
+    client.hasSession = jest.fn(() => false);
     expect(await service.status()).toEqual({
       nodeUrl: 'https://aqua.test',
       service: { reachable: false, serviceDid: null, outOfBandVerification: false },
       wallet: { address: ADDRESS, index: 3, type: 'ledger', canSign: true },
+      signedIn: false,
     });
+    client.hasSession = jest.fn((address) => address === ADDRESS);
+    expect((await service.status()).signedIn).toBe(true);
+  });
+
+  test('signIn logs the active wallet in through one signature and reports the session', async () => {
+    const { service, client } = setup();
+    client.login = jest.fn(async (address) => ({ nonce: 'n', did: `did:pkh:eip155:1:${address}`, expiresAt: null }));
+    expect(await service.signIn()).toEqual({ signedIn: true, did: `did:pkh:eip155:1:${ADDRESS}` });
+    expect(client.login).toHaveBeenCalledWith(ADDRESS);
   });
 });
 

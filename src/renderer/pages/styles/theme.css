@@ -162,6 +162,8 @@ html {
   --m-muted: #c7c7c7;
   --m-accent: #8ab4f8;
   --m-danger: #f28b82;
+  /* The scrim behind a page's native <dialog>. */
+  --modal-backdrop: rgba(0, 0, 0, 0.5);
 
   /* Publish (freedom://publish).
      Its own greys again; prefixed so `--bg` and friends keep meaning the
@@ -316,6 +318,7 @@ html[data-theme='light'] {
   --m-muted: #5f6368;
   --m-accent: #1a73e8;
   --m-danger: #d93025;
+  --modal-backdrop: rgba(0, 0, 0, 0.4);
 
   /* Publish (freedom://publish). */
   --pub-bg: #ffffff;

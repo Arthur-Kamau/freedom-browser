@@ -729,8 +729,7 @@
         box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
       }
       dialog.modal::backdrop {
-        /* theme-literal: the scrim over the page, read as alpha on either palette */
-        background: rgba(0, 0, 0, 0.5);
+        background: var(--modal-backdrop);
       }
       .modal-head {
         display: flex;
@@ -913,6 +912,18 @@
               <span class="ico ico-server" aria-hidden="true"></span>Change identity service
             </button>
           </div>
+        </div>
+
+        <!-- The service holds no session for this wallet yet: nothing that
+             needs one is shown until the sign-in message is signed. -->
+        <div class="empty locked hidden" id="signin-card">
+          <span class="ico ico-pen" aria-hidden="true"></span>
+          <div class="empty-title">Sign in to the identity service</div>
+          <div class="meta" id="signin-text"></div>
+          <button type="button" class="btn primary" id="signin-btn">
+            <span class="ico ico-pen" aria-hidden="true"></span>Sign in with my wallet
+          </button>
+          <div class="field-error hidden" id="signin-error"></div>
         </div>
 
         <!-- The one place the locked (or missing) wallet is said: the lists

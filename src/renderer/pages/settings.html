@@ -835,24 +835,97 @@
         min-width: 280px;
       }
 
-      /* Wide enough for an address plus Save and Cancel while editing. */
-      .identity-service-control {
-        min-width: 440px;
-        justify-content: flex-end;
-      }
-
-      .identity-service-control .rpc-input {
+      .identity-service-current {
+        display: block;
+        margin-top: 6px;
         font-family: var(--font-mono);
-        flex: 1;
-        min-width: 280px;
+        font-size: 12px;
+        color: var(--text);
+        word-break: break-all;
       }
 
-      .identity-service-control .rpc-input[readonly] {
+      /* The one modal on this page, for the identity service address: the
+         same native <dialog> freedom://identity uses, painted from the page
+         tokens so the field inside matches the page. */
+      dialog.modal {
+        width: min(520px, calc(100vw - 32px));
+        padding: 0;
+        background: var(--bg-elev);
+        color: var(--text);
+        border: 1px solid var(--border-strong);
+        border-radius: 12px;
+        /* theme-literal: a drop shadow, not a surface */
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+      }
+
+      dialog.modal::backdrop {
+        background: var(--modal-backdrop);
+      }
+
+      .modal-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 18px 20px 0;
+      }
+
+      .modal-head h2 {
+        flex: 1;
+        margin: 0;
+        font-size: 17px;
+        font-weight: 600;
+        color: var(--text);
+      }
+
+      .modal-close {
+        width: 30px;
+        height: 30px;
+        border: 0;
+        border-radius: 50%;
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .modal-close:hover {
+        background: var(--bg-raised);
+        color: var(--text);
+      }
+
+      .modal-body {
+        padding: 14px 20px 4px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .modal-body .row-help {
+        margin: 0;
+      }
+
+      .modal-foot {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 16px 20px 20px;
+      }
+
+      /* The address field fills the modal; its label sits above it. */
+      .identity-service-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .identity-service-field label {
+        font-size: 13px;
         color: var(--text-muted);
       }
 
-      .identity-service-control .btn[hidden] {
-        display: none;
+      .identity-service-field .rpc-input {
+        font-family: var(--font-mono);
       }
 
       /* The Identity page shows either its controls or the line that says
@@ -1923,23 +1996,11 @@
               <div class="row">
                 <div class="row-body">
                   <p class="row-label">Identity service</p>
-                  <p class="row-help">
-                    The Aqua service that builds and attests your claims. A new address is saved only once
-                    a service answers there. Changing it does not move claims already made.
-                  </p>
+                  <p class="row-help">The Aqua service that builds and attests your claims.</p>
+                  <code class="identity-service-current" id="aqua-node-url-current"></code>
                 </div>
-                <div class="row-control identity-service-control">
-                  <input
-                    type="url"
-                    id="aqua-node-url"
-                    class="rpc-input"
-                    spellcheck="false"
-                    placeholder="https://dev.aquafire.inblock.io"
-                    readonly
-                  />
+                <div class="row-control">
                   <button type="button" class="btn" id="aqua-node-url-edit">Edit</button>
-                  <button type="button" class="btn primary" id="aqua-node-url-save" hidden>Save</button>
-                  <button type="button" class="btn" id="aqua-node-url-cancel" hidden>Cancel</button>
                 </div>
               </div>
             </div>
@@ -1967,6 +2028,41 @@
             <p class="rpc-status" id="aqua-claims-status"></p>
           </div>
         </section>
+
+        <!-- Change the identity service: the address is checked before it is
+             saved, so the editing happens in a modal rather than on the row. -->
+        <dialog class="modal" id="aqua-node-url-dialog" aria-labelledby="aqua-node-url-title">
+          <div class="modal-head">
+            <h2 id="aqua-node-url-title">Identity service</h2>
+            <button type="button" class="modal-close" id="aqua-node-url-close" aria-label="Close">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 6 6 18"></path>
+                <path d="M6 6l12 12"></path>
+              </svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p class="row-help">
+              A new address is saved only once an Aqua identity service answers there. Changing it does
+              not move claims already made.
+            </p>
+            <div class="identity-service-field">
+              <label for="aqua-node-url">Service address</label>
+              <input
+                type="url"
+                id="aqua-node-url"
+                class="rpc-input"
+                spellcheck="false"
+                placeholder="https://dev.aquafire.inblock.io"
+              />
+            </div>
+            <p class="rpc-status" id="aqua-node-url-check"></p>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="btn" id="aqua-node-url-cancel">Cancel</button>
+            <button type="button" class="btn primary" id="aqua-node-url-save">Save</button>
+          </div>
+        </dialog>
 
         <!-- Advanced (was Experimental): the Beta features. -->
         <section class="section" id="experimental" data-nav="advanced">
