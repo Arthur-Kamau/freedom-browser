@@ -30,8 +30,8 @@ const DOMAIN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2
 const NAME_MAX = 256;
 
 class ClaimInputError extends Error {
-  constructor(message, field) {
-    super(message);
+  constructor(message, field, options) {
+    super(message, options);
     this.name = 'ClaimInputError';
     this.code = 'INVALID_INPUT';
     this.field = field;
@@ -121,6 +121,33 @@ function signerDidOf(tree) {
   return sig ? sig.signer : null;
 }
 
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const REVISION_HASH = /0x1620[0-9a-f]{64}/g;
+
+/**
+ * The claim a peer attestation names. The service's wallet-signed attestation
+ * anchors to the attestation template, not to the claim (its only link to
+ * the claim is the service's own index), so Freedom writes the claim's tip
+ * into the attestation's `context` when it issues one, and reads it back
+ * here. A structural link, when a service does anchor to the claim's
+ * signature hash, is honoured first.
+ */
+function claimTipsNamedBy(attestationTree) {
+  const named = new Set();
+  for (const rev of Object.values(attestationTree.revisions || {})) {
+    for (const link of rev.structural_links || []) {
+      if (link && typeof link.hash === 'string') named.add(link.hash.toLowerCase());
+    }
+    const context = rev.payloads && typeof rev.payloads.context === 'string' ? rev.payloads.context : '';
+    for (const match of context.matchAll(REVISION_HASH)) named.add(match[0].toLowerCase());
+  }
+  return named;
+}
+
+function attestationContext(words, claimTip) {
+  return `${words.trim()} (attests claim ${claimTip})`;
+}
+
 function summarizeVerification(result, backend, checkedAt) {
   return {
     isValid: result?.is_valid === true,
@@ -178,6 +205,49 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
     };
   }
 
+  let capabilities = null;
+  async function serviceCapabilities() {
+    if (!capabilities) capabilities = await client.capabilities();
+    return capabilities;
+  }
+
+  function sourceOf(attesterDid, serviceDid) {
+    if (!attesterDid || !serviceDid) return 'peer';
+    return attesterDid.toLowerCase() === serviceDid.toLowerCase() ? 'service' : 'peer';
+  }
+
+  async function verifyLinked(tree, claimTree) {
+    const checkedAt = now().toISOString();
+    try {
+      return summarizeVerification(await client.verifyTree(tree, { linkedTrees: [claimTree] }), 'service', checkedAt);
+    } catch (err) {
+      log.error('[AquaClaims] verification failed:', err?.message || err);
+      return { isValid: false, status: `Verification unavailable: ${err?.message || err}`, backend: 'service', checkedAt };
+    }
+  }
+
+  /** Parse an attestation tree handed over as JSON text or an object. */
+  function parseAttestationTree(input) {
+    let tree = input;
+    if (typeof input === 'string') {
+      try {
+        tree = JSON.parse(input);
+      } catch (err) {
+        throw new ClaimInputError('That is not an Aqua tree (invalid JSON)', 'tree', { cause: err });
+      }
+    }
+    if (tree && tree.aqua_tree && typeof tree.aqua_tree === 'object') tree = tree.aqua_tree;
+    if (!tree || typeof tree !== 'object' || !tree.revisions || typeof tree.revisions !== 'object') {
+      throw new ClaimInputError('That is not an Aqua tree (no revisions)', 'tree');
+    }
+    const payload = payloadOf(tree);
+    if (!payload || typeof payload.context !== 'string' || typeof payload.signer_did !== 'string') {
+      throw new ClaimInputError('That tree is not an attestation (no context and signer)', 'tree');
+    }
+    const [tip] = Object.entries(tree.revisions).find(([, rev]) => rev.payloads === payload);
+    return { tree, payload, tip, attesterDid: signerDidOf(tree) || payload.signer_did };
+  }
+
   async function signClaim(wallet, tip) {
     const prepared = await client.prepareSign(wallet.address, tip);
     const signature = await signer.sign({
@@ -193,8 +263,10 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
     /** Everything the page needs to render, no secrets. */
     async status() {
       const wallet = await getActiveWallet().catch(() => null);
+      const caps = await serviceCapabilities().catch(() => ({ reachable: false, serviceDid: null, outOfBandVerification: false }));
       return {
         nodeUrl: client.baseUrl,
+        service: caps,
         wallet: wallet
           ? { address: wallet.address, index: wallet.index, type: wallet.type, canSign: wallet.type !== 'safe' }
           : null,
@@ -291,6 +363,197 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
 
     removeClaim: (id) => store.remove(id),
 
+    // ── Attestation: the owner's side ────────────────────────────────
+
+    /** Share a claim with another account so it can attest it. */
+    async shareForAttestation(id, recipient) {
+      const address = text(recipient, 'recipient', { required: true, max: 42 });
+      if (!ADDRESS.test(address)) throw new ClaimInputError('Enter the attester\'s wallet address (0x…)', 'recipient');
+      const record = await store.get(id);
+      if (!record) throw new Error('Claim not found');
+      if (address.toLowerCase() === record.address.toLowerCase()) {
+        throw new ClaimInputError('A claim cannot be shared with its own wallet', 'recipient');
+      }
+      const hash = `freedom-attest-${crypto.randomUUID()}`;
+      await client.shareTree(record.address, {
+        hash,
+        recipient: address,
+        genesis: record.genesis,
+        tip: record.tip,
+        fileName: (record.tree.file_index && record.tree.file_index[record.tip]) || `${record.type}_claim`,
+      });
+      record.shares = record.shares || [];
+      record.shares.push({ hash, recipient: address, createdAt: now().toISOString() });
+      await store.upsert(record);
+      return record;
+    },
+
+    /**
+     * Fetch the attestations the service has recorded against a claim. The
+     * service lets only the attester download a peer attestation's tree, so
+     * such an entry is stored as pending until the attester hands the tree
+     * over and it is imported; the service's own attestations download.
+     */
+    async pullAttestations(id) {
+      const record = await store.get(id);
+      if (!record) throw new Error('Claim not found');
+      const { serviceDid } = await serviceCapabilities();
+      const listed = (await client.listAttestations(record.address, record.tip))?.attestations || [];
+      for (const info of listed) {
+        if (!info?.tip || record.attestations.some((a) => a.tip === info.tip)) continue;
+        const entry = {
+          tip: info.tip,
+          tree: null,
+          attesterDid: info.attester_did || null,
+          context: typeof info.context === 'string' ? info.context : '',
+          source: sourceOf(info.attester_did, serviceDid),
+          issuedAt: info.created_at || now().toISOString(),
+          pending: true,
+          verification: { isValid: false, status: 'Tree held by the attester; import it to verify', backend: 'service', checkedAt: now().toISOString() },
+        };
+        try {
+          entry.tree = await fetchChain(record.address, info.tip);
+          entry.pending = false;
+          entry.verification = await verifyLinked(entry.tree, record.tree);
+        } catch (err) {
+          log.error('[AquaClaims] attestation tree not downloadable:', err?.message || err);
+        }
+        record.attestations.push(entry);
+      }
+      await store.upsert(record);
+      return record;
+    },
+
+    /**
+     * Import an attestation tree the attester handed over (file or pasted
+     * JSON). It must name this claim, by a structural link or by the claim
+     * tip in its context; one for another claim is refused (AS-REQ-0013).
+     */
+    async importAttestation(id, input) {
+      const record = await store.get(id);
+      if (!record) throw new Error('Claim not found');
+      const { tree, payload, tip, attesterDid } = parseAttestationTree(input);
+      const named = claimTipsNamedBy(tree);
+      const listedTips = new Set(record.attestations.map((a) => a.tip));
+      const namesThisClaim =
+        named.has(record.tip.toLowerCase()) ||
+        (record.genesis && named.has(record.genesis.toLowerCase())) ||
+        Object.keys(record.tree.revisions).some((hash) => named.has(hash.toLowerCase())) ||
+        listedTips.has(tip);
+      if (!namesThisClaim) {
+        throw new ClaimInputError('This attestation does not name this claim', 'tree');
+      }
+      if (attesterDid && attesterDid.toLowerCase() === record.signerDid.toLowerCase()) {
+        throw new ClaimInputError('A claim cannot be attested by its own subject', 'tree');
+      }
+      const { serviceDid } = await serviceCapabilities();
+      const entry = {
+        tip,
+        tree,
+        attesterDid,
+        context: payload.context,
+        source: sourceOf(attesterDid, serviceDid),
+        issuedAt: now().toISOString(),
+        pending: false,
+        verification: await verifyLinked(tree, record.tree),
+      };
+      const index = record.attestations.findIndex((a) => a.tip === tip);
+      if (index >= 0) record.attestations[index] = { ...record.attestations[index], ...entry };
+      else record.attestations.push(entry);
+      await store.upsert(record);
+      return record;
+    },
+
+    // ── Attestation: the attester's side ─────────────────────────────
+
+    /** Claims other accounts shared with this wallet for attestation. */
+    async listSharedClaims() {
+      const wallet = await activeWalletOrThrow();
+      const contracts = (await client.listSharesReceived(wallet.address))?.contracts || [];
+      const shared = [];
+      for (const contract of contracts) {
+        if (!contract?.hash) continue;
+        let data;
+        try {
+          data = await client.sharedData(wallet.address, contract.hash);
+        } catch (err) {
+          log.error('[AquaClaims] shared data unavailable:', err?.message || err);
+          continue;
+        }
+        for (const tree of data?.trees || []) {
+          if (!tree?.tip || tree.unavailable) continue;
+          shared.push({
+            contractHash: contract.hash,
+            sender: contract.sender || data?.contract?.sender || null,
+            tip: tree.tip,
+            fileName: tree.file_name || contract.file_name || '',
+            payload: tree.payload || null,
+            templateName: tree.template_name || null,
+            revisionCount: tree.revision_count || 0,
+            attestationCount: tree.attestation_count || 0,
+            sharedAt: contract.created_at || null,
+          });
+        }
+      }
+      return shared;
+    },
+
+    /**
+     * Attest a claim another account shared with this wallet: the service
+     * prepares the attestation's pre-image, the wallet signs it, the service
+     * finalizes it, and the attester keeps the only downloadable copy to
+     * hand back to the owner.
+     */
+    async attestSharedClaim({ contractHash, tip, context }) {
+      const wallet = await activeWalletOrThrow();
+      const words = text(context, 'context', { required: true, max: 1200 });
+      // AS-REQ-0020: only a claim the service shows as shared with this
+      // account is attested; the service enforces the same rule on its side.
+      const shared = (await this.listSharedClaims()).find((s) => s.contractHash === contractHash && s.tip === tip);
+      if (!shared) throw new Error('That claim is not shared with this wallet');
+      const subjectDid = shared.payload?.signer_did || null;
+      if (subjectDid && subjectDid.toLowerCase() === `did:pkh:eip155:1:${wallet.address}`.toLowerCase()) {
+        throw new Error('You cannot attest your own claim');
+      }
+      const fullContext = attestationContext(words, tip);
+      const prepared = await client.attestPrepare(wallet.address, tip, { context: fullContext });
+      const signature = await signer.sign({
+        address: wallet.address,
+        purpose: 'attestation',
+        message: prepared.message_hex,
+        display: prepared.message_utf8,
+      });
+      const completed = await client.attestComplete(wallet.address, tip, { message_hex: prepared.message_hex, signature });
+      const attestationTip = completed?.attestation_tip;
+      if (!attestationTip) throw new Error('The service recorded no attestation');
+      const tree = await fetchChain(wallet.address, attestationTip);
+      const issued = {
+        id: crypto.randomUUID(),
+        tip: attestationTip,
+        claimTip: tip,
+        contractHash,
+        subjectDid,
+        subjectPayload: shared.payload || null,
+        templateName: shared.templateName || null,
+        context: fullContext,
+        attesterDid: signerDidOf(tree) || `did:pkh:eip155:1:${wallet.address}`,
+        tree,
+        createdAt: now().toISOString(),
+        verification: await verify(tree),
+      };
+      await store.addIssued(issued);
+      return issued;
+    },
+
+    listIssued: () => store.listIssued(),
+
+    /** The attestation tree as text, for handing to the claim's owner. */
+    async exportIssued(id) {
+      const issued = (await store.listIssued()).find((entry) => entry.id === id);
+      if (!issued) throw new Error('Attestation not found');
+      return JSON.stringify(issued.tree, null, 2);
+    },
+
     async dnsInstructions(id) {
       const record = await store.get(id);
       if (!record || record.type !== 'domain') throw new Error('Not a domain claim');
@@ -316,6 +579,8 @@ module.exports = {
   createClaimsService,
   validateClaimInput,
   ClaimInputError,
+  claimTipsNamedBy,
+  attestationContext,
   chainWithTip,
   payloadOf,
   signerDidOf,

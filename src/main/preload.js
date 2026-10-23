@@ -621,6 +621,19 @@ contextBridge.exposeInMainWorld('aqua', {
   },
   // { requestId, signature } or { requestId, error: { message } }.
   respondToSignRequest: (payload) => ipcRenderer.send('aqua:sign-response', payload),
+  // Disclosure consent screen: match a request against the stored claims,
+  // then build the response for what the user ticked.
+  prepareDisclosure: (args) => ipcRenderer.invoke('aqua:disclosure:prepare', args),
+  buildDisclosure: (args) => ipcRenderer.invoke('aqua:disclosure:build', args),
+  // A request the user pasted on freedom://identity, routed through the
+  // same screen. Returns a disposer; the answer goes back below.
+  onDisclosureRequest: (callback) => {
+    const handler = (_event, request) => callback(request);
+    ipcRenderer.on('aqua:disclosure-request', handler);
+    return () => ipcRenderer.removeListener('aqua:disclosure-request', handler);
+  },
+  // { requestId, response } or { requestId, error: { message } }.
+  respondToDisclosureRequest: (payload) => ipcRenderer.send('aqua:disclosure:manual-response', payload),
 });
 
 contextBridge.exposeInMainWorld('remoteSigner', {

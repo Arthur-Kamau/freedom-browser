@@ -93,3 +93,28 @@ describe('claims store', () => {
     expect(store.exists()).toBe(false);
   });
 });
+
+describe('issued attestations', () => {
+  const issued = (overrides = {}) => ({
+    id: 'att-1', claimTip: '0xclaim', subjectDid: OTHER_DID, context: 'I know them',
+    tree: { revisions: { '0x1620bb': {} }, file_index: {} }, createdAt: '2026-10-22T12:00:00Z', ...overrides,
+  });
+
+  test('AS-REQ-0013: an attestation issued for someone else is never listed among the user\'s own claims', async () => {
+    const { store } = makeStore();
+    await store.addIssued(issued());
+    expect(await store.list()).toEqual([]);
+    expect((await store.listIssued()).map((a) => a.id)).toEqual(['att-1']);
+    await store.addIssued(issued({ context: 'updated' }));
+    expect((await store.listIssued())[0].context).toBe('updated');
+    expect(await store.removeIssued('att-1')).toBe(true);
+    expect(await store.removeIssued('att-1')).toBe(false);
+  });
+
+  test('a store written before issued attestations existed still opens', async () => {
+    const { store } = makeStore();
+    await store.upsert(record());
+    expect(await store.listIssued()).toEqual([]);
+    await expect(store.addIssued({ id: 'x' })).rejects.toThrow('Aqua tree');
+  });
+});

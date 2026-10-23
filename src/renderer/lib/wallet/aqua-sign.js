@@ -14,6 +14,7 @@ import { openOrFocusInternalPage } from '../tabs.js';
 const PURPOSE_COPY = {
   login: { action: 'asks you to sign in', labelPrefix: 'Identity service' },
   claim: { action: 'asks you to sign this claim', labelPrefix: 'Identity claim' },
+  attestation: { action: 'asks you to attest this claim', labelPrefix: 'Attestation' },
 };
 
 function labelFor(request) {
@@ -33,7 +34,7 @@ function labelFor(request) {
  */
 export function displayTextFor(request) {
   const text = typeof request.display === 'string' && request.display ? request.display : request.message;
-  if (request.purpose === 'claim') {
+  if (request.purpose === 'claim' || request.purpose === 'attestation') {
     try {
       const parsed = JSON.parse(text);
       return Object.entries(parsed)

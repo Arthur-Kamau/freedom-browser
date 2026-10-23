@@ -113,6 +113,7 @@ describe('aqua-sign', () => {
     const siwe = 'aqua.test wants you to sign in with your Ethereum account:\n0xabc';
     expect(aquaSign.displayTextFor({ purpose: 'login', message: siwe })).toBe(siwe);
     expect(aquaSign.displayTextFor({ purpose: 'claim', message: 'not json' })).toBe('not json');
+    expect(aquaSign.displayTextFor({ purpose: 'attestation', message: '{"signer":"x"}' })).toBe('signer: x');
   });
 
   test('handleAquaSignRequest answers main with the signature, or with the rejection', async () => {
@@ -130,9 +131,17 @@ describe('aqua-sign', () => {
     const rejected = aquaSign.handleAquaSignRequest({ ...request, requestId: 'r-2', purpose: 'login', message: 'siwe' }, respond);
     await flush();
     expect(elements['dapp-sign-site'].textContent).toBe('Identity service · aqua.test');
+    expect(elements['dapp-sign-action'].textContent).toBe('asks you to sign in');
     elements['dapp-sign-reject'].dispatch('click');
     await rejected;
     expect(responses[1]).toEqual({ requestId: 'r-2', error: { code: 4001, message: 'User rejected the request' } });
+
+    const attest = aquaSign.handleAquaSignRequest({ ...request, requestId: 'r-3', purpose: 'attestation' }, respond);
+    await flush();
+    expect(elements['dapp-sign-site'].textContent).toBe('Attestation · aqua.test');
+    expect(elements['dapp-sign-action'].textContent).toBe('asks you to attest this claim');
+    elements['dapp-sign-reject'].dispatch('click');
+    await attest;
   });
 
   test('initAquaSign subscribes to main and wires the Manage link to freedom://identity', async () => {

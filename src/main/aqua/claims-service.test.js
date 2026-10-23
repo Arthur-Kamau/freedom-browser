@@ -199,6 +199,159 @@ describe('codes, refresh, removal, domains', () => {
 
   test('status reports the service URL and whether the active wallet can sign', async () => {
     const { service } = setup({ wallet: { index: 3, address: ADDRESS, type: 'ledger' } });
-    expect(await service.status()).toEqual({ nodeUrl: 'https://aqua.test', wallet: { address: ADDRESS, index: 3, type: 'ledger', canSign: true } });
+    expect(await service.status()).toEqual({
+      nodeUrl: 'https://aqua.test',
+      service: { reachable: false, serviceDid: null, outOfBandVerification: false },
+      wallet: { address: ADDRESS, index: 3, type: 'ledger', canSign: true },
+    });
+  });
+});
+
+describe('attestation: owner side', () => {
+  const PEER = JSON.parse(fs.readFileSync(path.join(__dirname, '__fixtures__', 'peer-attestation.aqua.json'), 'utf8'));
+  const SHARED = JSON.parse(fs.readFileSync(path.join(__dirname, '__fixtures__', 'shared-claim.aqua.json'), 'utf8'));
+  const SHARED_TIP = Object.entries(SHARED.revisions).find(([, r]) => r.payloads)[0];
+  const PEER_TIP = Object.entries(PEER.revisions).find(([, r]) => r.payloads)[0];
+  const PEER_DID = 'did:pkh:eip155:1:0xc412d3047affd97dc51c5c52e2588ae4238cbf88';
+  const SERVICE_DID = 'did:pkh:eip155:1:0x7c52cdefe1c9b99e16d2baa52a18e894382738a0';
+
+  function withSharedClaim(extra = {}) {
+    const ctx = setup(extra);
+    ctx.client.downloadTree.mockImplementation(async (_a, tip) =>
+      tip === ATTESTATION_TIP ? writeAquaArtifact({ attestation: ATTESTATION_TREE }) : writeAquaArtifact({ claim: SHARED }));
+    ctx.client.completeSign.mockResolvedValue({ success: true, new_tip: SHARED_TIP, attestation_tip: null });
+    ctx.client.createNameClaim.mockResolvedValue({ success: true, tip: SHARED_TIP });
+    ctx.client.shareTree = jest.fn(async () => ({ success: true, hash: 'h' }));
+    ctx.client.listAttestations = jest.fn(async () => ({ success: true, attestations: [], total: 0 }));
+    ctx.client.capabilities = jest.fn(async () => ({ reachable: true, serviceDid: SERVICE_DID, outOfBandVerification: true }));
+    return ctx;
+  }
+  // The shared-claim fixture belongs to another throwaway wallet; make the
+  // store accept it as this profile's own.
+  const OWN = 'did:pkh:eip155:1:0x9dc33190f554d86fa4433394a1c4989774262979';
+  const ownStore = (dataDir) => createClaimsStore({ dataDir, getSeed: async () => SEED, isOwnDid: async (did) => did.toLowerCase() === OWN.toLowerCase() });
+
+  function ownerSetup() {
+    const ctx = withSharedClaim();
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aqua-owner-'));
+    const store = ownStore(dataDir);
+    const service = createClaimsService({ store, client: ctx.client, signer: ctx.signer, getActiveWallet: async () => ({ index: 0, address: '0x9dc33190f554d86fa4433394a1c4989774262979', type: 'mnemonic' }), now: () => new Date('2026-10-22T12:00:00Z'), log: { error: () => {} } });
+    return { ...ctx, store, service };
+  }
+
+  test('shareForAttestation creates a latest-option contract and remembers it', async () => {
+    const { service, client } = ownerSetup();
+    const record = await service.createClaim({ type: 'name', fields: { given_name: 'Share', family_name: 'Probe' } });
+    const shared = await service.shareForAttestation(record.id, '0xC412d3047AffD97dC51C5C52E2588Ae4238CbF88');
+    expect(client.shareTree).toHaveBeenCalledWith(record.address, expect.objectContaining({ recipient: '0xC412d3047AffD97dC51C5C52E2588Ae4238CbF88', genesis: record.genesis, tip: record.tip }));
+    expect(shared.shares).toHaveLength(1);
+    await expect(service.shareForAttestation(record.id, record.address)).rejects.toThrow('own wallet');
+    await expect(service.shareForAttestation(record.id, 'bob')).rejects.toThrow('wallet address');
+  });
+
+  test('pullAttestations records a peer attestation as pending when its tree is not downloadable, and a service one in full', async () => {
+    const { service, client } = ownerSetup();
+    const record = await service.createClaim({ type: 'name', fields: { given_name: 'A', family_name: 'B' } });
+    client.listAttestations.mockResolvedValueOnce({ success: true, attestations: [
+      { tip: PEER_TIP, attester_did: PEER_DID, context: 'X: I know this person', created_at: '2026-10-22T12:10:34+00:00' },
+      { tip: ATTESTATION_TIP, attester_did: SERVICE_DID, context: 'server words', created_at: '2026-10-22T12:11:00+00:00' },
+    ] });
+    client.downloadTree.mockImplementation(async (_a, tip) => {
+      if (tip === PEER_TIP) throw new Error('404');
+      if (tip === ATTESTATION_TIP) return writeAquaArtifact({ attestation: ATTESTATION_TREE });
+      return writeAquaArtifact({ claim: SHARED });
+    });
+    const pulled = await service.pullAttestations(record.id);
+    expect(pulled.attestations).toHaveLength(2);
+    const peer = pulled.attestations.find((a) => a.tip === PEER_TIP);
+    expect(peer).toMatchObject({ source: 'peer', pending: true, tree: null, attesterDid: PEER_DID, context: 'X: I know this person' });
+    expect(peer.verification.isValid).toBe(false);
+    const svc = pulled.attestations.find((a) => a.tip === ATTESTATION_TIP);
+    expect(svc).toMatchObject({ source: 'service', pending: false, verification: { isValid: true } });
+    // Pulling again adds nothing.
+    client.listAttestations.mockResolvedValueOnce({ success: true, attestations: [{ tip: PEER_TIP, attester_did: PEER_DID, context: 'x' }] });
+    expect((await service.pullAttestations(record.id)).attestations).toHaveLength(2);
+  });
+
+  test('importAttestation accepts the attester\'s tree when it names this claim and verifies it linked', async () => {
+    const { service, client } = ownerSetup();
+    const record = await service.createClaim({ type: 'name', fields: { given_name: 'A', family_name: 'B' } });
+    const named = JSON.parse(JSON.stringify(PEER));
+    named.revisions[PEER_TIP].payloads.context = `X: I know this person (attests claim ${record.tip})`;
+    const imported = await service.importAttestation(record.id, JSON.stringify(named));
+    expect(client.verifyTree).toHaveBeenLastCalledWith(named, { linkedTrees: [record.tree] });
+    expect(imported.attestations).toHaveLength(1);
+    expect(imported.attestations[0]).toMatchObject({ tip: PEER_TIP, attesterDid: PEER_DID, source: 'peer', pending: false, verification: { isValid: true } });
+    // A pending entry from the service list is completed by the import.
+    client.listAttestations.mockResolvedValueOnce({ success: true, attestations: [{ tip: PEER_TIP, attester_did: PEER_DID, context: 'x' }] });
+    expect((await service.pullAttestations(record.id)).attestations).toHaveLength(1);
+  });
+
+  test('AS-REQ-0013: an attestation that names another claim, or the subject itself, is refused', async () => {
+    const { service, store } = ownerSetup();
+    const record = await service.createClaim({ type: 'name', fields: { given_name: 'A', family_name: 'B' } });
+    await expect(service.importAttestation(record.id, JSON.stringify(PEER))).rejects.toThrow('does not name this claim');
+    const self = JSON.parse(JSON.stringify(PEER));
+    self.revisions[PEER_TIP].payloads.context = `me (attests claim ${record.tip})`;
+    self.revisions[PEER_TIP].payloads.signer_did = record.signerDid;
+    for (const rev of Object.values(self.revisions)) if (rev.signature) rev.signer = record.signerDid;
+    await expect(service.importAttestation(record.id, self)).rejects.toThrow('own subject');
+    await expect(service.importAttestation(record.id, 'nope')).rejects.toThrow('invalid JSON');
+    await expect(service.importAttestation(record.id, { revisions: {} })).rejects.toThrow('not an attestation');
+    expect((await store.get(record.id)).attestations).toEqual([]);
+  });
+});
+
+describe('attestation: attester side', () => {
+  const PEER = JSON.parse(fs.readFileSync(path.join(__dirname, '__fixtures__', 'peer-attestation.aqua.json'), 'utf8'));
+  const PEER_TIP = Object.entries(PEER.revisions).find(([, r]) => r.payloads)[0];
+  const CLAIM_TIP = '0x1620feeab1cefafc430b7fa51ade78bd68438ed5ef771f4dd8f34345931f3b144b27';
+  const OWNER_DID = 'did:pkh:eip155:1:0x9dc33190f554d86fa4433394a1c4989774262979';
+
+  function attesterSetup() {
+    const ctx = setup({ wallet: { index: 0, address: '0xC412d3047AffD97dC51C5C52E2588Ae4238CbF88', type: 'mnemonic' } });
+    ctx.client.listSharesReceived = jest.fn(async () => ({ success: true, contracts: [{ hash: 'h1', sender: OWNER_DID, file_name: 'name_claim_Share_Probe', created_at: '2026-10-22T12:10:33Z' }] }));
+    ctx.client.sharedData = jest.fn(async () => ({ success: true, contract: { hash: 'h1', sender: OWNER_DID }, trees: [
+      { tip: CLAIM_TIP, file_name: 'name_claim_Share_Probe', revision_count: 3, payload: { signer_did: OWNER_DID, given_name: 'Share', family_name: 'Probe' }, template_name: 'name_claim', attestation_count: 0 },
+      { tip: '0x1620' + 'ff'.repeat(32), unavailable: true, revisions: [] },
+    ] }));
+    ctx.client.attestPrepare = jest.fn(async () => ({ message_hex: '0x7b7d', message_utf8: '{"a":1}', signer_did: 'did:pkh:eip155:1:0xC412d3047AffD97dC51C5C52E2588Ae4238CbF88' }));
+    ctx.client.attestComplete = jest.fn(async () => ({ success: true, attestation_tip: PEER_TIP, claim_tip: CLAIM_TIP }));
+    ctx.client.downloadTree.mockImplementation(async () => writeAquaArtifact({ attestation: PEER }));
+    ctx.client.capabilities = jest.fn(async () => ({ reachable: true, serviceDid: 'did:x', outOfBandVerification: true }));
+    return ctx;
+  }
+
+  test('listSharedClaims shows what was shared with this wallet, skipping unavailable trees', async () => {
+    const { service } = attesterSetup();
+    const shared = await service.listSharedClaims();
+    expect(shared).toEqual([expect.objectContaining({ contractHash: 'h1', sender: OWNER_DID, tip: CLAIM_TIP, templateName: 'name_claim', payload: expect.objectContaining({ given_name: 'Share' }) })]);
+  });
+
+  test('attestSharedClaim signs through the wallet, names the claim in the context, and keeps the tree', async () => {
+    const { service, client, signer, store } = attesterSetup();
+    const issued = await service.attestSharedClaim({ contractHash: 'h1', tip: CLAIM_TIP, context: 'I know this person' });
+    expect(client.attestPrepare).toHaveBeenCalledWith('0xC412d3047AffD97dC51C5C52E2588Ae4238CbF88', CLAIM_TIP, { context: `I know this person (attests claim ${CLAIM_TIP})` });
+    expect(signer.sign).toHaveBeenCalledWith(expect.objectContaining({ purpose: 'attestation', message: '0x7b7d', display: '{"a":1}' }));
+    expect(client.attestComplete).toHaveBeenCalledWith('0xC412d3047AffD97dC51C5C52E2588Ae4238CbF88', CLAIM_TIP, { message_hex: '0x7b7d', signature: '0x' + 'ee'.repeat(65) });
+    expect(issued).toMatchObject({ tip: PEER_TIP, claimTip: CLAIM_TIP, subjectDid: OWNER_DID, verification: { isValid: true } });
+    expect(await store.listIssued()).toHaveLength(1);
+    expect(await store.list()).toEqual([]);
+    expect(JSON.parse(await service.exportIssued(issued.id))).toEqual(PEER);
+  });
+
+  test('AS-REQ-0020: a claim the service does not show as shared with this wallet is not attested', async () => {
+    const { service, client, signer } = attesterSetup();
+    await expect(service.attestSharedClaim({ contractHash: 'h1', tip: '0x1620' + 'ab'.repeat(32), context: 'x' })).rejects.toThrow('not shared with this wallet');
+    await expect(service.attestSharedClaim({ contractHash: 'other', tip: CLAIM_TIP, context: 'x' })).rejects.toThrow('not shared with this wallet');
+    expect(client.attestPrepare).not.toHaveBeenCalled();
+    expect(signer.sign).not.toHaveBeenCalled();
+  });
+
+  test('a wallet refuses to attest its own claim and needs words', async () => {
+    const { service, client } = attesterSetup();
+    client.sharedData.mockResolvedValueOnce({ success: true, contract: {}, trees: [{ tip: CLAIM_TIP, payload: { signer_did: 'did:pkh:eip155:1:0xC412d3047AffD97dC51C5C52E2588Ae4238CbF88' } }] });
+    await expect(service.attestSharedClaim({ contractHash: 'h1', tip: CLAIM_TIP, context: 'me' })).rejects.toThrow('your own claim');
+    await expect(service.attestSharedClaim({ contractHash: 'h1', tip: CLAIM_TIP, context: '  ' })).rejects.toThrow('context is required');
   });
 });

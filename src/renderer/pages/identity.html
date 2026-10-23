@@ -259,6 +259,51 @@
       .code-row .field {
         flex: 1;
       }
+      .inline-form {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+      .inline-form input,
+      .inline-form textarea {
+        flex: 1;
+        min-width: 220px;
+        padding: 8px 12px;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text);
+        font-size: 13px;
+        font-family: inherit;
+        outline: none;
+      }
+      .inline-form textarea {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        min-height: 72px;
+        width: 100%;
+      }
+      .inline-form input:focus,
+      .inline-form textarea:focus {
+        border-color: var(--accent);
+      }
+      .inline-form .mono-input {
+        font-family: var(--font-mono);
+      }
+      .inline-note {
+        font-size: 12px;
+        color: var(--text-muted);
+        width: 100%;
+      }
+      .source {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--text-muted);
+        margin-right: 8px;
+      }
       .dns-box {
         background: var(--bg-raised);
         border: 1px solid var(--border);
@@ -302,6 +347,32 @@
       <div>Add a name, email, phone or domain claim below.</div>
     </div>
     <div id="claims"></div>
+
+    <h2>Attest for someone else</h2>
+    <p class="meta">
+      Claims other people shared with your wallet on the identity service. Attesting signs a statement with
+      your wallet that you vouch for the claim; you then hand the attestation back to them, since only you can
+      download it.
+    </p>
+    <div id="shared-claims"></div>
+
+    <h2>Attestations you issued</h2>
+    <div id="issued"></div>
+
+    <h2>Respond to a request</h2>
+    <p class="meta">
+      A site asks for claims through its wallet connection and you decide in the sidebar. Someone can also
+      hand you a request as text; paste it here and the same screen opens.
+    </p>
+    <div class="inline-form" id="request-form">
+      <textarea id="request-input" aria-label="Disclosure request JSON" placeholder='{"aqua":1,"need":["email"],"purpose":"…","nonce":"…"}'></textarea>
+      <button type="button" class="btn primary" id="request-btn">Review request</button>
+      <span class="inline-note" id="request-status"></span>
+    </div>
+    <div class="inline-form hidden" id="response-box">
+      <textarea id="response-output" aria-label="Disclosure response JSON" readonly></textarea>
+      <button type="button" class="btn" id="response-copy">Copy response</button>
+    </div>
 
     <h2>Add a claim</h2>
     <p class="meta">
