@@ -1041,6 +1041,23 @@
           </div>
         </div>
       </div>
+      <!-- Identity claims live on freedom://identity, not in the wallet panel:
+           the page needs the vault open but is its own surface. Shown with
+           the wallet button, under the same Beta switch. -->
+      <button id="identity-toggle-btn" class="wallet-toggle-btn identity-btn hidden" type="button" aria-label="Identity" title="Identity">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.25"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" vector-effect="non-scaling-stroke" />
+          <circle cx="12" cy="7" r="4" vector-effect="non-scaling-stroke" />
+        </svg>
+      </button>
       <button
         id="wallet-toggle-btn"
         class="wallet-toggle-btn"
@@ -1238,6 +1255,13 @@
           </button>
 
           <div class="menu-divider"></div>
+
+          <!-- Identity (Beta): shown with the wallet button, under the same
+               switch; its divider goes with it so the menu never shows two. -->
+          <button id="identity-btn" class="menu-item hidden" type="button">
+            <span class="menu-item-label">Identity</span>
+          </button>
+          <div class="menu-divider hidden" id="identity-menu-divider"></div>
 
           <!-- Group 7: About & Updates -->
           <button id="about-btn" class="menu-item" type="button">

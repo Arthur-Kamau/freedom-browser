@@ -106,6 +106,7 @@ describe('settings hash routing', () => {
       'privacy',
       'networks',
       'nodes',
+      'identity',
       'advanced',
       'about',
     ]);
@@ -120,6 +121,7 @@ describe('settings hash routing', () => {
       ens: 'networks',
       nodes: 'nodes',
       startup: 'nodes',
+      identity: 'identity',
       experimental: 'advanced',
       updates: 'about',
     });

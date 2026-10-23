@@ -12,7 +12,8 @@
  * as INTERNAL.
  */
 const crypto = require('crypto');
-const { ipcMain, BrowserWindow } = require('electron');
+const fs = require('fs');
+const { ipcMain, BrowserWindow, dialog } = require('electron');
 const IPC = require('../../shared/ipc-channels');
 const { success, failure } = require('../ipc-contract');
 const identityManager = require('../identity-manager');
@@ -187,6 +188,39 @@ function createAquaDeps({
     return true;
   }
 
+  // ── Unlock ───────────────────────────────────────────────────────────
+  // The page cannot unlock the vault itself; the sidebar's unlock screen
+  // can. Park the page's request until the chrome answers.
+  const pendingUnlocks = new Map();
+
+  function requestUnlock() {
+    const requestId = crypto.randomUUID();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pendingUnlocks.delete(requestId);
+        reject(new Error('The unlock request timed out'));
+      }, signTimeoutMs);
+      pendingUnlocks.set(requestId, { resolve, reject, timer });
+      try {
+        sendToChrome(IPC.AQUA_UNLOCK_REQUEST, { requestId });
+      } catch (err) {
+        clearTimeout(timer);
+        pendingUnlocks.delete(requestId);
+        reject(err);
+      }
+    });
+  }
+
+  function settleUnlock({ requestId, unlocked, error } = {}) {
+    const pending = pendingUnlocks.get(requestId);
+    if (!pending) return false;
+    clearTimeout(pending.timer);
+    pendingUnlocks.delete(requestId);
+    if (unlocked === true) pending.resolve(true);
+    else pending.reject(new Error(error?.message || error || 'The wallet was not unlocked'));
+    return true;
+  }
+
   const client = createAquaClient({
     baseUrl: nodeUrl,
     signMessage: (address, message) => requestSignature({ address, purpose: 'login', message, display: message }),
@@ -213,6 +247,9 @@ function createAquaDeps({
     manualDisclosure,
     settleDisclosure,
     pendingDisclosures,
+    requestUnlock,
+    settleUnlock,
+    pendingUnlocks,
   };
 }
 
@@ -266,6 +303,20 @@ function registerAquaIpc({ createDeps = createAquaDeps, log = console } = {}) {
   handle(IPC.AQUA_CLAIMS_LIST, async (d) => ({ claims: await d.service.listClaims() }));
   handle(IPC.AQUA_CLAIMS_CREATE, async (d, request) => ({ claim: await d.service.createClaim(request || {}) }), { mutates: true });
   handle(IPC.AQUA_CLAIMS_REMOVE, async (d, id) => ({ removed: await d.service.removeClaim(id) }), { mutates: true });
+  // The user picks where the file goes; nothing is written on cancel. The
+  // JSON is built before the dialog so a locked store refuses first.
+  handle(IPC.AQUA_CLAIMS_EXPORT_ALL, async (d) => {
+    const json = await d.service.exportAll();
+    const count = JSON.parse(json).claims.length;
+    const result = await dialog.showSaveDialog(targetWindow() || undefined, {
+      defaultPath: `freedom-identity-claims-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePath) return { canceled: true, count };
+    fs.writeFileSync(result.filePath, json, { mode: 0o600 });
+    return { saved: true, path: result.filePath, count };
+  });
+  handle(IPC.AQUA_CLAIMS_REMOVE_ALL, async (d) => ({ removed: await d.service.removeAllClaims() }), { mutates: true });
   handle(IPC.AQUA_CLAIMS_REFRESH, async (d, id) => ({ claim: await d.service.refreshClaim(id) }), { mutates: true });
   handle(IPC.AQUA_CLAIMS_SEND_CODE, (d, request) => d.service.sendCode(request || {}));
   handle(IPC.AQUA_CLAIMS_VERIFY_CODE, (d, request) => d.service.verifyCode(request || {}));
@@ -288,6 +339,9 @@ function registerAquaIpc({ createDeps = createAquaDeps, log = console } = {}) {
   handle(IPC.AQUA_DISCLOSURE_PREPARE, (d, args) => d.prepareDisclosure(args || {}));
   handle(IPC.AQUA_DISCLOSURE_BUILD, async (d, args) => ({ response: await d.buildDisclosure(args || {}) }));
   handle(IPC.AQUA_DISCLOSURE_MANUAL, async (d, requestText) => ({ response: await d.manualDisclosure(requestText) }));
+  // The page's Unlock button: opens the sidebar's unlock screen and, once
+  // the vault is open, tells every page to re-read (the store is readable now).
+  handle(IPC.AQUA_UNLOCK, async (d) => ({ unlocked: await d.requestUnlock() }), { mutates: true });
 
   // The chrome's answer to a signing request. Only the chrome can reach
   // this channel (ipc-sender-policy: webviews are tiered, the chrome is not).
@@ -298,6 +352,10 @@ function registerAquaIpc({ createDeps = createAquaDeps, log = console } = {}) {
   ipcMain.on(IPC.AQUA_DISCLOSURE_MANUAL_RESPONSE, (_event, payload) => {
     if (!deps) return;
     deps.settleDisclosure(payload);
+  });
+  ipcMain.on(IPC.AQUA_UNLOCK_RESPONSE, (_event, payload) => {
+    if (!deps) return;
+    deps.settleUnlock(payload);
   });
 
   return { current };

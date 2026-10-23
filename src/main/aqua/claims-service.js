@@ -191,7 +191,10 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
     return chainWithTip(readAquaChains(zip), tip);
   }
 
-  async function attestationRecord(address, tip) {
+  // An attestation anchors to the claim it attests (the service's own
+  // attestations link to the claim's signature revision), so it verifies
+  // only with the claim tree supplied as a linked tree.
+  async function attestationRecord(address, tip, claimTree) {
     const tree = await fetchChain(address, tip);
     const payload = payloadOf(tree) || {};
     return {
@@ -201,7 +204,7 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
       context: typeof payload.context === 'string' ? payload.context : '',
       source: 'service',
       issuedAt: now().toISOString(),
-      verification: await verify(tree),
+      verification: claimTree ? await verifyLinked(tree, claimTree) : await verify(tree),
     };
   }
 
@@ -275,6 +278,17 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
 
     listClaims: () => store.list(),
 
+    /**
+     * Every claim record as one JSON document: the trees, the attestations
+     * and the verification results, as the store holds them.
+     */
+    async exportAll() {
+      const claims = await store.list();
+      return JSON.stringify({ format: 'freedom-identity-claims', version: 1, exportedAt: now().toISOString(), nodeUrl: client.baseUrl, claims }, null, 2);
+    },
+
+    removeAllClaims: () => store.removeAll(),
+
     /** One-time code for an email or phone claim; the service sends it. */
     async sendCode({ channel, target }) {
       const wallet = await activeWalletOrThrow();
@@ -322,7 +336,7 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
       const attestations = [];
       if (completed?.attestation_tip) {
         try {
-          attestations.push(await attestationRecord(wallet.address, completed.attestation_tip));
+          attestations.push(await attestationRecord(wallet.address, completed.attestation_tip, tree));
         } catch (err) {
           log.error('[AquaClaims] attestation download failed:', err?.message || err);
         }
@@ -355,7 +369,8 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
       if (!record) throw new Error('Claim not found');
       record.verification = await verify(record.tree);
       for (const attestation of record.attestations) {
-        attestation.verification = await verify(attestation.tree);
+        if (!attestation.tree) continue;
+        attestation.verification = await verifyLinked(attestation.tree, record.tree);
       }
       await store.upsert(record);
       return record;
@@ -566,7 +581,7 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
       const result = await client.verifyDns(record.address, record.tip);
       record.domainVerification = result?.verification_status || (result?.verified ? 'verified' : 'pending');
       if (result?.attestation_tip && !record.attestations.some((a) => a.tip === result.attestation_tip)) {
-        record.attestations.push(await attestationRecord(record.address, result.attestation_tip));
+        record.attestations.push(await attestationRecord(record.address, result.attestation_tip, record.tree));
         record.serverTips.attestation = result.attestation_tip;
       }
       await store.upsert(record);

@@ -1,6 +1,7 @@
 .toolbar {
   display: grid;
-  grid-template-columns: auto 1fr auto auto auto;
+  /* nav buttons | address bar | nodes menu | identity | wallet | hamburger */
+  grid-template-columns: auto 1fr auto auto auto auto;
   align-items: center;
   gap: 0;
   padding: 6px 10px;

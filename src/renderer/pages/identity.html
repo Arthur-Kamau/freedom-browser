@@ -27,9 +27,84 @@
           sans-serif;
         background: var(--page-gradient);
         color: var(--text);
-        padding: 48px;
         box-sizing: border-box;
         min-height: 100vh;
+      }
+      /* Same layout as Settings: a sticky left nav and a content column. */
+      .layout {
+        display: grid;
+        grid-template-columns: 240px 1fr;
+        height: 100vh;
+        overflow-y: auto;
+      }
+      .layout:focus {
+        outline: none;
+      }
+      .sidebar {
+        position: sticky;
+        top: 0;
+        align-self: start;
+        height: 100vh;
+        padding: 40px 20px 40px 32px;
+        border-right: 1px solid var(--border);
+        background: var(--sidebar-translucent);
+        backdrop-filter: blur(6px);
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .sidebar-title {
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+        margin: 0 0 4px 12px;
+      }
+      .nav {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 12px;
+        border-radius: 8px;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 14px;
+        background: transparent;
+        border: 0;
+        text-align: left;
+        font-family: inherit;
+        transition:
+          background 0.1s,
+          color 0.1s;
+      }
+      .nav-item:hover {
+        background: var(--bg-card);
+        color: var(--text);
+      }
+      .nav-item.active {
+        background: var(--accent-muted);
+        color: var(--accent);
+      }
+      .nav-item svg {
+        flex-shrink: 0;
+      }
+      .nav-item .count {
+        margin-left: auto;
+      }
+      .content {
+        padding: 48px 56px 80px 56px;
+        max-width: 880px;
+      }
+      .panel {
+        display: none;
+      }
+      .panel.active {
+        display: block;
       }
       /* Same header as every other internal page (#256). */
       h1 {
@@ -47,28 +122,6 @@
         margin-bottom: 24px;
         font-size: 14px;
       }
-      h2 {
-        font-size: 16px;
-        font-weight: 600;
-        margin: 32px 0 12px;
-        color: var(--text-strong);
-      }
-      .notice {
-        background: var(--info-bg);
-        border: 1px solid var(--badge-info-border);
-        border-radius: 8px;
-        padding: 12px 16px;
-        font-size: 14px;
-        margin-bottom: 16px;
-      }
-      .notice.warn {
-        background: var(--badge-warn-bg);
-        border-color: var(--warn);
-      }
-      .notice.error {
-        background: var(--danger-bg);
-        border-color: var(--danger);
-      }
       .hidden {
         display: none !important;
       }
@@ -81,6 +134,192 @@
         font-size: 12px;
         word-break: break-all;
       }
+
+      /* Icons: one glyph set, drawn as a CSS mask over currentColor so a
+         span with two classes is an icon in either theme, and the script
+         never builds SVG. The data URIs hold the Feather-style strokes the
+         header and nav draw inline. */
+      .ico {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+        vertical-align: -3px;
+        background-color: currentColor;
+        mask-size: contain;
+        mask-repeat: no-repeat;
+        mask-position: center;
+      }
+      .ico-user {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'/><circle cx='12' cy='7' r='4'/></svg>");
+      }
+      .ico-mail {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='2' y='4' width='20' height='16' rx='2'/><path d='m2 7 10 7 10-7'/></svg>");
+      }
+      .ico-phone {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.9.6 2.8.7a2 2 0 0 1 1.7 2z'/></svg>");
+      }
+      .ico-globe {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='10'/><path d='M2 12h20'/><path d='M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'/></svg>");
+      }
+      .ico-pen {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 20h9'/><path d='M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z'/></svg>");
+      }
+      .ico-check-circle {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='10'/><path d='m9 12 2 2 4-4'/></svg>");
+      }
+      .ico-alert {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z'/><path d='M12 9v4'/><path d='M12 17h.01'/></svg>");
+      }
+      .ico-x-circle {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='10'/><path d='m15 9-6 6'/><path d='m9 9 6 6'/></svg>");
+      }
+      .ico-clock {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='10'/><path d='M12 6v6l4 2'/></svg>");
+      }
+      .ico-server {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='2' y='2' width='20' height='8' rx='2'/><rect x='2' y='14' width='20' height='8' rx='2'/><path d='M6 6h.01'/><path d='M6 18h.01'/></svg>");
+      }
+      .ico-share {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8'/><path d='m16 6-4-4-4 4'/><path d='M12 2v13'/></svg>");
+      }
+      .ico-pull {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><path d='m7 10 5 5 5-5'/><path d='M12 15V3'/></svg>");
+      }
+      .ico-import {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/><path d='M14 2v6h6'/><path d='M12 18v-6'/><path d='M9 15h6'/></svg>");
+      }
+      .ico-refresh {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 12a9 9 0 0 1-15.5 6.3L3 16'/><path d='M3 21v-5h5'/><path d='M3 12a9 9 0 0 1 15.5-6.3L21 8'/><path d='M21 3v5h-5'/></svg>");
+      }
+      .ico-trash {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 6h18'/><path d='M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2'/><path d='M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6'/><path d='M10 11v6'/><path d='M14 11v6'/></svg>");
+      }
+      .ico-copy {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='9' y='9' width='13' height='13' rx='2'/><path d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'/></svg>");
+      }
+      .ico-plus {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 5v14'/><path d='M5 12h14'/></svg>");
+      }
+      .ico-lock {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='11' width='18' height='11' rx='2'/><path d='M7 11V7a5 5 0 0 1 10 0v4'/></svg>");
+      }
+      .ico-unlock {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='11' width='18' height='11' rx='2'/><path d='M7 11V7a5 5 0 0 1 9.9-1'/></svg>");
+      }
+      .ico-wallet {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2z'/><path d='M16 3H6a2 2 0 0 0-2 2v2'/><path d='M18 14h.01'/></svg>");
+      }
+      .ico-shield {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 3l8 4v5c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V7z'/><path d='M9 12l2 2 4-4'/></svg>");
+      }
+      .ico-chat {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/></svg>");
+      }
+      .ico-file {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z'/><path d='M14 3v6h6'/></svg>");
+      }
+      .ico-inbox {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M22 12h-6l-2 3h-4l-2-3H2'/><path d='M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z'/></svg>");
+      }
+      .ico-check {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m20 6-11 11-5-5'/></svg>");
+      }
+      .ico-x {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M18 6 6 18'/><path d='M6 6l12 12'/></svg>");
+      }
+      .ico-paste {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2'/><rect x='8' y='2' width='8' height='4' rx='1'/></svg>");
+      }
+
+      /* Status strip: wallet, service, and the one thing to do next. */
+      .status-card {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 24px;
+        align-items: center;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px 18px;
+        margin-bottom: 28px;
+        font-size: 13px;
+      }
+      .status-item {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        min-width: 0;
+        color: var(--text-muted);
+      }
+      .status-item .value {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 380px;
+      }
+      .status-card .badge {
+        margin-left: auto;
+      }
+      .notice {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        background: var(--info-bg);
+        border: 1px solid var(--badge-info-border);
+        border-radius: 8px;
+        padding: 12px 16px;
+        font-size: 14px;
+        margin-bottom: 20px;
+      }
+      .notice .ico {
+        margin-top: 2px;
+      }
+      .notice.warn {
+        background: var(--badge-warn-bg);
+        border-color: var(--warn);
+      }
+      .notice.error {
+        background: var(--danger-bg);
+        border-color: var(--danger);
+      }
+
+      /* Sections */
+      .section {
+        margin-bottom: 36px;
+      }
+      .section-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+      h2 {
+        font-size: 16px;
+        font-weight: 600;
+        margin: 0;
+        color: var(--text-strong);
+      }
+      .section-head .meta {
+        flex: 1;
+      }
+      .section > .meta {
+        margin: 0 0 14px;
+      }
+      .count {
+        font-size: 12px;
+        color: var(--text);
+        background: var(--bg-raised);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 1px 8px;
+      }
+
+      /* Claim cards: icon, value, badge; a verification line; the
+         attestation list; technical details folded away; one action row. */
       .card {
         background: var(--bg-card);
         border: 1px solid var(--border);
@@ -91,55 +330,106 @@
       .claim-head {
         display: flex;
         align-items: center;
-        gap: 12px;
-        flex-wrap: wrap;
+        gap: 14px;
       }
-      .claim-type {
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: var(--text-muted);
+      .claim-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: var(--accent-muted);
+        color: var(--accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .claim-icon .ico {
+        width: 20px;
+        height: 20px;
+      }
+      .claim-title {
+        flex: 1;
+        min-width: 0;
       }
       .claim-value {
         font-size: 16px;
         font-weight: 600;
         color: var(--text-strong);
-        flex: 1;
-        min-width: 160px;
         word-break: break-word;
       }
-      .pill {
+      .claim-sub {
         font-size: 12px;
-        padding: 2px 10px;
+        color: var(--text-muted);
+        margin-top: 2px;
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .claim-sub .mono {
+        font-size: 11px;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 12px;
+        padding: 3px 10px;
         border-radius: 999px;
         border: 1px solid var(--border-strong);
         color: var(--text-muted);
         white-space: nowrap;
+        flex-shrink: 0;
       }
-      .pill.attested {
+      .badge .ico {
+        width: 13px;
+        height: 13px;
+      }
+      .badge.attested {
         border-color: var(--success);
         color: var(--success);
       }
-      .pill.invalid {
+      .badge.invalid {
         border-color: var(--danger);
         color: var(--danger);
       }
-      .claim-rows {
-        margin-top: 10px;
+      .claim-body {
+        margin-top: 12px;
         display: grid;
-        gap: 6px;
+        gap: 8px;
         font-size: 13px;
       }
-      .claim-row {
-        display: grid;
-        grid-template-columns: 120px 1fr;
-        gap: 12px;
-      }
-      .claim-row .label {
+      .status-line {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
         color: var(--text-muted);
       }
+      .status-line .ico {
+        margin-top: 1px;
+      }
+      .status-line.ok .ico {
+        color: var(--success);
+      }
+      .status-line.bad .ico {
+        color: var(--danger);
+      }
+      .status-line.wait .ico {
+        color: var(--warn);
+      }
+      .att-title {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-muted);
+        margin-top: 4px;
+      }
       .attestation {
-        padding: 8px 12px;
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 6px 10px;
+        align-items: center;
+        padding: 10px 12px;
         border-left: 3px solid var(--success);
         background: var(--bg-raised);
         border-radius: 6px;
@@ -147,13 +437,94 @@
       .attestation.invalid {
         border-left-color: var(--danger);
       }
+      .attestation.pending {
+        border-left-color: var(--warn);
+      }
+      .attestation .source {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--text-muted);
+      }
+      .attestation .who {
+        min-width: 0;
+      }
+      .attestation .words {
+        grid-column: 1 / 4;
+        color: var(--text);
+        font-size: 13px;
+        line-height: 1.45;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        overflow: hidden;
+        cursor: pointer;
+      }
+      .attestation .words.expanded {
+        -webkit-line-clamp: unset;
+        display: block;
+      }
+      .attestation .state {
+        grid-column: 1 / 4;
+        font-size: 12px;
+      }
+      .badge.pending {
+        border-color: var(--warn);
+        color: var(--warn);
+      }
+      .attestation .state.ok {
+        color: var(--success);
+      }
+      .attestation .state.bad {
+        color: var(--danger);
+      }
+      .attestation .state.wait {
+        color: var(--text-muted);
+      }
+      details.tech {
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+      details.tech summary {
+        cursor: pointer;
+        user-select: none;
+      }
+      details.tech summary:hover {
+        color: var(--text);
+      }
+      .tech-rows {
+        margin-top: 6px;
+        display: grid;
+        grid-template-columns: 80px 1fr;
+        gap: 4px 12px;
+        align-items: baseline;
+      }
+      .tech-rows .label {
+        color: var(--text-meta);
+      }
       .actions {
         display: flex;
         gap: 8px;
         margin-top: 14px;
         flex-wrap: wrap;
+        align-items: center;
       }
+      .actions .spacer {
+        flex: 1;
+      }
+      .card .actions {
+        border-top: 1px solid var(--border);
+        padding-top: 12px;
+      }
+
+      /* Buttons: primary filled accent, secondary outlined, destructive outlined danger. */
       .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
         padding: 8px 14px;
         background: var(--bg-card);
         border: 1px solid var(--border);
@@ -166,6 +537,10 @@
           border-color 0.15s,
           background-color 0.15s;
       }
+      .btn .ico {
+        width: 14px;
+        height: 14px;
+      }
       .btn:hover {
         background-color: var(--bg-raised);
         border-color: var(--border-strong);
@@ -173,6 +548,10 @@
       .btn:disabled {
         opacity: 0.6;
         cursor: default;
+      }
+      .btn.small {
+        padding: 5px 10px;
+        font-size: 12px;
       }
       .btn.primary {
         background: var(--accent);
@@ -188,26 +567,44 @@
         border-color: var(--danger);
         color: var(--danger);
       }
+      .btn.icon-only {
+        padding: 6px;
+      }
       .empty {
         text-align: center;
-        padding: 56px 24px;
+        padding: 48px 24px;
         color: var(--text-muted);
+        background: var(--bg-card);
+        border: 1px dashed var(--border);
+        border-radius: 10px;
       }
-      .empty svg {
-        width: 48px;
-        height: 48px;
-        margin-bottom: 12px;
+      .empty .ico {
+        width: 40px;
+        height: 40px;
+        margin-bottom: 10px;
         opacity: 0.6;
       }
       .empty-title {
-        font-size: 15px;
-        margin-bottom: 4px;
+        font-size: 14px;
         color: var(--text);
       }
+      .empty.locked {
+        margin-bottom: 28px;
+        display: grid;
+        justify-items: center;
+        gap: 8px;
+      }
+      .empty.locked .ico {
+        margin-bottom: 2px;
+      }
+      .empty.locked .btn {
+        margin-top: 6px;
+      }
+
+      /* Forms */
       .form {
         display: grid;
         gap: 14px;
-        max-width: 560px;
       }
       .field {
         display: grid;
@@ -218,9 +615,9 @@
         color: var(--text-muted);
       }
       .field input,
-      .field select {
+      .field textarea {
         padding: 10px 14px;
-        background: var(--bg-card);
+        background: var(--bg-elev);
         border: 1px solid var(--border);
         border-radius: 8px;
         color: var(--text);
@@ -228,19 +625,20 @@
         font-family: inherit;
         outline: none;
         transition: border-color 0.15s;
+        box-sizing: border-box;
+        width: 100%;
+      }
+      .field textarea {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        min-height: 96px;
+        resize: vertical;
       }
       .field input.mono-input {
         font-family: var(--font-mono);
       }
-      .field select {
-        padding-right: 32px;
-        background: var(--bg-card) var(--select-chevron) no-repeat right 12px center;
-        appearance: none;
-        -webkit-appearance: none;
-        cursor: pointer;
-      }
       .field input:focus,
-      .field select:focus {
+      .field textarea:focus {
         border-color: var(--accent);
       }
       .field .help {
@@ -259,199 +657,560 @@
       .code-row .field {
         flex: 1;
       }
-      .inline-form {
+      .file-row {
         display: flex;
-        gap: 8px;
+        gap: 10px;
         align-items: center;
-        flex-wrap: wrap;
-        margin-top: 10px;
+        font-size: 13px;
+        color: var(--text-muted);
       }
-      .inline-form input,
-      .inline-form textarea {
+      .file-row input {
+        font-family: inherit;
+        font-size: 13px;
+        color: var(--text);
+      }
+
+      /* Kind picker: four icon tiles, one pressed. */
+      .kind-picker {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+      }
+      .kind {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        padding: 12px 8px;
+        background: var(--bg-elev);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        color: var(--text-muted);
+        font-size: 12px;
+        font-family: inherit;
+        cursor: pointer;
+        transition:
+          border-color 0.15s,
+          color 0.15s;
+      }
+      .kind .ico {
+        width: 20px;
+        height: 20px;
+      }
+      .kind:hover {
+        border-color: var(--border-strong);
+        color: var(--text);
+      }
+      .kind[aria-pressed='true'] {
+        border-color: var(--accent);
+        background: var(--accent-muted);
+        color: var(--accent);
+      }
+      .kind:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+
+      /* Modals: native <dialog>, painted from the page palette so the
+         fields inside match the page. One head, one body, one footer with
+         the primary/secondary (or danger) pair. */
+      dialog.modal {
+        width: min(520px, calc(100vw - 32px));
+        padding: 0;
+        background: var(--bg-elev);
+        color: var(--text);
+        border: 1px solid var(--border-strong);
+        border-radius: 12px;
+        /* theme-literal: a drop shadow, not a surface */
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+      }
+      dialog.modal::backdrop {
+        /* theme-literal: the scrim over the page, read as alpha on either palette */
+        background: rgba(0, 0, 0, 0.5);
+      }
+      .modal-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 18px 20px 0;
+      }
+      .modal-head .ico {
+        width: 18px;
+        height: 18px;
+        color: var(--accent);
+      }
+      .modal-head h2 {
         flex: 1;
-        min-width: 220px;
-        padding: 8px 12px;
+        font-size: 17px;
+      }
+      .modal-close {
+        width: 30px;
+        height: 30px;
+        border: 0;
+        border-radius: 50%;
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .modal-close:hover {
+        background: var(--bg-raised);
+        color: var(--text);
+      }
+      .modal-body {
+        padding: 14px 20px 4px;
+        display: grid;
+        gap: 14px;
+      }
+      .modal-body > .meta {
+        margin: 0;
+      }
+      .modal-foot {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 16px 20px 20px;
+      }
+      .modal-foot .status {
+        flex: 1;
+        font-size: 12px;
+        color: var(--text-muted);
+        align-self: center;
+      }
+      /* A claim quoted inside a modal. */
+      .summary {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
         background: var(--bg-card);
         border: 1px solid var(--border);
         border-radius: 8px;
-        color: var(--text);
-        font-size: 13px;
-        font-family: inherit;
-        outline: none;
       }
-      .inline-form textarea {
-        font-family: var(--font-mono);
-        font-size: 12px;
-        min-height: 72px;
-        width: 100%;
+      .summary .claim-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
       }
-      .inline-form input:focus,
-      .inline-form textarea:focus {
-        border-color: var(--accent);
+      .summary .claim-icon .ico {
+        width: 16px;
+        height: 16px;
       }
-      .inline-form .mono-input {
-        font-family: var(--font-mono);
+      .summary .claim-value {
+        font-size: 14px;
       }
-      .inline-note {
-        font-size: 12px;
-        color: var(--text-muted);
-        width: 100%;
-      }
-      .source {
+      .summary .mono {
         font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: var(--text-muted);
-        margin-right: 8px;
       }
-      .dns-box {
+      .dns-row {
+        display: grid;
+        grid-template-columns: 56px 1fr auto;
+        gap: 10px;
+        align-items: center;
+        padding: 8px 12px;
         background: var(--bg-raised);
         border: 1px solid var(--border);
         border-radius: 8px;
-        padding: 10px 12px;
-        margin-top: 8px;
+      }
+      .dns-row .label {
+        font-size: 12px;
+        color: var(--text-muted);
       }
     </style>
   </head>
   <body>
-    <h1>
-      <svg
-        width="28"
-        height="28"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-        <circle cx="12" cy="7" r="4"></circle>
-      </svg>
-      Identity
-    </h1>
-    <p class="subtitle" id="subtitle">
-      Signed statements about you that a site or another person can verify without a central provider.
-    </p>
+    <div class="layout" tabindex="-1">
+      <aside class="sidebar">
+        <h2 class="sidebar-title">Identity</h2>
+        <nav class="nav" id="nav">
+          <button type="button" class="nav-item active" id="nav-claims" data-target="claims">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            Your claims
+            <span class="count" id="claims-count">0</span>
+          </button>
+          <button type="button" class="nav-item" id="nav-attest" data-target="attest">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3l8 4v5c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V7z"></path>
+              <path d="M9 12l2 2 4-4"></path>
+            </svg>
+            Attest for others
+            <span class="count" id="shared-count">0</span>
+          </button>
+          <button type="button" class="nav-item" id="nav-issued" data-target="issued">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+              <path d="M14 3v6h6"></path>
+            </svg>
+            Issued
+            <span class="count" id="issued-count">0</span>
+          </button>
+          <button type="button" class="nav-item" id="nav-requests" data-target="requests">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            Requests
+          </button>
+        </nav>
+      </aside>
 
-    <div class="notice hidden" id="status-notice"></div>
-    <p class="meta" id="wallet-line"></p>
+      <main class="content">
+        <h1>
+          <svg
+            width="28"
+            height="28"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+          Identity
+        </h1>
+        <p class="subtitle" id="subtitle">
+          Signed statements about you that a site or another person can verify without a central provider.
+        </p>
 
-    <h2>Your claims</h2>
-    <div class="empty hidden" id="claims-empty">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-        <circle cx="12" cy="7" r="4"></circle>
-      </svg>
-      <div class="empty-title">No claims yet</div>
-      <div>Add a name, email, phone or domain claim below.</div>
-    </div>
-    <div id="claims"></div>
-
-    <h2>Attest for someone else</h2>
-    <p class="meta">
-      Claims other people shared with your wallet on the identity service. Attesting signs a statement with
-      your wallet that you vouch for the claim; you then hand the attestation back to them, since only you can
-      download it.
-    </p>
-    <div id="shared-claims"></div>
-
-    <h2>Attestations you issued</h2>
-    <div id="issued"></div>
-
-    <h2>Respond to a request</h2>
-    <p class="meta">
-      A site asks for claims through its wallet connection and you decide in the sidebar. Someone can also
-      hand you a request as text; paste it here and the same screen opens.
-    </p>
-    <div class="inline-form" id="request-form">
-      <textarea id="request-input" aria-label="Disclosure request JSON" placeholder='{"aqua":1,"need":["email"],"purpose":"…","nonce":"…"}'></textarea>
-      <button type="button" class="btn primary" id="request-btn">Review request</button>
-      <span class="inline-note" id="request-status"></span>
-    </div>
-    <div class="inline-form hidden" id="response-box">
-      <textarea id="response-output" aria-label="Disclosure response JSON" readonly></textarea>
-      <button type="button" class="btn" id="response-copy">Copy response</button>
-    </div>
-
-    <h2>Add a claim</h2>
-    <p class="meta">
-      Freedom sends the claim to the identity service, you sign it with your wallet, and a copy is kept in
-      this profile. A claim is only self-signed until someone else attests it; email and phone claims are
-      attested by the service after you enter the code it sends.
-    </p>
-    <form class="form" id="claim-form" autocomplete="off">
-      <div class="field">
-        <label for="claim-type">Kind of claim</label>
-        <select id="claim-type">
-          <option value="name">Name</option>
-          <option value="email">Email address</option>
-          <option value="phone">Phone number</option>
-          <option value="domain">Domain</option>
-        </select>
-      </div>
-
-      <div id="fields-name">
-        <div class="field">
-          <label for="given-name">Given name</label>
-          <input type="text" id="given-name" maxlength="256" />
-        </div>
-        <div class="field">
-          <label for="family-name">Family name</label>
-          <input type="text" id="family-name" maxlength="256" />
-        </div>
-        <div class="field">
-          <label for="middle-name">Middle name (optional)</label>
-          <input type="text" id="middle-name" maxlength="256" />
-        </div>
-        <div class="field">
-          <label for="nickname">Nickname (optional)</label>
-          <input type="text" id="nickname" maxlength="256" />
-        </div>
-      </div>
-
-      <div id="fields-email" class="hidden">
-        <div class="field">
-          <label for="email">Email address</label>
-          <input type="email" id="email" maxlength="320" />
-        </div>
-      </div>
-
-      <div id="fields-phone" class="hidden">
-        <div class="field">
-          <label for="phone-number">Phone number</label>
-          <input type="tel" id="phone-number" class="mono-input" maxlength="20" placeholder="+254712345678" />
-          <span class="help">International format with the country code, as in +254712345678.</span>
-        </div>
-      </div>
-
-      <div id="fields-domain" class="hidden">
-        <div class="field">
-          <label for="domain">Domain name</label>
-          <input type="text" id="domain" class="mono-input" maxlength="253" placeholder="example.com" />
-          <span class="help">You will add a DNS TXT record to prove you control it.</span>
-        </div>
-      </div>
-
-      <div id="code-section" class="hidden">
-        <div class="code-row">
-          <div class="field">
-            <label for="code">Verification code</label>
-            <input type="text" id="code" class="mono-input" maxlength="16" inputmode="numeric" />
+        <div class="status-card">
+          <div class="status-item" title="Wallet">
+            <span class="ico ico-wallet" aria-hidden="true"></span>
+            <span class="value" id="status-wallet">—</span>
           </div>
-          <button type="button" class="btn" id="send-code-btn">Send code</button>
-          <button type="button" class="btn" id="verify-code-btn" disabled>Verify code</button>
+          <div class="status-item" title="Identity service">
+            <span class="ico ico-server" aria-hidden="true"></span>
+            <span class="value" id="status-service">—</span>
+          </div>
+          <span class="badge hidden" id="status-lock"><span class="ico ico-lock" aria-hidden="true"></span>Locked</span>
+          <div class="status-item meta" id="status-caps"></div>
+          <p class="meta hidden" id="wallet-line"></p>
         </div>
-        <span class="meta" id="code-status"></span>
-      </div>
 
-      <div class="field-error hidden" id="form-error"></div>
+        <div class="notice hidden" id="status-notice"></div>
 
-      <div class="actions">
-        <button type="submit" class="btn primary" id="create-btn">Create and sign</button>
-        <button type="button" class="btn" id="cancel-btn">Cancel</button>
+        <!-- The one place the locked (or missing) wallet is said: the lists
+             below stay empty until it opens. -->
+        <div class="empty locked hidden" id="locked-card">
+          <span class="ico ico-lock" aria-hidden="true"></span>
+          <div class="empty-title" id="locked-title">Your wallet is locked</div>
+          <div class="meta" id="locked-text">Claims are kept encrypted with your wallet seed, so they are readable only while it is unlocked.</div>
+          <button type="button" class="btn primary" id="unlock-btn">
+            <span class="ico ico-unlock" aria-hidden="true"></span>Unlock wallet
+          </button>
+        </div>
+
+        <section class="section panel active" id="panel-claims" data-nav="claims">
+          <div class="section-head">
+            <h2>Your claims</h2>
+            <span class="meta">Each one is signed by your wallet; a self-signed claim is not yet attested.</span>
+            <button type="button" class="btn primary" id="add-claim-btn" disabled>
+              <span class="ico ico-plus" aria-hidden="true"></span>Add a claim
+            </button>
+          </div>
+          <div class="empty hidden" id="claims-empty">
+            <span class="ico ico-user" aria-hidden="true"></span>
+            <div class="empty-title">No claims yet</div>
+          </div>
+          <div id="claims-list"></div>
+        </section>
+
+        <section class="section panel" id="panel-attest" data-nav="attest">
+          <div class="section-head">
+            <h2>Attest for someone else</h2>
+            <span class="meta">Claims other people shared with your wallet on the identity service.</span>
+          </div>
+          <p class="meta">
+            Attesting signs a statement with your wallet that you vouch for the claim. You then hand the
+            attestation back to its owner, since only you can download it.
+          </p>
+          <div id="shared-claims"></div>
+        </section>
+
+        <section class="section panel" id="panel-issued" data-nav="issued">
+          <div class="section-head">
+            <h2>Attestations you issued</h2>
+            <span class="meta">Copy one as JSON to send it to the claim's owner.</span>
+          </div>
+          <div id="issued-list"></div>
+        </section>
+
+        <section class="section panel" id="panel-requests" data-nav="requests">
+          <div class="section-head">
+            <h2>Respond to a request</h2>
+            <span class="meta">A site asks through its wallet connection; a person can hand you a request as text.</span>
+            <button type="button" class="btn primary" id="request-open-btn" disabled>
+              <span class="ico ico-paste" aria-hidden="true"></span>Paste a request
+            </button>
+          </div>
+          <div class="empty">
+            <span class="ico ico-chat" aria-hidden="true"></span>
+            <div class="empty-title">No request to review</div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- Add a claim -->
+    <dialog class="modal" id="add-claim-dialog" aria-labelledby="add-claim-title">
+      <form class="form" id="claim-form" autocomplete="off">
+        <div class="modal-head">
+          <span class="ico ico-plus" aria-hidden="true"></span>
+          <h2 id="add-claim-title">Add a claim</h2>
+          <button type="button" class="modal-close" id="add-claim-close" aria-label="Close">
+            <span class="ico ico-x" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="meta">
+            Freedom sends the claim to the identity service, you sign it with your wallet, and a copy is kept in
+            this profile. Email and phone claims are attested by the service after you enter the code it sends.
+          </p>
+          <div class="kind-picker" id="claim-kind" role="group" aria-label="Kind of claim">
+            <button type="button" class="kind" id="kind-name" data-kind="name" aria-pressed="true">
+              <span class="ico ico-user" aria-hidden="true"></span>Name
+            </button>
+            <button type="button" class="kind" id="kind-email" data-kind="email" aria-pressed="false">
+              <span class="ico ico-mail" aria-hidden="true"></span>Email
+            </button>
+            <button type="button" class="kind" id="kind-phone" data-kind="phone" aria-pressed="false">
+              <span class="ico ico-phone" aria-hidden="true"></span>Phone
+            </button>
+            <button type="button" class="kind" id="kind-domain" data-kind="domain" aria-pressed="false">
+              <span class="ico ico-globe" aria-hidden="true"></span>Domain
+            </button>
+          </div>
+
+          <div id="fields-name" class="form">
+            <div class="field">
+              <label for="given-name">Given name</label>
+              <input type="text" id="given-name" maxlength="256" />
+            </div>
+            <div class="field">
+              <label for="family-name">Family name</label>
+              <input type="text" id="family-name" maxlength="256" />
+            </div>
+            <div class="field">
+              <label for="middle-name">Middle name (optional)</label>
+              <input type="text" id="middle-name" maxlength="256" />
+            </div>
+            <div class="field">
+              <label for="nickname">Nickname (optional)</label>
+              <input type="text" id="nickname" maxlength="256" />
+            </div>
+          </div>
+
+          <div id="fields-email" class="form hidden">
+            <div class="field">
+              <label for="email">Email address</label>
+              <input type="email" id="email" maxlength="320" />
+            </div>
+          </div>
+
+          <div id="fields-phone" class="form hidden">
+            <div class="field">
+              <label for="phone-number">Phone number</label>
+              <input type="tel" id="phone-number" class="mono-input" maxlength="20" placeholder="+254712345678" />
+              <span class="help">International format with the country code, as in +254712345678.</span>
+            </div>
+          </div>
+
+          <div id="fields-domain" class="form hidden">
+            <div class="field">
+              <label for="domain">Domain name</label>
+              <input type="text" id="domain" class="mono-input" maxlength="253" placeholder="example.com" />
+              <span class="help">You will add a DNS TXT record to prove you control it.</span>
+            </div>
+          </div>
+
+          <div id="code-section" class="form hidden">
+            <div class="code-row">
+              <div class="field">
+                <label for="code">Verification code</label>
+                <input type="text" id="code" class="mono-input" maxlength="16" inputmode="numeric" />
+              </div>
+              <button type="button" class="btn" id="send-code-btn">
+                <span class="ico ico-mail" aria-hidden="true"></span>Send code
+              </button>
+              <button type="button" class="btn" id="verify-code-btn" disabled>
+                <span class="ico ico-check" aria-hidden="true"></span>Verify code
+              </button>
+            </div>
+            <span class="meta" id="code-status"></span>
+          </div>
+
+          <div class="field-error hidden" id="form-error"></div>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn" id="cancel-btn">Cancel</button>
+          <button type="submit" class="btn primary" id="create-btn">
+            <span class="ico ico-pen" aria-hidden="true"></span>Create and sign
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Share for attestation -->
+    <dialog class="modal" id="share-dialog" aria-labelledby="share-title">
+      <div class="modal-head">
+        <span class="ico ico-share" aria-hidden="true"></span>
+        <h2 id="share-title">Share for attestation</h2>
+        <button type="button" class="modal-close" id="share-close" aria-label="Close">
+          <span class="ico ico-x" aria-hidden="true"></span>
+        </button>
       </div>
-    </form>
+      <div class="modal-body">
+        <div class="summary" id="share-summary"></div>
+        <div class="field">
+          <label for="share-address">Attester's wallet address</label>
+          <input type="text" id="share-address" class="mono-input" placeholder="0x…" maxlength="64" />
+          <span class="help">The attester needs an account on the same identity service, under that wallet.</span>
+        </div>
+        <div class="field-error hidden" id="share-error"></div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn" id="share-cancel">Cancel</button>
+        <button type="button" class="btn primary" id="share-btn">
+          <span class="ico ico-share" aria-hidden="true"></span>Share
+        </button>
+      </div>
+    </dialog>
+
+    <!-- Import attestation -->
+    <dialog class="modal" id="import-dialog" aria-labelledby="import-title">
+      <div class="modal-head">
+        <span class="ico ico-import" aria-hidden="true"></span>
+        <h2 id="import-title">Import attestation</h2>
+        <button type="button" class="modal-close" id="import-close" aria-label="Close">
+          <span class="ico ico-x" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="summary" id="import-summary"></div>
+        <div class="field">
+          <label for="import-text">Attestation tree JSON</label>
+          <textarea id="import-text" placeholder="Paste the attestation tree JSON the attester sent you"></textarea>
+        </div>
+        <div class="file-row">
+          <span>Or choose the file</span>
+          <input type="file" id="import-file" accept=".json,application/json" aria-label="Attestation file" />
+        </div>
+        <div class="field-error hidden" id="import-error"></div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn" id="import-cancel">Cancel</button>
+        <button type="button" class="btn primary" id="import-btn">
+          <span class="ico ico-import" aria-hidden="true"></span>Import
+        </button>
+      </div>
+    </dialog>
+
+    <!-- Attest a shared claim -->
+    <dialog class="modal" id="attest-dialog" aria-labelledby="attest-title">
+      <div class="modal-head">
+        <span class="ico ico-shield" aria-hidden="true"></span>
+        <h2 id="attest-title">Attest this claim</h2>
+        <button type="button" class="modal-close" id="attest-close" aria-label="Close">
+          <span class="ico ico-x" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="summary" id="attest-summary"></div>
+        <div class="field">
+          <label for="attest-words">What you vouch for, in your words</label>
+          <input type="text" id="attest-words" maxlength="1200" />
+          <span class="help">Signed with your wallet and recorded on the identity service against this claim.</span>
+        </div>
+        <div class="field-error hidden" id="attest-error"></div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn" id="attest-cancel">Cancel</button>
+        <button type="button" class="btn primary" id="attest-btn">
+          <span class="ico ico-pen" aria-hidden="true"></span>Attest with my wallet
+        </button>
+      </div>
+    </dialog>
+
+    <!-- DNS record for a domain claim -->
+    <dialog class="modal" id="dns-dialog" aria-labelledby="dns-title">
+      <div class="modal-head">
+        <span class="ico ico-globe" aria-hidden="true"></span>
+        <h2 id="dns-title">DNS record</h2>
+        <button type="button" class="modal-close" id="dns-close" aria-label="Close">
+          <span class="ico ico-x" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="summary" id="dns-summary"></div>
+        <div class="form" id="dns-body"></div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn" id="dns-cancel">Close</button>
+        <button type="button" class="btn primary" id="dns-check-btn">
+          <span class="ico ico-check" aria-hidden="true"></span>Check DNS
+        </button>
+      </div>
+    </dialog>
+
+    <!-- Respond to a disclosure request -->
+    <dialog class="modal" id="request-dialog" aria-labelledby="request-title">
+      <div class="modal-head">
+        <span class="ico ico-chat" aria-hidden="true"></span>
+        <h2 id="request-title">Respond to a request</h2>
+        <button type="button" class="modal-close" id="request-close" aria-label="Close">
+          <span class="ico ico-x" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="field" id="request-box">
+          <label for="request-input">Disclosure request</label>
+          <textarea id="request-input" aria-label="Disclosure request JSON" placeholder='{"aqua":1,"need":["email"],"purpose":"…","nonce":"…"}'></textarea>
+          <span class="help">You choose in the sidebar which claims to release.</span>
+        </div>
+        <div class="field hidden" id="response-box">
+          <label for="response-output">Response</label>
+          <textarea id="response-output" aria-label="Disclosure response JSON" readonly></textarea>
+        </div>
+        <span class="meta" id="request-status"></span>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn" id="request-cancel">Cancel</button>
+        <button type="button" class="btn hidden" id="response-copy">
+          <span class="ico ico-copy" aria-hidden="true"></span>Copy response
+        </button>
+        <button type="button" class="btn primary" id="request-btn">
+          <span class="ico ico-check" aria-hidden="true"></span>Review request
+        </button>
+      </div>
+    </dialog>
+
+    <!-- Remove a claim -->
+    <dialog class="modal" id="remove-dialog" aria-labelledby="remove-title">
+      <div class="modal-head">
+        <span class="ico ico-trash" aria-hidden="true"></span>
+        <h2 id="remove-title">Remove this claim?</h2>
+        <button type="button" class="modal-close" id="remove-close" aria-label="Close">
+          <span class="ico ico-x" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="summary" id="remove-summary"></div>
+        <p class="meta">It is removed from this profile. The identity service keeps its copy.</p>
+        <div class="field-error hidden" id="remove-error"></div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn" id="remove-cancel">Cancel</button>
+        <button type="button" class="btn danger" id="remove-btn">
+          <span class="ico ico-trash" aria-hidden="true"></span>Remove
+        </button>
+      </div>
+    </dialog>
 
     <script src="scripts/identity.js"></script>
   </body>

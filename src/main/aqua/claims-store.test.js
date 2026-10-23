@@ -58,6 +58,17 @@ describe('claims store', () => {
     expect((await store.list()).map((c) => c.id)).toEqual(['claim-1']);
   });
 
+  test('removeAll drops every claim and leaves issued attestations alone', async () => {
+    const { store } = makeStore();
+    await store.upsert(record());
+    await store.upsert(record({ id: 'claim-2', type: 'email' }));
+    await store.addIssued({ id: 'a1', tree: { revisions: {} } });
+    expect(await store.removeAll()).toBe(2);
+    expect(await store.list()).toEqual([]);
+    expect(await store.listIssued()).toHaveLength(1);
+    expect(await store.removeAll()).toBe(0);
+  });
+
   test('a locked vault means no reads and no writes, and nothing is lost', async () => {
     const { store, state } = makeStore();
     await store.upsert(record());

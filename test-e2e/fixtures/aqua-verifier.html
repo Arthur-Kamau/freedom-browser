@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Aqua disclosure verifier example</title>
+    <style>
+      body { font-family: sans-serif; max-width: 720px; margin: 40px auto; }
+      pre { background: #eee; padding: 12px; overflow: auto; }
+      .ok { color: #137333; }
+      .bad { color: #b3261e; }
+    </style>
+  </head>
+  <body>
+    <h1>Order confirmation</h1>
+    <p>
+      This page asks the Freedom wallet for an email claim and a name (given name only), then verifies
+      what comes back. See <code>docs/aqua-disclosure.md</code>.
+    </p>
+    <button id="connect" type="button">Connect wallet</button>
+    <button id="request" type="button" disabled>Request identity</button>
+    <p id="status" data-state="idle">Not connected</p>
+    <ul id="claims"></ul>
+    <pre id="response" hidden></pre>
+    <script>
+      // Where to verify trees. The Aqua SDK's WASM verifier cannot run at
+      // v7.0.0 (inblockio/aqua-rs-sdk#214), so this example posts each tree
+      // to an identity service's stateless verify endpoint. A real site sets
+      // this to its own verifier; the e2e test points it at a local stub.
+      const VERIFY_URL =
+        new URLSearchParams(location.search).get('verify') ||
+        window.AQUA_VERIFY_URL ||
+        'https://dev.aquafire.inblock.io/api/widget/verify';
+      const NONCE = crypto.getRandomValues(new Uint8Array(8)).reduce((s, b) => s + b.toString(16).padStart(2, '0'), '');
+      const REQUEST = {
+        aqua: 1,
+        need: ['email', { type: 'name', fields: ['given_name'] }],
+        optional: ['domain'],
+        purpose: 'To send your order confirmation',
+        nonce: NONCE,
+      };
+      const status = document.getElementById('status');
+      const list = document.getElementById('claims');
+      const out = document.getElementById('response');
+      let account = null;
+
+      function setStatus(state, text) {
+        status.dataset.state = state;
+        status.textContent = text;
+        status.className = state === 'verified' ? 'ok' : state === 'failed' ? 'bad' : '';
+      }
+
+      /** A SelectiveTree whose entries are all Full is an ordinary tree again. */
+      function rebuild(selective) {
+        const revisions = {};
+        for (const [hash, entry] of Object.entries(selective.revisions)) {
+          if (entry.disclosure !== 'Full') return null;
+          revisions[hash] = entry.revision;
+        }
+        return { revisions, file_index: selective.file_index || {} };
+      }
+
+      async function verifyRemote(body) {
+        const res = await fetch(VERIFY_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+        if (!res.ok) throw new Error(`verifier answered ${res.status}`);
+        return res.json();
+      }
+      // A page may plug in its own verifier (the e2e test installs an
+      // in-page stand-in); the shape is the service endpoint's.
+      const verify = (body) => (window.AQUA_VERIFY || verifyRemote)(body);
+
+      /** The subject every disclosed object revision names, if any payload is visible. */
+      function subjectOf(selective) {
+        for (const entry of Object.values(selective.revisions)) {
+          if (entry.disclosure === 'Full' && entry.revision.payloads?.signer_did) return entry.revision.payloads.signer_did;
+          if (entry.disclosure === 'Redacted') {
+            const leaf = entry.redacted.leaves.find((l) => l.type === 'Disclosed' && l.path === '/payloads/signer_did');
+            if (leaf) return JSON.parse(leaf.value);
+          }
+        }
+        return null;
+      }
+
+      async function verifyResponse(response) {
+        if (response.nonce !== NONCE) throw new Error('nonce does not match the request');
+        const expected = `did:pkh:eip155:1:${account}`.toLowerCase();
+        if (String(response.subject).toLowerCase() !== expected) throw new Error('subject is not the connected wallet');
+        const results = [];
+        for (const released of response.claims) {
+          const subject = subjectOf(released.claim);
+          if (subject && subject.toLowerCase() !== expected) throw new Error(`${released.type}: claim is about someone else`);
+          const whole = rebuild(released.claim);
+          const verdict = whole
+            ? await verify({ kind: 'tree', main: whole, linked_trees: released.attestations })
+            : await verify({ kind: 'selective', main: released.claim });
+          if (!verdict.is_valid) throw new Error(`${released.type}: ${verdict.status}`);
+          let attested = 0;
+          for (const attestation of released.attestations) {
+            const a = await verify({ kind: 'tree', main: attestation, linked_trees: whole ? [whole] : [] });
+            if (a.is_valid) attested += 1;
+          }
+          results.push({ type: released.type, fields: released.fields, redacted: !whole, attested });
+        }
+        return results;
+      }
+
+      document.getElementById('connect').addEventListener('click', async () => {
+        try {
+          const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+          account = accounts[0];
+          document.getElementById('request').disabled = false;
+          setStatus('connected', `Connected ${account}`);
+        } catch (err) {
+          setStatus('failed', `Connect failed: ${err.message || err}`);
+        }
+      });
+
+      document.getElementById('request').addEventListener('click', async () => {
+        setStatus('pending', 'Waiting for the wallet…');
+        list.replaceChildren();
+        out.hidden = true;
+        try {
+          const response = await window.ethereum.request({ method: 'aqua_requestDisclosure', params: [REQUEST] });
+          out.textContent = JSON.stringify(response, null, 2);
+          out.hidden = false;
+          const results = await verifyResponse(response);
+          for (const r of results) {
+            const li = document.createElement('li');
+            li.dataset.type = r.type;
+            li.dataset.attested = String(r.attested);
+            li.textContent = `${r.type}: verified${r.redacted ? ' (fields ' + r.fields.join(', ') + ')' : ''}, attested by ${r.attested}`;
+            list.appendChild(li);
+          }
+          status.dataset.missing = (response.missing || []).join(',');
+          setStatus('verified', `Verified ${results.length} claim(s); missing: ${(response.missing || []).join(', ') || 'none'}`);
+        } catch (err) {
+          status.dataset.code = String(err?.code ?? '');
+          setStatus('failed', `Failed: ${err?.message || err}`);
+        }
+      });
+    </script>
+  </body>
+</html>

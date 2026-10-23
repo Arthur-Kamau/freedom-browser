@@ -163,6 +163,16 @@ function createClaimsStore({ dataDir, getSeed, isOwnDid }) {
       return true;
     },
 
+    /** Drop every claim of the user's own; issued attestations stay. Returns how many went. */
+    async removeAll() {
+      const state = await load();
+      const count = state.claims.length;
+      if (count === 0) return 0;
+      state.claims = [];
+      await save(state);
+      return count;
+    },
+
     // ── Attestations this profile issued for other people's claims ─────
     // Kept apart from `claims`: an attestation is about someone else's
     // subject, so it must never be listed as one of the user's own claims

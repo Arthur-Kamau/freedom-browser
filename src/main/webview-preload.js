@@ -1099,6 +1099,9 @@ contextBridge.exposeInMainWorld('freedomAPI', {
     ipcRenderer.invoke('aqua:claims:create', request)
   ),
   aquaRemoveClaim: guardInternal('aquaRemoveClaim', (id) => ipcRenderer.invoke('aqua:claims:remove', id)),
+  // Settings → Advanced → Identity: main shows the save dialog itself.
+  aquaExportAllClaims: guardInternal('aquaExportAllClaims', () => ipcRenderer.invoke('aqua:claims:export-all')),
+  aquaRemoveAllClaims: guardInternal('aquaRemoveAllClaims', () => ipcRenderer.invoke('aqua:claims:remove-all')),
   aquaRefreshClaim: guardInternal('aquaRefreshClaim', (id) =>
     ipcRenderer.invoke('aqua:claims:refresh', id)
   ),
@@ -1134,6 +1137,8 @@ contextBridge.exposeInMainWorld('freedomAPI', {
   aquaRespondToRequest: guardInternal('aquaRespondToRequest', (requestText) =>
     ipcRenderer.invoke('aqua:disclosure:manual', requestText)
   ),
+  // Opens the sidebar's unlock screen; resolves once the vault is open.
+  aquaUnlock: guardInternal('aquaUnlock', () => ipcRenderer.invoke('aqua:unlock')),
 
   // Token registry — used by the payments page to resolve asset
   // metadata (symbol, decimals) per chainId:address.
