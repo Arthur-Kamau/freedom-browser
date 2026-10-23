@@ -76,7 +76,7 @@ function validateClaimInput(type, fields = {}) {
     case 'phone': {
       const phone = text(fields.phone_number, 'phone_number', { required: true, max: 20 });
       if (!E164.test(phone)) {
-        throw new ClaimInputError('Phone number must be in international E.164 form, like +254712345678', 'phone_number');
+        throw new ClaimInputError('Phone number must be in international E.164 form: a plus sign, the country code, then the number', 'phone_number');
       }
       return {
         phone_number: phone,
