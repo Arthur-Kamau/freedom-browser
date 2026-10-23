@@ -20,6 +20,11 @@ const claimsCount = $('claims-count');
 const sharedCount = $('shared-count');
 const issuedCount = $('issued-count');
 const statusLock = $('status-lock');
+const serviceDown = $('service-down');
+const serviceDownText = $('service-down-text');
+const serviceRetryBtn = $('service-retry-btn');
+const serviceSettingsBtn = $('service-settings-btn');
+const SETTINGS_IDENTITY_URL = 'freedom://settings/identity';
 const lockedCard = $('locked-card');
 const lockedTitle = $('locked-title');
 const lockedText = $('locked-text');
@@ -488,7 +493,9 @@ async function loadStatus() {
   if (result.wallet?.address) parts.push(`Wallet ${result.wallet.address}`);
   parts.push(`Identity service ${result.nodeUrl}`);
   let caps = '';
-  if (result.service && result.service.reachable === false) caps = 'unreachable';
+  const down = Boolean(result.service && result.service.reachable === false);
+  showServiceDown(down, result.nodeUrl);
+  if (down) caps = 'unreachable';
   else if (!outOfBandVerification) caps = 'no email or phone verification on this service';
   if (caps) parts.push(caps);
   walletLine.textContent = parts.join(' · ');
@@ -501,6 +508,14 @@ async function loadStatus() {
   watchLock(locked);
   if (result.hasVault && result.vaultUnlocked && result.wallet && result.wallet.canSign === false) {
     showNotice('warn', 'A multi-owner account cannot sign identity claims. Switch to another wallet.');
+  }
+}
+
+// The service did not answer: one card, with the setting that changes it.
+function showServiceDown(down, nodeUrl) {
+  serviceDown.classList.toggle('hidden', !down);
+  if (down) {
+    serviceDownText.textContent = `Freedom could not reach ${nodeUrl || 'the identity service'}. Claims cannot be created, verified or shared until it answers. Change the service under Settings → Identity.`;
   }
 }
 
@@ -903,6 +918,17 @@ async function unlockWallet() {
   await Promise.all([loadClaims(), loadShared(), loadIssued()]);
 }
 unlockBtn.addEventListener('click', unlockWallet);
+serviceRetryBtn.addEventListener('click', () => {
+  serviceRetryBtn.disabled = true;
+  loadStatus()
+    .then(() => Promise.all([loadClaims(), loadShared(), loadIssued()]))
+    .finally(() => {
+      serviceRetryBtn.disabled = false;
+    });
+});
+serviceSettingsBtn.addEventListener('click', () => {
+  window.freedomAPI.openInNewTab?.(SETTINGS_IDENTITY_URL);
+});
 
 // An unlock made elsewhere (the sidebar's own prompts, a signing flow) is
 // not announced to pages, so while the vault is locked the page re-reads

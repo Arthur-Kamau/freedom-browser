@@ -98,6 +98,7 @@ const INTERNAL_CHANNELS = [
   'aqua:disclosure:manual',
   'aqua:issued:export',
   'aqua:issued:list',
+  'aqua:service:probe',
   'aqua:shared:attest',
   'aqua:shared:list',
   'aqua:status',

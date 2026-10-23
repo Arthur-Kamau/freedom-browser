@@ -2149,15 +2149,20 @@ swarmCacheSelect?.addEventListener('change', async () => {
   setSwarmCacheStatus(message);
 });
 
-// ── Identity (Advanced → Identity) ──────────────────────────────────────
-// The identity service address commits the way the profile name does: when
-// the field is left or Enter is hit, and only when it parses as an http(s)
-// URL, so a half-typed value never reaches the store. Export and Remove all
+// ── Identity ─────────────────────────────────────────────────────────────
+// The identity service address is read-only until Edit. Save asks main to
+// probe the address first — an Aqua identity service has to answer there —
+// and only then stores it, so a typo or a dead host is refused rather than
+// saved. (Settings apply on change elsewhere; this one needs the check, so
+// it keeps an explicit Save, like the item editors.) Export and Remove all
 // go through main, which owns the claims and the save dialog.
 const identityFields = {
   offNote: $('identity-off'),
   controls: $('identity-controls'),
   nodeUrl: $('aqua-node-url'),
+  nodeUrlEdit: $('aqua-node-url-edit'),
+  nodeUrlSave: $('aqua-node-url-save'),
+  nodeUrlCancel: $('aqua-node-url-cancel'),
   nodeUrlStatus: $('aqua-node-url-status'),
   exportBtn: $('aqua-claims-export'),
   removeAllBtn: $('aqua-claims-remove-all'),
@@ -2179,13 +2184,39 @@ const applyIdentityPanelState = () => {
   if (identityFields.controls) identityFields.controls.hidden = !on;
 };
 
-const commitNodeUrl = async () => {
+const claimsErrorText = (result, fallback) => {
+  const err = result?.error;
+  if (err?.code === 'VAULT_LOCKED') return 'Unlock your wallet first.';
+  return err?.message || fallback;
+};
+
+const setNodeUrlEditing = (editing) => {
+  const { nodeUrl, nodeUrlEdit, nodeUrlSave, nodeUrlCancel } = identityFields;
+  if (!nodeUrl) return;
+  nodeUrl.readOnly = !editing;
+  if (nodeUrlEdit) nodeUrlEdit.hidden = editing;
+  if (nodeUrlSave) nodeUrlSave.hidden = !editing;
+  if (nodeUrlCancel) nodeUrlCancel.hidden = !editing;
+};
+
+const startNodeUrlEdit = () => {
+  setIdentityStatus(identityFields.nodeUrlStatus, '', null);
+  setNodeUrlEditing(true);
+  identityFields.nodeUrl?.focus?.();
+};
+
+const cancelNodeUrlEdit = () => {
+  identityFields.nodeUrl.value = savedNodeUrl;
+  setIdentityStatus(identityFields.nodeUrlStatus, '', null);
+  setNodeUrlEditing(false);
+};
+
+const saveNodeUrl = async () => {
   const input = identityFields.nodeUrl;
   if (!input) return;
-  setIdentityStatus(identityFields.nodeUrlStatus, '', null);
   const value = input.value.trim().replace(/\/+$/, '');
   if (!value || value === savedNodeUrl) {
-    input.value = savedNodeUrl;
+    cancelNodeUrlEdit();
     return;
   }
   const protocol = (() => {
@@ -2199,35 +2230,55 @@ const commitNodeUrl = async () => {
     setIdentityStatus(identityFields.nodeUrlStatus, 'Enter the service address as a full http or https URL.', 'error');
     return;
   }
-  const ok = await freedomAPI.saveSettings({ aquaNodeUrl: value });
-  if (!ok) {
-    setIdentityStatus(identityFields.nodeUrlStatus, 'The identity service was not saved.', 'error');
-    return;
+  identityFields.nodeUrlSave.disabled = true;
+  setIdentityStatus(identityFields.nodeUrlStatus, `Checking ${value}…`, 'testing');
+  try {
+    const probe = await freedomAPI.aquaProbeService?.(value);
+    if (!probe?.success) {
+      setIdentityStatus(identityFields.nodeUrlStatus, claimsErrorText(probe, 'The service could not be checked.'), 'error');
+      return;
+    }
+    if (!probe.reachable) {
+      setIdentityStatus(identityFields.nodeUrlStatus, `Nothing answered at ${probe.url}. Check the address and that the service is up.`, 'error');
+      return;
+    }
+    if (!probe.compatible) {
+      setIdentityStatus(identityFields.nodeUrlStatus, `${probe.url} answered, but not as an Aqua identity service. Not saved.`, 'error');
+      return;
+    }
+    const ok = await freedomAPI.saveSettings({ aquaNodeUrl: probe.url });
+    if (!ok) {
+      setIdentityStatus(identityFields.nodeUrlStatus, 'The identity service was not saved.', 'error');
+      return;
+    }
+    savedNodeUrl = probe.url;
+    input.value = probe.url;
+    setNodeUrlEditing(false);
+    setIdentityStatus(
+      identityFields.nodeUrlStatus,
+      probe.outOfBandVerification
+        ? 'Saved. New claims use this service.'
+        : 'Saved. This service runs no email or phone verification, so only name and domain claims are offered.',
+      'success'
+    );
+  } finally {
+    identityFields.nodeUrlSave.disabled = false;
   }
-  savedNodeUrl = value;
-  input.value = value;
-  setIdentityStatus(identityFields.nodeUrlStatus, 'Saved. New claims use this service.', 'success');
 };
 
-identityFields.nodeUrl?.addEventListener('blur', () => {
-  commitNodeUrl();
-});
+identityFields.nodeUrlEdit?.addEventListener('click', startNodeUrlEdit);
+identityFields.nodeUrlSave?.addEventListener('click', saveNodeUrl);
+identityFields.nodeUrlCancel?.addEventListener('click', cancelNodeUrlEdit);
 identityFields.nodeUrl?.addEventListener('keydown', (event) => {
+  if (identityFields.nodeUrl.readOnly) return;
   if (event.key === 'Enter') {
     event.preventDefault();
-    identityFields.nodeUrl.blur();
+    saveNodeUrl();
   } else if (event.key === 'Escape') {
     event.preventDefault();
-    identityFields.nodeUrl.value = savedNodeUrl;
-    identityFields.nodeUrl.blur();
+    cancelNodeUrlEdit();
   }
 });
-
-const claimsErrorText = (result, fallback) => {
-  const err = result?.error;
-  if (err?.code === 'VAULT_LOCKED') return 'Unlock your wallet first.';
-  return err?.message || fallback;
-};
 
 identityFields.exportBtn?.addEventListener('click', async () => {
   identityFields.exportBtn.disabled = true;

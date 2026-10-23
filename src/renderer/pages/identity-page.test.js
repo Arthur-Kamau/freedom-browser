@@ -9,7 +9,7 @@ const HOSTILE = `"><img src=x onerror=alert(1) data-xss="1">'<b>&amp;`;
 const IDS = {
   'claims-list': 'div', 'claims-empty': 'div', 'shared-claims': 'div', 'issued-list': 'div',
   'status-wallet': 'span', 'status-service': 'span', 'status-caps': 'span', 'claims-count': 'span', 'shared-count': 'span', 'issued-count': 'span',
-  'status-lock': 'span', 'locked-card': 'div', 'locked-title': 'div', 'locked-text': 'div', 'unlock-btn': 'button', 'status-notice': 'div', 'wallet-line': 'p',
+  'status-lock': 'span', 'service-down': 'div', 'service-down-text': 'div', 'service-retry-btn': 'button', 'service-settings-btn': 'button', 'locked-card': 'div', 'locked-title': 'div', 'locked-text': 'div', 'unlock-btn': 'button', 'status-notice': 'div', 'wallet-line': 'p',
   'nav-claims': 'button', 'nav-attest': 'button', 'nav-issued': 'button', 'nav-requests': 'button', 'panel-claims': 'section', 'panel-attest': 'section', 'panel-issued': 'section', 'panel-requests': 'section',
   // Add a claim
   'add-claim-btn': 'button', 'add-claim-dialog': 'dialog', 'add-claim-close': 'button', 'claim-form': 'form', 'claim-kind': 'div',
@@ -57,6 +57,7 @@ function api(overrides = {}) {
     aquaExportIssued: jest.fn(async () => ({ success: true, json: '{"revisions":{}}' })),
     copyText: jest.fn(async () => true),
     aquaUnlock: jest.fn(async () => ({ success: true, unlocked: true })),
+    openInNewTab: jest.fn(),
     onAquaClaimsChanged: jest.fn(),
     ...overrides,
   };
@@ -126,6 +127,24 @@ describe('freedom://identity', () => {
     expect(page.elements['status-lock'].classList.contains('hidden')).toBe(true);
     expect(page.elements['claims-list'].children).toHaveLength(0);
     expect(page.elements['add-claim-btn'].disabled).toBe(true);
+  });
+
+  test('a service that does not answer is said once, with Try again and the way to Settings', async () => {
+    const freedomAPI = api({
+      aquaStatus: jest.fn(async () => ({ success: true, nodeUrl: 'https://down.test', wallet: { address: '0xabc' }, vaultUnlocked: true, hasVault: true, service: { reachable: false, serviceDid: null, outOfBandVerification: false } })),
+    });
+    const page = await run(freedomAPI);
+    expect(page.elements['service-down'].classList.contains('hidden')).toBe(false);
+    expect(page.elements['service-down-text'].textContent).toContain('https://down.test');
+    expect(page.elements['status-caps'].textContent).toBe('unreachable');
+    await page.elements['service-settings-btn'].fire('click');
+    expect(freedomAPI.openInNewTab).toHaveBeenCalledWith('freedom://settings/identity');
+    await page.elements['service-retry-btn'].fire('click');
+    await page.flush();
+    expect(freedomAPI.aquaStatus).toHaveBeenCalledTimes(2);
+
+    const up = await run(api());
+    expect(up.elements['service-down'].classList.contains('hidden')).toBe(true);
   });
 
   test('an unlocked wallet shows no lock anywhere and enables the actions', async () => {

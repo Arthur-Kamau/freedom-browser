@@ -336,6 +336,12 @@ describe('settings.html Advanced holds only the experiments (#275)', () => {
     expect(identity).toContain('Enable Identity &amp; Wallet under Advanced to use identity claims.');
     expect(rowLabels(identity)).toEqual(['Identity service', 'Export your claims', 'Remove your claims']);
     expect(identity).toContain('id="aqua-node-url"');
+    // Read-only until Edit; Save checks the service first, Cancel restores.
+    expect(identity).toMatch(/id="aqua-node-url"[^>]*\breadonly\b/);
+    expect(identity).toMatch(/<button type="button" class="btn" id="aqua-node-url-edit">Edit<\/button>/);
+    expect(identity).toMatch(/<button type="button" class="btn primary" id="aqua-node-url-save" hidden>Save<\/button>/);
+    expect(identity).toMatch(/<button type="button" class="btn" id="aqua-node-url-cancel" hidden>Cancel<\/button>/);
+    expect(SOURCE).toContain('freedomAPI.aquaProbeService?.(value)');
     // Remove all is destructive (#284): danger, filled light red, and it says its verb.
     expect(identity).toMatch(/<button type="button" class="btn danger filled" id="aqua-claims-remove-all">\s*Remove all\s*<\/button>/);
     expect(identity).toMatch(/<button type="button" class="btn" id="aqua-claims-export">\s*Export all\s*<\/button>/);

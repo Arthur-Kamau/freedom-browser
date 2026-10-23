@@ -270,7 +270,32 @@ function describeError(err) {
   return failure('ERROR', err?.message || String(err));
 }
 
-function registerAquaIpc({ createDeps = createAquaDeps, log = console } = {}) {
+/**
+ * Does an Aqua identity service answer at `url`? The same probe the status
+ * strip uses, against a throwaway client, so Settings can refuse an address
+ * before it is saved. `compatible` means /node/identity answered with a DID.
+ */
+// The probe never signs; the client only insists on having a signer.
+const neverSign = async () => {
+  throw new Error('The service probe does not sign');
+};
+
+async function probeService(url, createClient = (baseUrl) => createAquaClient({ baseUrl, signMessage: neverSign })) {
+  let parsed;
+  try {
+    parsed = new URL(String(url || ''));
+  } catch {
+    throw new ClaimInputError('Enter the service address as a full http or https URL', 'url');
+  }
+  if (!/^https?:$/.test(parsed.protocol)) {
+    throw new ClaimInputError('The service address must start with http:// or https://', 'url');
+  }
+  const baseUrl = parsed.toString().replace(/\/+$/, '');
+  const caps = await createClient(baseUrl).capabilities();
+  return { url: baseUrl, ...caps, compatible: caps.reachable === true && Boolean(caps.serviceDid) };
+}
+
+function registerAquaIpc({ createDeps = createAquaDeps, createProbeClient, log = console } = {}) {
   let deps = null;
 
   function current() {
@@ -300,6 +325,7 @@ function registerAquaIpc({ createDeps = createAquaDeps, log = console } = {}) {
     vaultUnlocked: await identityManager.isVaultUnlocked(),
     hasVault: await identityManager.hasVault(),
   }));
+  handle(IPC.AQUA_SERVICE_PROBE, (d, url) => probeService(url, createProbeClient));
   handle(IPC.AQUA_CLAIMS_LIST, async (d) => ({ claims: await d.service.listClaims() }));
   handle(IPC.AQUA_CLAIMS_CREATE, async (d, request) => ({ claim: await d.service.createClaim(request || {}) }), { mutates: true });
   handle(IPC.AQUA_CLAIMS_REMOVE, async (d, id) => ({ removed: await d.service.removeClaim(id) }), { mutates: true });
@@ -361,4 +387,4 @@ function registerAquaIpc({ createDeps = createAquaDeps, log = console } = {}) {
   return { current };
 }
 
-module.exports = { registerAquaIpc, createAquaDeps, configuredNodeUrl, addressOfDid, SIGN_REQUEST_TIMEOUT_MS, DISCLOSURE_REQUEST_TIMEOUT_MS };
+module.exports = { registerAquaIpc, probeService, createAquaDeps, configuredNodeUrl, addressOfDid, SIGN_REQUEST_TIMEOUT_MS, DISCLOSURE_REQUEST_TIMEOUT_MS };

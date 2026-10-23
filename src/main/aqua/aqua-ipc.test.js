@@ -18,7 +18,7 @@ const { ipcMain, dialog } = require('electron');
 const { loadSettings } = require('../settings-store');
 const { broadcastToAllWebContents } = require('../lib/broadcast-to-all-webcontents');
 const IPC = require('../../shared/ipc-channels');
-const { registerAquaIpc, createAquaDeps, addressOfDid, configuredNodeUrl } = require('./aqua-ipc');
+const { registerAquaIpc, createAquaDeps, addressOfDid, configuredNodeUrl, probeService } = require('./aqua-ipc');
 const { ClaimsStoreLocked } = require('./claims-store');
 const { ClaimInputError } = require('./claims-service');
 const { AquaServiceError } = require('./aqua-client');
@@ -175,6 +175,37 @@ describe('registerAquaIpc', () => {
 });
 
 describe('registerAquaIpc attestation channels', () => {
+  test('the service probe refuses a bad URL and reports what answers at a good one', async () => {
+    const deps = { nodeUrl: 'https://aqua.test', service: {}, settleSignature: jest.fn() };
+    const clients = [];
+    const createProbeClient = jest.fn((baseUrl) => {
+      clients.push(baseUrl);
+      return {
+        capabilities: async () =>
+          baseUrl === 'https://node.test'
+            ? { reachable: true, serviceDid: 'did:pkh:eip155:1:0xnode', outOfBandVerification: false }
+            : { reachable: false, serviceDid: null, outOfBandVerification: false },
+      };
+    });
+    registerAquaIpc({ createDeps: () => deps, createProbeClient, log: { error: () => {} } });
+    const { invoke } = handlers();
+    expect(await invoke(IPC.AQUA_SERVICE_PROBE, 'not a url')).toMatchObject({ success: false, error: { code: 'INVALID_INPUT' } });
+    expect(await invoke(IPC.AQUA_SERVICE_PROBE, 'ftp://node.test')).toMatchObject({ success: false, error: { code: 'INVALID_INPUT' } });
+    expect(createProbeClient).not.toHaveBeenCalled();
+    expect(await invoke(IPC.AQUA_SERVICE_PROBE, 'https://node.test/')).toEqual({
+      success: true, url: 'https://node.test', reachable: true, serviceDid: 'did:pkh:eip155:1:0xnode', outOfBandVerification: false, compatible: true,
+    });
+    expect(await invoke(IPC.AQUA_SERVICE_PROBE, 'https://down.test')).toMatchObject({ success: true, reachable: false, compatible: false });
+    expect(clients).toEqual(['https://node.test', 'https://down.test']);
+  });
+
+  test('the default probe builds a real client that needs no signer and reports a dead host as unreachable', async () => {
+    // Nothing listens on port 1; the connection is refused at once.
+    expect(await probeService('http://127.0.0.1:1')).toEqual({
+      url: 'http://127.0.0.1:1', reachable: false, serviceDid: null, outOfBandVerification: false, compatible: false,
+    });
+  });
+
   test('export-all writes the file the user picked and remove-all broadcasts', async () => {
     const fs = require('fs');
     const path = require('path');

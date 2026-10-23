@@ -600,6 +600,10 @@
       .empty.locked .btn {
         margin-top: 6px;
       }
+      .empty.locked .actions {
+        margin-top: 0;
+        justify-content: center;
+      }
 
       /* Forms */
       .form {
@@ -894,6 +898,22 @@
         </div>
 
         <div class="notice hidden" id="status-notice"></div>
+
+        <!-- The identity service did not answer: nothing on this page works
+             until it does, so say so once and offer the setting. -->
+        <div class="empty locked hidden" id="service-down">
+          <span class="ico ico-server" aria-hidden="true"></span>
+          <div class="empty-title">The identity service did not answer</div>
+          <div class="meta" id="service-down-text"></div>
+          <div class="actions">
+            <button type="button" class="btn" id="service-retry-btn">
+              <span class="ico ico-refresh" aria-hidden="true"></span>Try again
+            </button>
+            <button type="button" class="btn primary" id="service-settings-btn">
+              <span class="ico ico-server" aria-hidden="true"></span>Change identity service
+            </button>
+          </div>
+        </div>
 
         <!-- The one place the locked (or missing) wallet is said: the lists
              below stay empty until it opens. -->

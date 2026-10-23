@@ -835,8 +835,24 @@
         min-width: 280px;
       }
 
+      /* Wide enough for an address plus Save and Cancel while editing. */
+      .identity-service-control {
+        min-width: 440px;
+        justify-content: flex-end;
+      }
+
       .identity-service-control .rpc-input {
         font-family: var(--font-mono);
+        flex: 1;
+        min-width: 280px;
+      }
+
+      .identity-service-control .rpc-input[readonly] {
+        color: var(--text-muted);
+      }
+
+      .identity-service-control .btn[hidden] {
+        display: none;
       }
 
       /* The Identity page shows either its controls or the line that says
@@ -1908,8 +1924,8 @@
                 <div class="row-body">
                   <p class="row-label">Identity service</p>
                   <p class="row-help">
-                    The Aqua service that builds and attests your claims. Changing it does not move claims
-                    already made.
+                    The Aqua service that builds and attests your claims. A new address is saved only once
+                    a service answers there. Changing it does not move claims already made.
                   </p>
                 </div>
                 <div class="row-control identity-service-control">
@@ -1919,7 +1935,11 @@
                     class="rpc-input"
                     spellcheck="false"
                     placeholder="https://dev.aquafire.inblock.io"
+                    readonly
                   />
+                  <button type="button" class="btn" id="aqua-node-url-edit">Edit</button>
+                  <button type="button" class="btn primary" id="aqua-node-url-save" hidden>Save</button>
+                  <button type="button" class="btn" id="aqua-node-url-cancel" hidden>Cancel</button>
                 </div>
               </div>
             </div>
