@@ -77,6 +77,7 @@ const SURFACES = {
     '51-page-history',
     '52-page-profiles',
     '53-page-payments',
+    '54-page-identity',
   ],
   'settings sections': [
     '30-settings-profile',

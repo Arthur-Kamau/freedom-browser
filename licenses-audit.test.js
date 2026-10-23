@@ -204,6 +204,15 @@ const SRC_ASSETS = {
     auditName: 'chain and token marks',
     noticeMatch: /^Chain and token marks \(sidebar and wallet icons\)$/m,
   },
+  // The Aqua Protocol SDK compiled to WASM for the identity-claims worker
+  // (src/main/aqua/). Rebuilt from a pinned tag by scripts/build-aqua-wasm.sh;
+  // the directory's PROVENANCE names the commit and the build command.
+  'src/main/aqua/vendor/aqua-rs-sdk/': {
+    thirdParty: true,
+    label: 'aqua-rs-sdk',
+    auditName: 'aqua-rs-sdk',
+    noticeMatch: /^aqua-rs-sdk \(Aqua Protocol SDK, WASM build\)$/m,
+  },
 };
 
 const ALL_PLATFORMS = ['linux', 'mac', 'win'];

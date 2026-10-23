@@ -26,6 +26,7 @@ import { isSafeSigningBoardOpen } from './safe-signing.js';
 let dappSignScreen;
 let dappSignBackBtn;
 let dappSignSite;
+let dappSignAction;
 let dappSignMessage;
 let dappSignTypedDataSection;
 let dappSignTypedData;
@@ -50,6 +51,7 @@ export function initDappSign() {
   dappSignScreen = document.getElementById('sidebar-dapp-sign');
   dappSignBackBtn = document.getElementById('dapp-sign-back');
   dappSignSite = document.getElementById('dapp-sign-site');
+  dappSignAction = document.getElementById('dapp-sign-action');
   dappSignMessage = document.getElementById('dapp-sign-message');
   dappSignTypedDataSection = document.getElementById('dapp-sign-typed-data-section');
   dappSignTypedData = document.getElementById('dapp-sign-typed-data');
@@ -173,6 +175,60 @@ export async function showDappSignApproval(webview, permissionKey, method, param
       walletState.identityView?.classList.add('hidden');
       dappSignScreen?.classList.remove('hidden');
 
+      openSidebarPanel();
+    });
+  });
+}
+
+/**
+ * The same screen for a signature Freedom itself asks for: an identity
+ * claim's pre-image or the identity service's sign-in message
+ * (src/main/aqua/aqua-ipc.js). There is no site and no permission, so the
+ * origin line names the feature, the auto-approve checkbox is hidden (a
+ * first-party request is never auto-approved), and the signature still goes
+ * through `executeSign`, which mints the main-side confirmation token.
+ *
+ * @param {{ walletIndex: number, label: string, action: string, message: string, display?: string }} request
+ *   `message` is what the wallet signs (text, or `0x` hex for raw bytes);
+ *   `display` is what the user reads, when the two differ.
+ * @returns {Promise<string>} the signature; rejects with code 4001 on Reject.
+ */
+export async function showFirstPartySignApproval({ walletIndex, label, action, message, display }) {
+  assertNoSignatureInFlight();
+  if (!Number.isInteger(walletIndex) || walletIndex < 0) {
+    throw new Error('A first-party signature needs a wallet index');
+  }
+  return new Promise((resolve, reject) => {
+    assertNoSignatureInFlight();
+    const request = {
+      permissionKey: null,
+      walletIndex,
+      method: 'personal_sign',
+      params: [message],
+      resolve,
+      reject,
+      webview: null,
+      firstParty: true,
+    };
+    dappSignPending = request;
+    if (dappSignAutoApproveCheckbox) dappSignAutoApproveCheckbox.checked = false;
+    dappSignAutoApproveCheckbox?.closest('.auto-approve-checkbox')?.classList.add('hidden');
+    setDappSignCancelEnabled(true);
+
+    if (dappSignSite) dappSignSite.textContent = label;
+    if (dappSignAction) dappSignAction.textContent = action;
+    displayPersonalSignMessage([display || message]);
+    document.getElementById('dapp-sign-safe-note')?.classList.toggle('hidden', !isSafeAccount(walletIndex));
+
+    checkDappSignUnlockStatus().then(() => {
+      if (isSignatureInFlight()) {
+        if (dappSignPending === request) dappSignPending = null;
+        reject(signatureInFlightError());
+        return;
+      }
+      hideAllSubscreens();
+      walletState.identityView?.classList.add('hidden');
+      dappSignScreen?.classList.remove('hidden');
       openSidebarPanel();
     });
   });
@@ -363,7 +419,7 @@ async function approveDappSign() {
 
     const signature = await executeSign(method, params, walletIndex, permissionKey, webview);
 
-    if (autoApprove && permissionKey) {
+    if (autoApprove && permissionKey && !request.firstParty) {
       await window.dappPermissions.setSigningAutoApprove(permissionKey, true);
       console.log('[WalletUI] Signing auto-approve enabled for:', permissionKey);
     }
@@ -417,6 +473,8 @@ function rejectDappSign() {
 
 function closeDappSign() {
   dappSignScreen?.classList.add('hidden');
+  if (dappSignAction) dappSignAction.textContent = 'requests your signature';
+  dappSignAutoApproveCheckbox?.closest('.auto-approve-checkbox')?.classList.remove('hidden');
   // A Safe flow may still be showing the signing board (in-flow, not a
   // modal) — restoring the identity view under it would double-render.
   if (!isSafeSigningBoardOpen()) {

@@ -450,6 +450,7 @@ const INTERNAL_PAGES = [
   { name: 'history', url: 'freedom://history', file: '/pages/history.html' },
   { name: 'downloads', url: 'freedom://downloads', file: '/pages/downloads.html' },
   { name: 'payments', url: 'freedom://payments', file: '/pages/payments.html' },
+  { name: 'identity', url: 'freedom://identity', file: '/pages/identity.html' },
   { name: 'profiles', url: 'freedom://profiles', file: '/pages/profiles.html' },
   { name: 'links', url: 'freedom://links', file: '/pages/links.html' },
 ];

@@ -1593,6 +1593,16 @@
                     <span class="safe-pending-badge" id="safe-pending-count"></span>
                   </button>
 
+                  <!-- Identity claims live on freedom://identity; this is the deep link. -->
+                  <div class="recent-payments" id="identity-claims-link">
+                    <div class="recent-payments-header">
+                      <span class="recent-payments-title">Identity claims</span>
+                      <a href="#" class="recent-payments-link" id="identity-claims-manage"
+                        >Manage →</a
+                      >
+                    </div>
+                  </div>
+
                   <!-- Recent payments (5 most recent; full list at freedom://payments) -->
                   <div class="recent-payments">
                     <div class="recent-payments-header">
@@ -3013,7 +3023,7 @@
                 <!-- Origin info -->
                 <div class="dapp-sign-origin">
                   <div class="dapp-sign-site" id="dapp-sign-site">example.com</div>
-                  <div class="dapp-sign-action">requests your signature</div>
+                  <div class="dapp-sign-action" id="dapp-sign-action">requests your signature</div>
                 </div>
 
                 <!-- Message display -->

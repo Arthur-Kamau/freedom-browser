@@ -19,6 +19,7 @@ import { initRpcSettings } from './wallet/rpc-settings.js';
 import { initDappConnect, showDappConnect, updateConnectionBanner } from './wallet/dapp-connect.js';
 import { initDappTx, showDappTxApproval } from './wallet/dapp-tx.js';
 import { initDappSign, showDappSignApproval } from './wallet/dapp-sign.js';
+import { initAquaSign } from './wallet/aqua-sign.js';
 import { initDappX402, updateX402ConnectionBanner } from './wallet/dapp-x402.js';
 import { initRecentPayments, refreshRecentPayments } from './wallet/recent-payments.js';
 import { initSend, openSend, closeSend } from './wallet/send.js';
@@ -97,6 +98,7 @@ export function initWalletUi() {
   initDappX402();
   initRecentPayments();
   initDappSign();
+  initAquaSign(); // after initDappSign — shares its screen
   initSend();
   initExportMnemonic(switchTab);
   initWalletSelector(openCreateWallet, openConnectLedger, openConnectPhone, openCreateSafe);

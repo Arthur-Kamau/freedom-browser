@@ -10,6 +10,7 @@ module.exports = [
       'coverage/**',
       'node_modules/**',
       'src/renderer/vendor/**',
+      'src/main/aqua/vendor/**',
       'ant-bin/**',
       'ipfs-bin/**',
       'ant-data/**',

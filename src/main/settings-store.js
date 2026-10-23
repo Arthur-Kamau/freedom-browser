@@ -34,6 +34,11 @@ const REMOVED_KEYS = new Set(['enableRadicleIntegration', 'antNodeMode', 'beeNod
 const DEFAULT_SETTINGS = {
   theme: 'system',
   enableIdentityWallet: true,
+  // The Aqua identity service that builds, stores and attests identity
+  // claims (freedom://identity). An aquafier-rs instance, which also serves
+  // the shared /node/* API. Overridable per profile; FREEDOM_AQUA_NODE_URL
+  // wins for tests and development.
+  aquaNodeUrl: 'https://dev.aquafire.inblock.io',
   startAntAtLaunch: true,
   // Bee's `swap-enable` for the bundled Swarm node (#488): pay peers with
   // cheques from the node's chequebook, which lifts downloads past the free

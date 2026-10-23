@@ -119,6 +119,12 @@ DOMPurify (HTML sanitizer)
   Copyright (c) Cure53 and other contributors
   https://github.com/cure53/DOMPurify
 
+aqua-rs-sdk (Aqua Protocol SDK, WASM build)
+  License: Apache-2.0
+  Copyright (c) 2024-2026 inblock.io assets GmbH
+  https://github.com/inblockio/aqua-rs-sdk
+  Compiled to WebAssembly from tag v7.0.0 (src/main/aqua/vendor/aqua-rs-sdk/PROVENANCE)
+
 == Framework ==
 
 Electron
