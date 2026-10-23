@@ -128,11 +128,12 @@ describe('freedom://identity', () => {
     expect(page.elements['add-claim-btn'].disabled).toBe(true);
   });
 
-  test('an unlocked wallet shows no lock anywhere', async () => {
+  test('an unlocked wallet shows no lock anywhere and enables the actions', async () => {
     const page = await run(api());
     expect(page.elements['locked-card'].classList.contains('hidden')).toBe(true);
     expect(page.elements['status-lock'].classList.contains('hidden')).toBe(true);
-    expect(page.elements['add-claim-btn'].disabled).toBeFalsy();
+    expect(page.elements['add-claim-btn'].disabled).toBe(false);
+    expect(page.elements['request-open-btn'].disabled).toBe(false);
   });
 
   test('renders a claim with hostile payload as text and labels it Self-signed, never verified', async () => {

@@ -110,7 +110,7 @@ describe('settings.html section headings match their nav label (#276)', () => {
   test('every nav entry carries exactly one page heading, and it is the nav label', () => {
     const titles = entryTitles();
     const items = navItems();
-    expect(items.length).toBe(10);
+    expect(items.length).toBe(11);
     // One `<h2>` per entry however many panels it owns (#268) — a second
     // would put two page headings on one route.
     const mismatches = items
@@ -329,15 +329,19 @@ describe('settings.html Advanced holds only the experiments (#275)', () => {
     expect(SOURCE).not.toContain('(Beta)</span>');
   });
 
-  test("the Identity panel sits under Advanced with its switch while the feature is Beta", () => {
+  test('Identity is its own entry below Nodes; its Beta switch stays under Advanced', () => {
     const identity = section('identity');
-    expect(SOURCE).toMatch(/<section class="section panel" id="identity" data-nav="advanced">/);
-    expect(SOURCE).toContain('identityFields.panel.hidden = true');
-    expect(rowLabels(identity)).toEqual(['Identity service', 'Your claims']);
+    expect(SOURCE).toMatch(/<section class="section" id="identity" data-nav="identity">/);
+    expect(identity).toMatch(/<h2 class="section-title">Identity<\/h2>/);
+    expect(identity).toContain('Enable Identity &amp; Wallet under Advanced to use identity claims.');
+    expect(rowLabels(identity)).toEqual(['Identity service', 'Export your claims', 'Remove your claims']);
     expect(identity).toContain('id="aqua-node-url"');
-    // Remove all is destructive (#284): outlined danger, and it says its verb.
-    expect(identity).toMatch(/<button type="button" class="btn danger" id="aqua-claims-remove-all">\s*Remove all\s*<\/button>/);
+    // Remove all is destructive (#284): danger, filled light red, and it says its verb.
+    expect(identity).toMatch(/<button type="button" class="btn danger filled" id="aqua-claims-remove-all">\s*Remove all\s*<\/button>/);
     expect(identity).toMatch(/<button type="button" class="btn" id="aqua-claims-export">\s*Export all\s*<\/button>/);
+    // The nav lists it right after Nodes.
+    const targets = [...SOURCE.matchAll(/class="nav-item" data-target="([a-z]+)"/g)].map(([, t]) => t);
+    expect(targets.indexOf('identity')).toBe(targets.indexOf('nodes') + 1);
   });
 
   test('the three rows that were not experiments moved where they belong', () => {

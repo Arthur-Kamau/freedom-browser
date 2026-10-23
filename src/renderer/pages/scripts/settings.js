@@ -2155,7 +2155,8 @@ swarmCacheSelect?.addEventListener('change', async () => {
 // URL, so a half-typed value never reaches the store. Export and Remove all
 // go through main, which owns the claims and the save dialog.
 const identityFields = {
-  panel: $('identity'),
+  offNote: $('identity-off'),
+  controls: $('identity-controls'),
   nodeUrl: $('aqua-node-url'),
   nodeUrlStatus: $('aqua-node-url-status'),
   exportBtn: $('aqua-claims-export'),
@@ -2163,9 +2164,6 @@ const identityFields = {
   status: $('aqua-claims-status'),
 };
 let savedNodeUrl = '';
-// Hidden until the settings say the switch is on; the markup reader tests
-// want the tag's attributes to end at `data-nav`, so this is set here.
-if (identityFields.panel) identityFields.panel.hidden = true;
 
 const setIdentityStatus = (el, text, kind) => {
   if (!el) return;
@@ -2173,8 +2171,12 @@ const setIdentityStatus = (el, text, kind) => {
   el.className = kind ? `rpc-status ${kind}` : 'rpc-status';
 };
 
+// The entry is always in the nav; while the Beta switch is off the page
+// says where to turn it on instead of showing controls that would fail.
 const applyIdentityPanelState = () => {
-  if (identityFields.panel) identityFields.panel.hidden = !fields.enableIdentity.checked;
+  const on = fields.enableIdentity.checked;
+  if (identityFields.offNote) identityFields.offNote.hidden = on;
+  if (identityFields.controls) identityFields.controls.hidden = !on;
 };
 
 const commitNodeUrl = async () => {

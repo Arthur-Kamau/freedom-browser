@@ -26,7 +26,7 @@ happening again.
 ## 2. Where it goes
 
 Place a setting by **what the user is trying to do**, not by the subsystem that
-implements it. Settings has ten entries, and a new setting joins one of them:
+implements it. Settings has eleven entries, and a new setting joins one of them:
 
 | Entry                    | Holds                                                                                                                                                                            | Doesn't hold                                               |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -38,6 +38,7 @@ implements it. Settings has ten entries, and a new setting joins one of them:
 | **Privacy and security** | What sites may do and what gets blocked: content blocking, site permissions, popups, per-site exceptions                                                                         | Which network or node serves the content (Networks, Nodes) |
 | **Networks**             | How Freedom reaches blockchains and resolves names: chains, RPC providers and keys, name resolution, verification. Per-chain options go in the chain's detail (`#networks/<id>`) | Running a node (Nodes)                                     |
 | **Nodes**                | The bundled services (Swarm, IPFS, Radicle, Ethereum and Gnosis nodes, Tor): mode, endpoint, whether each one starts with Freedom                                                | A protocol's network or chain choices (Networks)           |
+| **Identity**             | The identity service behind `freedom://identity` and the claims kept in this profile (export, remove). Beta: its switch stays in Advanced                                           | Wallet controls (the sidebar)                              |
 | **Advanced**             | Below the rule. Beta features and power-user controls                                                                                                                            | Anything finished. It is a waiting room, not a home        |
 | **About Freedom**        | Version, updates, licences, links                                                                                                                                                |                                                            |
 

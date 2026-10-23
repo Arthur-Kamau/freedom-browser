@@ -839,14 +839,27 @@
         font-family: var(--font-mono);
       }
 
-      .identity-claims-actions {
-        display: flex;
-        gap: 8px;
+      /* The Identity page shows either its controls or the line that says
+         where the Beta switch is; the page has no `.hidden` class, so these
+         go by the attribute like the other gated blocks. */
+      #identity-off[hidden],
+      #identity-controls[hidden] {
+        display: none;
       }
 
-      /* The Identity panel exists only while its Beta switch is on. */
-      .section.panel[hidden] {
-        display: none;
+      /* Remove all on the Identity page: a light red fill, so the one
+         destructive control on the page reads as such at a glance. */
+      .btn.danger.filled {
+        background: var(--danger-bg);
+        border-color: var(--danger);
+        /* Red text on the red tint over the dark card reads 4.2:1; the
+           page's strong text clears the bar on either palette. */
+        color: var(--text-strong);
+      }
+
+      .btn.danger.filled:hover:not(:disabled) {
+        background: var(--danger-bg);
+        color: var(--danger);
       }
 
       .profile-node {
@@ -1246,6 +1259,22 @@
               <line x1="6" y1="18" x2="6.01" y2="18"></line>
             </svg>
             Nodes
+          </button>
+          <button type="button" class="nav-item" data-target="identity">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            Identity
           </button>
           <div class="nav-rule" role="separator"></div>
           <button type="button" class="nav-item" data-target="advanced">
@@ -1860,6 +1889,65 @@
           </div>
         </section>
 
+        <!-- Identity (Beta): the service behind freedom://identity and the
+             claims it keeps in this profile. Its own entry, added at the
+             maintainer's request; the switch that turns the feature on stays
+             under Advanced, and this page says so while it is off. -->
+        <section class="section" id="identity" data-nav="identity">
+          <h2 class="section-title">Identity</h2>
+          <div class="card" id="identity-off" hidden>
+            <div class="row">
+              <div class="row-body">
+                <p class="row-help">Enable Identity &amp; Wallet under Advanced to use identity claims.</p>
+              </div>
+            </div>
+          </div>
+          <div id="identity-controls">
+            <div class="card">
+              <div class="row">
+                <div class="row-body">
+                  <p class="row-label">Identity service</p>
+                  <p class="row-help">
+                    The Aqua service that builds and attests your claims. Changing it does not move claims
+                    already made.
+                  </p>
+                </div>
+                <div class="row-control identity-service-control">
+                  <input
+                    type="url"
+                    id="aqua-node-url"
+                    class="rpc-input"
+                    spellcheck="false"
+                    placeholder="https://dev.aquafire.inblock.io"
+                  />
+                </div>
+              </div>
+            </div>
+            <p class="rpc-status" id="aqua-node-url-status"></p>
+            <div class="card">
+              <div class="row">
+                <div class="row-body">
+                  <p class="row-label">Export your claims</p>
+                  <p class="row-help">Every claim with its attestations, as one JSON file.</p>
+                </div>
+                <div class="row-control">
+                  <button type="button" class="btn" id="aqua-claims-export">Export all</button>
+                </div>
+              </div>
+              <div class="row">
+                <div class="row-body">
+                  <p class="row-label">Remove your claims</p>
+                  <p class="row-help">Removes every claim from this profile. The identity service keeps its copies.</p>
+                </div>
+                <div class="row-control">
+                  <button type="button" class="btn danger filled" id="aqua-claims-remove-all">Remove all</button>
+                </div>
+              </div>
+            </div>
+            <p class="rpc-status" id="aqua-claims-status"></p>
+          </div>
+        </section>
+
         <!-- Advanced (was Experimental): the Beta features. -->
         <section class="section" id="experimental" data-nav="advanced">
           <h2 class="section-title">Advanced</h2>
@@ -1896,49 +1984,6 @@
                 </label>
               </div>
             </div>
-          </div>
-        </section>
-
-        <!-- Identity (Beta): the service behind freedom://identity and the
-             claims it keeps in this profile. Under Advanced with its switch
-             while the feature is Beta (settings-placement §3); shown only
-             while that switch is on. -->
-        <section class="section panel" id="identity" data-nav="advanced">
-          <h3 class="panel-title">Identity</h3>
-          <div class="card">
-            <div class="row">
-              <div class="row-body">
-                <p class="row-label">Identity service</p>
-                <p class="row-help">
-                  The Aqua service that builds and attests your claims. Changing it does not move claims
-                  already made.
-                </p>
-              </div>
-              <div class="row-control identity-service-control">
-                <input
-                  type="url"
-                  id="aqua-node-url"
-                  class="rpc-input"
-                  spellcheck="false"
-                  placeholder="https://dev.aquafire.inblock.io"
-                />
-              </div>
-            </div>
-            <p class="rpc-status" id="aqua-node-url-status"></p>
-            <div class="row">
-              <div class="row-body">
-                <p class="row-label">Your claims</p>
-                <p class="row-help">
-                  Export every claim with its attestations as one JSON file, or remove them all from this
-                  profile. The identity service keeps its copies.
-                </p>
-              </div>
-              <div class="row-control identity-claims-actions">
-                <button type="button" class="btn" id="aqua-claims-export">Export all</button>
-                <button type="button" class="btn danger" id="aqua-claims-remove-all">Remove all</button>
-              </div>
-            </div>
-            <p class="rpc-status" id="aqua-claims-status"></p>
           </div>
         </section>
 

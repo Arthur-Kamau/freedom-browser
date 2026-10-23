@@ -505,7 +505,9 @@ async function loadStatus() {
 }
 
 // The one place a missing or locked wallet is said. While it is, the lists
-// stay empty and the actions that need the vault are disabled.
+// stay empty and the actions that need the vault are disabled. They start
+// disabled in the markup, so nothing is clickable before the first status
+// answer either.
 function showLocked(missing, locked) {
   const blocked = missing || locked;
   lockedCard.classList.toggle('hidden', !blocked);
