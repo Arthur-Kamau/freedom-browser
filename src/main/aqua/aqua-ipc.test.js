@@ -1,6 +1,7 @@
 jest.mock('electron', () => ({
   ipcMain: { handle: jest.fn(), on: jest.fn() },
   BrowserWindow: { getFocusedWindow: jest.fn(() => null), getAllWindows: jest.fn(() => []) },
+  dialog: { showSaveDialog: jest.fn(async () => ({ canceled: true })) },
 }));
 jest.mock('../settings-store', () => ({ loadSettings: jest.fn(() => ({ enableIdentityWallet: true, aquaNodeUrl: 'https://aqua.test' })) }));
 jest.mock('../lib/broadcast-to-all-webcontents', () => ({ broadcastToAllWebContents: jest.fn() }));
@@ -13,7 +14,7 @@ jest.mock('../identity-manager', () => ({
   loadIdentityModule: jest.fn(() => ({ getMnemonic: () => 'm', getSeed: () => Buffer.alloc(64, 1) })),
 }));
 
-const { ipcMain } = require('electron');
+const { ipcMain, dialog } = require('electron');
 const { loadSettings } = require('../settings-store');
 const { broadcastToAllWebContents } = require('../lib/broadcast-to-all-webcontents');
 const IPC = require('../../shared/ipc-channels');
@@ -123,6 +124,7 @@ describe('registerAquaIpc', () => {
     for (const channel of [
       IPC.AQUA_STATUS, IPC.AQUA_CLAIMS_LIST, IPC.AQUA_CLAIMS_CREATE, IPC.AQUA_CLAIMS_REMOVE, IPC.AQUA_CLAIMS_REFRESH,
       IPC.AQUA_CLAIMS_SEND_CODE, IPC.AQUA_CLAIMS_VERIFY_CODE, IPC.AQUA_CLAIMS_DNS_INSTRUCTIONS, IPC.AQUA_CLAIMS_VERIFY_DNS,
+      IPC.AQUA_CLAIMS_EXPORT_ALL, IPC.AQUA_CLAIMS_REMOVE_ALL,
     ]) {
       expect(ipcMain.handle).toHaveBeenCalledWith(channel, expect.any(Function));
     }
@@ -173,6 +175,28 @@ describe('registerAquaIpc', () => {
 });
 
 describe('registerAquaIpc attestation channels', () => {
+  test('export-all writes the file the user picked and remove-all broadcasts', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    const service = {
+      exportAll: jest.fn(async () => JSON.stringify({ claims: [{ id: 'c1' }, { id: 'c2' }] })),
+      removeAllClaims: jest.fn(async () => 2),
+    };
+    registerAquaIpc({ createDeps: () => ({ nodeUrl: 'https://aqua.test', service, settleSignature: jest.fn() }), log: { error: () => {} } });
+    const { invoke } = handlers();
+    // Cancelled: nothing written, and the count still comes back.
+    expect(await invoke(IPC.AQUA_CLAIMS_EXPORT_ALL)).toEqual({ success: true, canceled: true, count: 2 });
+    expect(broadcastToAllWebContents).not.toHaveBeenCalled();
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aqua-export-')), 'claims.json');
+    dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: file });
+    expect(await invoke(IPC.AQUA_CLAIMS_EXPORT_ALL)).toEqual({ success: true, saved: true, path: file, count: 2 });
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).claims).toHaveLength(2);
+    expect(dialog.showSaveDialog.mock.calls[1][1].defaultPath).toMatch(/^freedom-identity-claims-\d{4}-\d{2}-\d{2}\.json$/);
+    expect(await invoke(IPC.AQUA_CLAIMS_REMOVE_ALL)).toEqual({ success: true, removed: 2 });
+    expect(broadcastToAllWebContents).toHaveBeenCalledWith(IPC.AQUA_CLAIMS_CHANGED, {});
+  });
+
   test('owner and attester channels are registered and broadcast on mutation', async () => {
     const service = {
       shareForAttestation: jest.fn(async () => ({ id: 'c1', shares: [{}] })),

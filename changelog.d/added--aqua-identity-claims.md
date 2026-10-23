@@ -4,3 +4,4 @@
   - A claim you alone have signed is shown as Self-signed, never as verified; the service you use is a per-profile setting (`aquaNodeUrl`) and defaults to dev.aquafire.inblock.io
   - Attestation by another person: share a claim with their wallet on the identity service, they attest it under "Attest for someone else" with their own wallet and words, and hand the attestation back as a file or pasted JSON that Freedom verifies against the claim and lists with the attester's DID; attestations the service itself issued are pulled and verified directly
   - A service without email or phone verification (a bare Aqua node) is detected and those claim kinds are withheld rather than failing later
+  - Settings → Advanced → Identity holds the identity service address, and Export all / Remove all for the claims kept in this profile

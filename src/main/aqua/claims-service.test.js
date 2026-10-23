@@ -340,6 +340,18 @@ describe('attestation: attester side', () => {
     expect(JSON.parse(await service.exportIssued(issued.id))).toEqual(PEER);
   });
 
+  test('exportAll is one JSON document holding every stored claim record', async () => {
+    const { service, store } = setup();
+    expect(await service.exportAll()).toContain('"claims": []');
+    await store.upsert({ id: 'c1', type: 'name', signerDid: DID, tree: FIXTURE, attestations: [], payload: { given_name: 'P' } });
+    const doc = JSON.parse(await service.exportAll());
+    expect(doc).toMatchObject({ format: 'freedom-identity-claims', version: 1, nodeUrl: 'https://aqua.test', exportedAt: '2026-10-22T12:00:00.000Z' });
+    expect(doc.claims).toHaveLength(1);
+    expect(doc.claims[0].tree).toEqual(FIXTURE);
+    expect(await service.removeAllClaims()).toBe(1);
+    expect(await store.list()).toEqual([]);
+  });
+
   test('AS-REQ-0020: a claim the service does not show as shared with this wallet is not attested', async () => {
     const { service, client, signer } = attesterSetup();
     await expect(service.attestSharedClaim({ contractHash: 'h1', tip: '0x1620' + 'ab'.repeat(32), context: 'x' })).rejects.toThrow('not shared with this wallet');

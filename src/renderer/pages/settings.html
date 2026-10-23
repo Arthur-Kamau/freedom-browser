@@ -827,11 +827,26 @@
         text-decoration: underline;
       }
 
-      .profile-name-control {
+      .profile-name-control,
+      .identity-service-control {
         display: flex;
         align-items: center;
         gap: 8px;
         min-width: 280px;
+      }
+
+      .identity-service-control .rpc-input {
+        font-family: var(--font-mono);
+      }
+
+      .identity-claims-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      /* The Identity panel exists only while its Beta switch is on. */
+      .section.panel[hidden] {
+        display: none;
       }
 
       .profile-node {
@@ -1881,6 +1896,49 @@
                 </label>
               </div>
             </div>
+          </div>
+        </section>
+
+        <!-- Identity (Beta): the service behind freedom://identity and the
+             claims it keeps in this profile. Under Advanced with its switch
+             while the feature is Beta (settings-placement §3); shown only
+             while that switch is on. -->
+        <section class="section panel" id="identity" data-nav="advanced">
+          <h3 class="panel-title">Identity</h3>
+          <div class="card">
+            <div class="row">
+              <div class="row-body">
+                <p class="row-label">Identity service</p>
+                <p class="row-help">
+                  The Aqua service that builds and attests your claims. Changing it does not move claims
+                  already made.
+                </p>
+              </div>
+              <div class="row-control identity-service-control">
+                <input
+                  type="url"
+                  id="aqua-node-url"
+                  class="rpc-input"
+                  spellcheck="false"
+                  placeholder="https://dev.aquafire.inblock.io"
+                />
+              </div>
+            </div>
+            <p class="rpc-status" id="aqua-node-url-status"></p>
+            <div class="row">
+              <div class="row-body">
+                <p class="row-label">Your claims</p>
+                <p class="row-help">
+                  Export every claim with its attestations as one JSON file, or remove them all from this
+                  profile. The identity service keeps its copies.
+                </p>
+              </div>
+              <div class="row-control identity-claims-actions">
+                <button type="button" class="btn" id="aqua-claims-export">Export all</button>
+                <button type="button" class="btn danger" id="aqua-claims-remove-all">Remove all</button>
+              </div>
+            </div>
+            <p class="rpc-status" id="aqua-claims-status"></p>
           </div>
         </section>
 

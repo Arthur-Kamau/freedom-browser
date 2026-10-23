@@ -12,7 +12,8 @@
  * as INTERNAL.
  */
 const crypto = require('crypto');
-const { ipcMain, BrowserWindow } = require('electron');
+const fs = require('fs');
+const { ipcMain, BrowserWindow, dialog } = require('electron');
 const IPC = require('../../shared/ipc-channels');
 const { success, failure } = require('../ipc-contract');
 const identityManager = require('../identity-manager');
@@ -302,6 +303,20 @@ function registerAquaIpc({ createDeps = createAquaDeps, log = console } = {}) {
   handle(IPC.AQUA_CLAIMS_LIST, async (d) => ({ claims: await d.service.listClaims() }));
   handle(IPC.AQUA_CLAIMS_CREATE, async (d, request) => ({ claim: await d.service.createClaim(request || {}) }), { mutates: true });
   handle(IPC.AQUA_CLAIMS_REMOVE, async (d, id) => ({ removed: await d.service.removeClaim(id) }), { mutates: true });
+  // The user picks where the file goes; nothing is written on cancel. The
+  // JSON is built before the dialog so a locked store refuses first.
+  handle(IPC.AQUA_CLAIMS_EXPORT_ALL, async (d) => {
+    const json = await d.service.exportAll();
+    const count = JSON.parse(json).claims.length;
+    const result = await dialog.showSaveDialog(targetWindow() || undefined, {
+      defaultPath: `freedom-identity-claims-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePath) return { canceled: true, count };
+    fs.writeFileSync(result.filePath, json, { mode: 0o600 });
+    return { saved: true, path: result.filePath, count };
+  });
+  handle(IPC.AQUA_CLAIMS_REMOVE_ALL, async (d) => ({ removed: await d.service.removeAllClaims() }), { mutates: true });
   handle(IPC.AQUA_CLAIMS_REFRESH, async (d, id) => ({ claim: await d.service.refreshClaim(id) }), { mutates: true });
   handle(IPC.AQUA_CLAIMS_SEND_CODE, (d, request) => d.service.sendCode(request || {}));
   handle(IPC.AQUA_CLAIMS_VERIFY_CODE, (d, request) => d.service.verifyCode(request || {}));

@@ -1679,6 +1679,11 @@ const applyFormState = (settings) => {
   fields.enableTor.checked = settings.enableTorIntegration === true;
   fields.startTor.checked = settings.startTorAtLaunch === true;
   fields.enableIdentity.checked = settings.enableIdentityWallet === true;
+  if (identityFields.nodeUrl !== document.activeElement) {
+    savedNodeUrl = settings.aquaNodeUrl || '';
+    identityFields.nodeUrl.value = savedNodeUrl;
+  }
+  applyIdentityPanelState();
   fields.showIpfsProgressStatus.checked = settings.showIpfsProgressStatus === true;
   fields.autoUpdate.checked = settings.autoUpdate !== false;
   fields.unverifiedEnsAction.value = settings.blockUnverifiedEns === false ? 'open' : 'ask';
@@ -2144,6 +2149,118 @@ swarmCacheSelect?.addEventListener('change', async () => {
   setSwarmCacheStatus(message);
 });
 
+// ── Identity (Advanced → Identity) ──────────────────────────────────────
+// The identity service address commits the way the profile name does: when
+// the field is left or Enter is hit, and only when it parses as an http(s)
+// URL, so a half-typed value never reaches the store. Export and Remove all
+// go through main, which owns the claims and the save dialog.
+const identityFields = {
+  panel: $('identity'),
+  nodeUrl: $('aqua-node-url'),
+  nodeUrlStatus: $('aqua-node-url-status'),
+  exportBtn: $('aqua-claims-export'),
+  removeAllBtn: $('aqua-claims-remove-all'),
+  status: $('aqua-claims-status'),
+};
+let savedNodeUrl = '';
+// Hidden until the settings say the switch is on; the markup reader tests
+// want the tag's attributes to end at `data-nav`, so this is set here.
+if (identityFields.panel) identityFields.panel.hidden = true;
+
+const setIdentityStatus = (el, text, kind) => {
+  if (!el) return;
+  el.textContent = text || '';
+  el.className = kind ? `rpc-status ${kind}` : 'rpc-status';
+};
+
+const applyIdentityPanelState = () => {
+  if (identityFields.panel) identityFields.panel.hidden = !fields.enableIdentity.checked;
+};
+
+const commitNodeUrl = async () => {
+  const input = identityFields.nodeUrl;
+  if (!input) return;
+  setIdentityStatus(identityFields.nodeUrlStatus, '', null);
+  const value = input.value.trim().replace(/\/+$/, '');
+  if (!value || value === savedNodeUrl) {
+    input.value = savedNodeUrl;
+    return;
+  }
+  const protocol = (() => {
+    try {
+      return new URL(value).protocol;
+    } catch {
+      return '';
+    }
+  })();
+  if (!/^https?:$/.test(protocol)) {
+    setIdentityStatus(identityFields.nodeUrlStatus, 'Enter the service address as a full http or https URL.', 'error');
+    return;
+  }
+  const ok = await freedomAPI.saveSettings({ aquaNodeUrl: value });
+  if (!ok) {
+    setIdentityStatus(identityFields.nodeUrlStatus, 'The identity service was not saved.', 'error');
+    return;
+  }
+  savedNodeUrl = value;
+  input.value = value;
+  setIdentityStatus(identityFields.nodeUrlStatus, 'Saved. New claims use this service.', 'success');
+};
+
+identityFields.nodeUrl?.addEventListener('blur', () => {
+  commitNodeUrl();
+});
+identityFields.nodeUrl?.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    identityFields.nodeUrl.blur();
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    identityFields.nodeUrl.value = savedNodeUrl;
+    identityFields.nodeUrl.blur();
+  }
+});
+
+const claimsErrorText = (result, fallback) => {
+  const err = result?.error;
+  if (err?.code === 'VAULT_LOCKED') return 'Unlock your wallet first.';
+  return err?.message || fallback;
+};
+
+identityFields.exportBtn?.addEventListener('click', async () => {
+  identityFields.exportBtn.disabled = true;
+  setIdentityStatus(identityFields.status, '', null);
+  try {
+    const result = await freedomAPI.aquaExportAllClaims?.();
+    if (!result?.success) {
+      setIdentityStatus(identityFields.status, claimsErrorText(result, 'The claims could not be exported.'), 'error');
+      return;
+    }
+    if (result.canceled) return;
+    const n = result.count || 0;
+    setIdentityStatus(identityFields.status, `Saved ${n} claim${n === 1 ? '' : 's'} to ${result.path}.`, 'success');
+  } finally {
+    identityFields.exportBtn.disabled = false;
+  }
+});
+
+identityFields.removeAllBtn?.addEventListener('click', async () => {
+  if (!window.confirm('Remove all identity claims from this profile? The identity service keeps its copies.')) return;
+  identityFields.removeAllBtn.disabled = true;
+  setIdentityStatus(identityFields.status, '', null);
+  try {
+    const result = await freedomAPI.aquaRemoveAllClaims?.();
+    if (!result?.success) {
+      setIdentityStatus(identityFields.status, claimsErrorText(result, 'The claims could not be removed.'), 'error');
+      return;
+    }
+    const n = result.removed || 0;
+    setIdentityStatus(identityFields.status, n === 0 ? 'No claims to remove' : `Removed ${n} claim${n === 1 ? '' : 's'}.`, 'success');
+  } finally {
+    identityFields.removeAllBtn.disabled = false;
+  }
+});
+
 const save = async () => {
   const ok = await freedomAPI.saveSettings(currentFormState());
   if (!ok) console.error('[settings] failed to save settings');
@@ -2169,7 +2286,10 @@ fields.enableTor.addEventListener('change', () => {
   save();
 });
 fields.startTor.addEventListener('change', save);
-fields.enableIdentity.addEventListener('change', save);
+fields.enableIdentity.addEventListener('change', () => {
+  applyIdentityPanelState();
+  save();
+});
 fields.showIpfsProgressStatus.addEventListener('change', save);
 fields.autoUpdate.addEventListener('change', save);
 fields.unverifiedEnsAction.addEventListener('change', save);

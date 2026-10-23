@@ -278,6 +278,17 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
 
     listClaims: () => store.list(),
 
+    /**
+     * Every claim record as one JSON document: the trees, the attestations
+     * and the verification results, as the store holds them.
+     */
+    async exportAll() {
+      const claims = await store.list();
+      return JSON.stringify({ format: 'freedom-identity-claims', version: 1, exportedAt: now().toISOString(), nodeUrl: client.baseUrl, claims }, null, 2);
+    },
+
+    removeAllClaims: () => store.removeAll(),
+
     /** One-time code for an email or phone claim; the service sends it. */
     async sendCode({ channel, target }) {
       const wallet = await activeWalletOrThrow();

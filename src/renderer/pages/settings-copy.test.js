@@ -329,6 +329,17 @@ describe('settings.html Advanced holds only the experiments (#275)', () => {
     expect(SOURCE).not.toContain('(Beta)</span>');
   });
 
+  test("the Identity panel sits under Advanced with its switch while the feature is Beta", () => {
+    const identity = section('identity');
+    expect(SOURCE).toMatch(/<section class="section panel" id="identity" data-nav="advanced">/);
+    expect(SOURCE).toContain('identityFields.panel.hidden = true');
+    expect(rowLabels(identity)).toEqual(['Identity service', 'Your claims']);
+    expect(identity).toContain('id="aqua-node-url"');
+    // Remove all is destructive (#284): outlined danger, and it says its verb.
+    expect(identity).toMatch(/<button type="button" class="btn danger" id="aqua-claims-remove-all">\s*Remove all\s*<\/button>/);
+    expect(identity).toMatch(/<button type="button" class="btn" id="aqua-claims-export">\s*Export all\s*<\/button>/);
+  });
+
   test('the three rows that were not experiments moved where they belong', () => {
     // A status-bar preference is Appearance…
     expect(rowLabels(section('appearance'))).toContain('Show IPFS load progress in the status bar');
