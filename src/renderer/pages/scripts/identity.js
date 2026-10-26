@@ -674,8 +674,9 @@ async function openDnsDialog(claim) {
     dnsBody.replaceChildren(el('div', 'field-error', errorText(result, 'DNS instructions are unavailable.')));
     return;
   }
-  const name = result.record_name || result.name || result.host || '';
-  const value = result.record_value || result.value || result.txt || '';
+  // The identity service answers `txt_name` / `txt_value` (plus `domain`).
+  const name = result.txt_name || result.record_name || result.name || '';
+  const value = result.txt_value || result.record_value || result.value || '';
   dnsBody.replaceChildren(
     el('p', 'meta', 'Add this TXT record at your DNS provider, then press Check DNS.'),
     dnsRow('Name', name),
