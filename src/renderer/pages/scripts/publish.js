@@ -334,7 +334,7 @@ async function explainSetupWithoutWallet(message) {
   if (!settings || settings.enableIdentityWallet === true) return;
   if (errorText?.textContent !== message) return; // A newer error is up.
   errorSetupBtn?.classList.add('hidden');
-  errorText.textContent = `${message} Enable Identity & Wallet under Advanced to publish on Swarm.`;
+  errorText.textContent = `${message} Enable Identity & Wallet under Identity to publish on Swarm.`;
 }
 
 async function copyToClipboard(text) {

@@ -166,7 +166,7 @@ test.describe('freedom://publish with Identity & Wallet off (#719)', () => {
     await page.fill('#publish-text-area', 'hello world');
     await page.click('#publish-text-submit');
     await expect(page.locator('#publish-error-text')).toHaveText(
-      'Publishing needs storage. Pick a storage plan to start. Enable Identity & Wallet under Advanced to publish on Swarm.'
+      'Publishing needs storage. Pick a storage plan to start. Enable Identity & Wallet under Identity to publish on Swarm.'
     );
     await expect(page.locator('#publish-error-setup')).toBeHidden();
   });

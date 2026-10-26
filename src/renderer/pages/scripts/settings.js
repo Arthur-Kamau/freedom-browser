@@ -1873,7 +1873,7 @@ const renderSwarmPublishingRow = (settings, setupState) => {
   // deep-link into a sidebar the user can't open.
   if (settings?.enableIdentityWallet !== true) {
     swarmPublishingHelp.textContent =
-      'Enable Identity & Wallet under Advanced to publish on Swarm.';
+      'Enable Identity & Wallet under Identity to publish on Swarm.';
     hideAction();
     return;
   }
@@ -2159,7 +2159,6 @@ swarmCacheSelect?.addEventListener('change', async () => {
 // like the item editors.) Export and Remove all go through main, which owns
 // the claims and the save dialog.
 const identityFields = {
-  offNote: $('identity-off'),
   controls: $('identity-controls'),
   nodeUrlCurrent: $('aqua-node-url-current'),
   nodeUrlDialog: $('aqua-node-url-dialog'),
@@ -2182,12 +2181,10 @@ const setIdentityStatus = (el, text, kind) => {
   el.className = kind ? `rpc-status ${kind}` : 'rpc-status';
 };
 
-// The entry is always in the nav; while the Beta switch is off the page
-// says where to turn it on instead of showing controls that would fail.
+// While the switch above is off, the controls that would fail are folded
+// away; the switch itself is the first row of the page.
 const applyIdentityPanelState = () => {
-  const on = fields.enableIdentity.checked;
-  if (identityFields.offNote) identityFields.offNote.hidden = on;
-  if (identityFields.controls) identityFields.controls.hidden = !on;
+  if (identityFields.controls) identityFields.controls.hidden = !fields.enableIdentity.checked;
 };
 
 const claimsErrorText = (result, fallback) => {
