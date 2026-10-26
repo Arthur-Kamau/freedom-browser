@@ -47,7 +47,7 @@ function setup({ wallet = { index: 0, address: ADDRESS, type: 'mnemonic' }, atte
     sendCode: jest.fn(async () => ({ success: true, message: 'sent' })),
     verifyCode: jest.fn(async () => ({ success: true, message: 'ok', verification_token: 'vt-1' })),
     dnsInstructions: jest.fn(async () => ({ txt_name: '_aqua.example.com', txt_value: 'aqua-identity=did:pkh:eip155:1:0xabc', domain: 'example.com' })),
-    verifyDns: jest.fn(async () => ({ success: true, verification_status: 'verified' })),
+    verifyDns: jest.fn(async () => ({ success: true, dns_status: 'verified', message: 'TXT record found and matches at _aqua.example.com', txt_name: '_aqua.example.com', txt_expected: 'aqua-identity=did:pkh:eip155:1:0xabc' })),
   };
   const signer = { sign: jest.fn(async () => '0x' + 'ee'.repeat(65)) };
   const service = createClaimsService({
@@ -204,9 +204,15 @@ describe('codes, refresh, removal, domains', () => {
     expect(client.createDnsClaim).toHaveBeenCalledWith(ADDRESS, { domain: 'example.com' });
     expect(record.domainVerification).toBe('pending');
     expect(await service.dnsInstructions(record.id)).toMatchObject({ txt_name: '_aqua.example.com', txt_value: 'aqua-identity=did:pkh:eip155:1:0xabc' });
-    client.verifyDns.mockResolvedValueOnce({ success: true, verification_status: 'verified', attestation_tip: ATTESTATION_TIP });
+    client.verifyDns.mockResolvedValueOnce({ success: true, dns_status: 'not_found', message: 'No TXT record found at _aqua.example.com', txt_name: '_aqua.example.com', txt_expected: 'aqua-identity=did:pkh:eip155:1:0xabc' });
+    const missing = await service.verifyDns(record.id);
+    expect(missing.domainVerification).toBe('not_found');
+    expect(missing.dnsCheck).toEqual({ status: 'not_found', message: 'No TXT record found at _aqua.example.com', txtName: '_aqua.example.com', txtExpected: 'aqua-identity=did:pkh:eip155:1:0xabc', checkedAt: '2026-10-22T12:00:00.000Z' });
+    expect(missing.attestations).toEqual([]);
+    client.verifyDns.mockResolvedValueOnce({ success: true, dns_status: 'verified', message: 'TXT record found and matches at _aqua.example.com', attestation_tip: ATTESTATION_TIP });
     const verified = await service.verifyDns(record.id);
     expect(verified.domainVerification).toBe('verified');
+    expect(verified.dnsCheck.status).toBe('verified');
     expect(verified.attestations.map((a) => a.tip)).toEqual([ATTESTATION_TIP]);
   });
 

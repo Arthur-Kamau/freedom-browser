@@ -7,8 +7,8 @@ const { runPageScript } = require('../../../test/helpers/page-script-harness');
 
 const HOSTILE = `"><img src=x onerror=alert(1) data-xss="1">'<b>&amp;`;
 const IDS = {
-  'claims-list': 'div', 'claims-empty': 'div', 'shared-claims': 'div', 'issued-list': 'div',
-  'status-wallet': 'span', 'status-service': 'span', 'status-caps': 'span', 'claims-count': 'span', 'shared-count': 'span', 'issued-count': 'span',
+  'claims-list': 'div', 'claims-empty': 'div', 'shared-claims': 'div',
+  'status-wallet': 'span', 'status-service': 'span', 'status-caps': 'span', 'claims-count': 'span', 'shared-count': 'span',
   'status-lock': 'span', 'signin-card': 'div', 'signin-text': 'div', 'signin-btn': 'button', 'signin-error': 'div', 'service-down': 'div', 'service-down-text': 'div', 'service-retry-btn': 'button', 'service-settings-btn': 'button', 'locked-card': 'div', 'locked-title': 'div', 'locked-text': 'div', 'unlock-btn': 'button', 'status-notice': 'div', 'wallet-line': 'p',
   'nav-claims': 'button', 'nav-attest': 'button', 'nav-requests': 'button', 'panel-claims': 'section', 'panel-attest': 'section', 'panel-requests': 'section',
   // Add a claim
@@ -48,7 +48,7 @@ function api(overrides = {}) {
     aquaSendCode: jest.fn(async ({ target }) => ({ success: true, target, message: 'sent' })),
     aquaVerifyCode: jest.fn(async () => ({ success: true, verificationToken: 'vt' })),
     aquaDnsInstructions: jest.fn(async () => ({ success: true, txt_name: '_aqua.example.com', txt_value: HOSTILE, domain: 'example.com' })),
-    aquaVerifyDns: jest.fn(async () => ({ success: true, claim: claim({ type: 'domain' }) })),
+    aquaVerifyDns: jest.fn(async () => ({ success: true, claim: claim({ type: 'domain', payload: { domain_name: 'example.com' }, domainVerification: 'mismatch', dnsCheck: { status: 'mismatch', message: HOSTILE, checkedAt: '2026-10-26T10:00:00Z' } }) })),
     aquaShareClaim: jest.fn(async () => ({ success: true, claim: claim() })),
     aquaPullAttestations: jest.fn(async () => ({ success: true, claim: null })),
     aquaImportAttestation: jest.fn(async () => ({ success: true, claim: claim() })),
@@ -107,7 +107,6 @@ describe('freedom://identity', () => {
     expect(page.elements['claims-list'].children).toHaveLength(0);
     expect(page.elements['claims-empty'].classList.contains('hidden')).toBe(true);
     expect(page.elements['shared-claims'].children).toHaveLength(0);
-    expect(page.elements['issued-list'].children).toHaveLength(0);
     expect(page.elements['add-claim-btn'].disabled).toBe(true);
     expect(page.elements['request-open-btn'].disabled).toBe(true);
     // The page polls for an unlock made elsewhere while the vault is locked.
@@ -407,7 +406,15 @@ describe('freedom://identity', () => {
   });
 
   test('a domain claim shows its DNS record in a dialog, as text, and Check DNS runs from it', async () => {
-    const freedomAPI = api({ aquaListClaims: async () => ({ success: true, claims: [claim({ type: 'domain', payload: { domain_name: 'example.com' }, domainVerification: 'pending' })] }) });
+    const checked = claim({ type: 'domain', payload: { domain_name: 'example.com' }, domainVerification: 'mismatch', dnsCheck: { status: 'mismatch', message: HOSTILE, checkedAt: '2026-10-26T10:00:00Z' } });
+    let claims = [claim({ type: 'domain', payload: { domain_name: 'example.com' }, domainVerification: 'pending' })];
+    const freedomAPI = api({
+      aquaListClaims: async () => ({ success: true, claims }),
+      aquaVerifyDns: jest.fn(async () => {
+        claims = [checked];
+        return { success: true, claim: checked };
+      }),
+    });
     const page = await run(freedomAPI);
     const card = page.elements['claims-list'].querySelector('.card');
     expect(card.textContent).toContain('DNS check: pending');
@@ -420,9 +427,25 @@ describe('freedom://identity', () => {
     await page.elements['dns-check-btn'].fire('click');
     await page.flush();
     expect(freedomAPI.aquaVerifyDns).toHaveBeenCalledWith('c1');
+    // The dialog stays open and says what the service found, as text.
+    expect(isOpen(page.elements['dns-dialog'])).toBe(true);
+    const result = page.elements['dns-body'].querySelector('.dns-result');
+    expect(result.querySelector('.status-line').textContent).toBe(HOSTILE);
+    expect(result.querySelector('.status-line').classList.contains('bad')).toBe(true);
+    expect(page.elements['dns-check-btn'].textContent).toContain('Check again');
+    expect(page.elements['dns-check-btn'].disabled).toBe(false);
+    // The card carries the outcome too, and its Check DNS opens the dialog and checks there.
+    const card2 = page.elements['claims-list'].querySelector('.card');
+    expect(card2.textContent).toContain(`DNS check: mismatch · ${HOSTILE}`);
+    await page.elements['dns-cancel'].fire('click');
     expect(isOpen(page.elements['dns-dialog'])).toBe(false);
-    await buttonNamed(page.elements['claims-list'].querySelector('.card'), 'Check DNS').fire('click');
+    await buttonNamed(card2, 'Check DNS').fire('click');
+    await page.flush();
+    expect(isOpen(page.elements['dns-dialog'])).toBe(true);
+    expect(freedomAPI.aquaDnsInstructions).toHaveBeenCalledTimes(2);
     expect(freedomAPI.aquaVerifyDns).toHaveBeenCalledTimes(2);
+    expect(page.elements['dns-body'].querySelector('.dns-result').textContent).toContain(HOSTILE);
+    expect(page.document.htmlWrites).toHaveLength(0);
   });
 });
 
@@ -529,8 +552,13 @@ describe('freedom://identity attestation', () => {
     card = page.elements['shared-claims'].querySelector('.card');
     expect(card.querySelector('.badge').textContent).toBe('Attested by you');
     expect(card.querySelector('.status-line').textContent).toContain('You attested this');
-    expect(card.querySelectorAll('.btn')).toHaveLength(0);
-    expect(page.elements['issued-count'].textContent).toBe('1');
+    // The attestation sits on the same card: words, state, hash, Copy JSON.
+    const block = card.querySelector('.attestation');
+    expect(block.querySelector('.words').textContent).toBe(HOSTILE);
+    expect(block.querySelector('.badge').textContent).toBe('Signed');
+    expect(block.textContent).toContain('0xa');
+    expect(Array.from(card.querySelectorAll('.btn')).map((b) => b.textContent)).toEqual(['Copy JSON']);
+    expect(page.elements['shared-count'].textContent).toBe('1');
     expect(page.document.htmlWrites).toHaveLength(0);
   });
 
@@ -551,28 +579,52 @@ describe('freedom://identity attestation', () => {
     expect(page.document.htmlWrites).toHaveLength(0);
   });
 
-  test('an issued attestation can be copied as JSON for the owner', async () => {
+  test('an attestation issued for a claim no longer shared is its own card in the same list, and copies as JSON', async () => {
     const freedomAPI = api({
       aquaListIssued: async () => ({ success: true, issued: [{ id: 'a1', tip: '0xa', claimTip: '0xt', subjectDid: 'did:pkh:eip155:1:0xowner', context: HOSTILE, createdAt: '2026-10-22T12:00:00Z', verification: { isValid: true }, templateName: 'email_claim', subjectPayload: { email: 's@p.q' } }] }),
     });
     const page = await run(freedomAPI);
-    expect(page.elements['issued-count'].textContent).toBe('1');
-    const card = page.elements['issued-list'].querySelector('.card');
+    expect(page.elements['shared-count'].textContent).toBe('1');
+    const card = page.elements['shared-claims'].querySelector('.card');
     expect(card.textContent).toContain(HOSTILE);
+    expect(card.textContent).toContain('no longer shared with you');
     expect(card.querySelector('.claim-value').textContent).toBe('s@p.q');
     expect(card.querySelector('.claim-icon').querySelector('.ico-mail')).not.toBeNull();
-    expect(card.querySelector('.badge').textContent).toBe('Signed');
+    expect(card.querySelector('.badge').textContent).toBe('Attested by you');
     await buttonNamed(card, 'Copy JSON').fire('click');
     await page.flush();
     expect(freedomAPI.aquaExportIssued).toHaveBeenCalledWith('a1');
     expect(freedomAPI.copyText).toHaveBeenCalledWith('{"revisions":{}}');
   });
 
-  test('empty shared and issued lists show an icon and one line', async () => {
+  test('an empty Attest others list shows an icon and one line', async () => {
     const page = await run(api());
     expect(page.elements['shared-claims'].querySelector('.empty').textContent).toContain('Nothing has been shared');
     expect(page.elements['shared-claims'].querySelector('.empty').querySelector('.ico')).not.toBeNull();
-    expect(page.elements['issued-list'].querySelector('.empty').textContent).toContain('not attested');
+  });
+
+  test('the same claim shared twice is one card, with its latest share, and every attestation issued for it', async () => {
+    const freedomAPI = api({
+      aquaListShared: async () => ({ success: true, shared: [
+        { contractHash: 'h1', tip: '0xt', sender: 'did:pkh:eip155:1:0xowner', templateName: 'phone_claim', payload: { signer_did: 'did:pkh:eip155:1:0xowner', phone_number: '+10000000000' }, sharedAt: '2026-10-23T13:03:00Z' },
+        { contractHash: 'h2', tip: '0xt', sender: 'did:pkh:eip155:1:0xowner', templateName: 'phone_claim', payload: { signer_did: 'did:pkh:eip155:1:0xowner', phone_number: '+10000000000' }, sharedAt: '2026-10-26T14:21:00Z' },
+      ] }),
+      aquaListIssued: async () => ({ success: true, issued: [
+        { id: 'a1', tip: '0xa1', claimTip: '0xt', subjectDid: 'did:pkh:eip155:1:0xowner', context: 'first', createdAt: '2026-10-26T14:25:00Z', verification: { isValid: true } },
+        { id: 'a2', tip: '0xa2', claimTip: '0xt', subjectDid: 'did:pkh:eip155:1:0xowner', context: 'second', createdAt: '2026-10-26T14:26:00Z', verification: { isValid: false } },
+      ] }),
+    });
+    const page = await run(freedomAPI);
+    const cards = page.elements['shared-claims'].querySelectorAll('.card');
+    expect(cards).toHaveLength(1);
+    expect(page.elements['shared-count'].textContent).toBe('1');
+    expect(cards[0].dataset.contract).toBeUndefined();
+    const rows = cards[0].querySelectorAll('.tech-rows');
+    expect(rows[rows.length - 1].textContent).toContain(new Date('2026-10-26T14:21:00Z').toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }));
+    const blocks = cards[0].querySelectorAll('.attestation');
+    expect(blocks.map((b) => b.querySelector('.words').textContent)).toEqual(['first', 'second']);
+    expect(blocks.map((b) => b.querySelector('.badge').textContent)).toEqual(['Signed', 'Not verified']);
+    expect(cards[0].querySelectorAll('.btn').map((b) => b.textContent)).toEqual(['Copy JSON', 'Copy JSON']);
   });
 
   test('a service without out-of-band verification withholds email and phone claims', async () => {
