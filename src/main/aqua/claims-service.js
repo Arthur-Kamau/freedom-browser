@@ -201,6 +201,17 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
     return wallet;
   }
 
+  const sameService = (a, b) => String(a || '').replace(/\/+$/, '').toLowerCase() === String(b || '').replace(/\/+$/, '').toLowerCase();
+  // A claim is held by the service it was made on. After the profile's
+  // identity service changed, that service no longer answers for it.
+  function madeElsewhere(record) {
+    return Boolean(record.nodeUrl) && !sameService(record.nodeUrl, client.baseUrl);
+  }
+  function requireThisService(record, what) {
+    if (!madeElsewhere(record)) return;
+    throw new Error(`This claim was made on ${record.nodeUrl}; ${client.baseUrl} does not hold it. Switch the identity service back under Settings → Identity to ${what} it.`);
+  }
+
   async function verify(tree) {
     const checkedAt = now().toISOString();
     try {
@@ -460,6 +471,7 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
       if (!ADDRESS.test(address)) throw new ClaimInputError('Enter the attester\'s wallet address (0x…)', 'recipient');
       const record = await store.get(id);
       if (!record) throw new Error('Claim not found');
+      requireThisService(record, 'share');
       if (address.toLowerCase() === record.address.toLowerCase()) {
         throw new ClaimInputError('A claim cannot be shared with its own wallet', 'recipient');
       }
@@ -486,6 +498,9 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
     async pullAttestations(id) {
       const record = await store.get(id);
       if (!record) throw new Error('Claim not found');
+      // Pulled for every claim on open, so one made elsewhere is left as it
+      // is rather than reported each time.
+      if (madeElsewhere(record)) return record;
       const { serviceDid } = await serviceCapabilities();
       const listed = (await client.listAttestations(record.address, record.tip))?.attestations || [];
       for (const info of listed) {
@@ -699,12 +714,14 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
     async dnsInstructions(id) {
       const record = await store.get(id);
       if (!record || record.type !== 'domain') throw new Error('Not a domain claim');
+      requireThisService(record, 'check');
       return client.dnsInstructions(record.address, record.tip);
     },
 
     async verifyDns(id) {
       const record = await store.get(id);
       if (!record || record.type !== 'domain') throw new Error('Not a domain claim');
+      requireThisService(record, 'check');
       const result = await client.verifyDns(record.address, record.tip);
       // The service answers `dns_status` (verified | mismatch | not_found |
       // error) with a sentence, the record name and the expected value.
