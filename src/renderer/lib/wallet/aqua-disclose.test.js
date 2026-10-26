@@ -30,9 +30,11 @@ async function load({ prepared, built } = {}) {
   jest.doMock('./signature-flight.js', () => ({ assertNoSignatureInFlight: jest.fn() }));
   const open = jest.fn();
   jest.doMock('../sidebar.js', () => ({ open }));
+  const showVaultUnlock = jest.fn(async () => {});
+  jest.doMock('./vault-unlock.js', () => ({ showVaultUnlock }));
   const mod = await import('./aqua-disclose.js');
   mod.initAquaDisclose();
-  return { mod, elements, open, onDisclosureRequest, respondToDisclosureRequest };
+  return { mod, elements, open, onDisclosureRequest, respondToDisclosureRequest, showVaultUnlock };
 }
 
 afterEach(() => {
@@ -69,6 +71,32 @@ describe('Share Identity screen', () => {
       address: '0xabc',
     });
     expect(elements['sidebar-aqua-disclose'].classList.contains('hidden')).toBe(true);
+  });
+
+  test('a locked vault asks for the unlock on the sidebar, then looks at the claims again', async () => {
+    const locked = { success: false, error: { code: 'VAULT_LOCKED', message: 'Unlock your vault to access identity claims' } };
+    const { mod, elements, showVaultUnlock } = await load({ prepared: locked });
+    window.aqua.prepareDisclosure
+      .mockResolvedValueOnce(locked)
+      .mockResolvedValueOnce({ success: true, request: { purpose: 'To ship', nonce: 'n' }, entries: ENTRIES });
+    const promise = mod.showAquaDisclosure({ label: 'shop.example', address: '0xabc', request: { aqua: 1, need: ['name'] } });
+    await flush();
+    expect(showVaultUnlock).toHaveBeenCalledWith('shop.example');
+    expect(window.aqua.prepareDisclosure).toHaveBeenCalledTimes(2);
+    expect(elements['sidebar-aqua-disclose'].classList.contains('hidden')).toBe(false);
+    expect(elements['aqua-disclose-list'].querySelectorAll('.aqua-disclose-row')).toHaveLength(3);
+    elements['aqua-disclose-reject'].dispatch('click');
+    await expect(promise).rejects.toMatchObject({ code: 4001 });
+  });
+
+  test('a dismissed unlock prompt is the user\'s cancel: nothing is looked at again and the screen stays closed', async () => {
+    const locked = { success: false, error: { code: 'VAULT_LOCKED', message: 'Unlock your vault to access identity claims' } };
+    const { mod, elements, open, showVaultUnlock } = await load({ prepared: locked });
+    showVaultUnlock.mockRejectedValueOnce({ code: 4001, message: 'User cancelled unlock' });
+    await expect(mod.showAquaDisclosure({ label: 'x', address: '0xabc', request: { aqua: 1, need: ['name'] } })).rejects.toMatchObject({ code: 4001 });
+    expect(window.aqua.prepareDisclosure).toHaveBeenCalledTimes(1);
+    expect(open).not.toHaveBeenCalled();
+    expect(elements['aqua-disclose-list'].querySelectorAll('.aqua-disclose-row')).toHaveLength(0);
   });
 
   test('Reject and Back settle with 4001 and nothing is built', async () => {

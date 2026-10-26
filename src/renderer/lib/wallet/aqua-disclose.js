@@ -13,6 +13,7 @@
  */
 import { walletState, registerScreenHider, hideAllSubscreens } from './wallet-state.js';
 import { assertNoSignatureInFlight } from './signature-flight.js';
+import { showVaultUnlock } from './vault-unlock.js';
 import { open as openSidebarPanel } from '../sidebar.js';
 
 const TYPE_LABELS = { name: 'Name', email: 'Email address', phone: 'Phone number', domain: 'Domain' };
@@ -126,7 +127,15 @@ function renderEntry(entry) {
 export async function showAquaDisclosure({ label, address, request }) {
   assertNoSignatureInFlight();
   if (pending) throw Object.assign(new Error('Another disclosure request is open'), { code: -32002 });
-  const prepared = await window.aqua.prepareDisclosure({ request, address });
+  let prepared = await window.aqua.prepareDisclosure({ request, address });
+  // The claims are readable only while the vault is unlocked. A locked vault
+  // is not a refusal: ask for the unlock on the sidebar, as a signing
+  // request does, then look again. A dismissed prompt rejects as the user's
+  // cancel.
+  if (prepared?.error?.code === 'VAULT_LOCKED') {
+    await showVaultUnlock(label);
+    prepared = await window.aqua.prepareDisclosure({ request, address });
+  }
   if (!prepared?.success) {
     throw Object.assign(new Error(prepared?.error?.message || 'Invalid disclosure request'), { code: -32602 });
   }
