@@ -504,6 +504,22 @@ describe('freedom://identity attestation', () => {
     expect(page.elements['status-notice'].textContent).toContain('Attested');
   });
 
+  test('a share the service lists but cannot show is said with its reason, not dropped', async () => {
+    const freedomAPI = api({
+      aquaListShared: async () => ({ success: true, shared: [
+        { contractHash: 'freedom-attest-1', sender: 'did:pkh:eip155:1:0xowner', fileName: 'email_claim', tip: null, payload: null, unavailable: true, reason: HOSTILE },
+      ] }),
+    });
+    const page = await run(freedomAPI);
+    expect(page.elements['shared-count'].textContent).toBe('1');
+    const card = page.elements['shared-claims'].querySelector('.card');
+    expect(card.querySelector('.claim-value').textContent).toBe('email_claim');
+    expect(card.textContent).toContain('could not be read');
+    expect(card.querySelector('.status-line').textContent).toBe(HOSTILE);
+    expect(card.querySelectorAll('.btn')).toHaveLength(0);
+    expect(page.document.htmlWrites).toHaveLength(0);
+  });
+
   test('an issued attestation can be copied as JSON for the owner', async () => {
     const freedomAPI = api({
       aquaListIssued: async () => ({ success: true, issued: [{ id: 'a1', tip: '0xa', claimTip: '0xt', subjectDid: 'did:pkh:eip155:1:0xowner', context: HOSTILE, createdAt: '2026-10-22T12:00:00Z', verification: { isValid: true }, templateName: 'email_claim', subjectPayload: { email: 's@p.q' } }] }),
