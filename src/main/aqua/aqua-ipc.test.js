@@ -154,7 +154,7 @@ describe('registerAquaIpc', () => {
     expect(broadcastToAllWebContents).not.toHaveBeenCalled();
   });
 
-  test('the feature switch in Settings → Advanced gates every handler', async () => {
+  test('the feature switch in Settings → Identity gates every handler', async () => {
     const { deps } = fakeDeps();
     registerAquaIpc({ createDeps: () => deps, log: { error: () => {} } });
     loadSettings.mockReturnValue({ enableIdentityWallet: false });

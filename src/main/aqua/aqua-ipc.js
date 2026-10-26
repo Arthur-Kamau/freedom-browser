@@ -308,7 +308,7 @@ function registerAquaIpc({ createDeps = createAquaDeps, createProbeClient, log =
 
   function handle(channel, fn, { mutates = false } = {}) {
     ipcMain.handle(channel, async (event, ...args) => {
-      if (!enabled()) return failure('DISABLED', 'Enable Identity & Wallet under Settings → Advanced first');
+      if (!enabled()) return failure('DISABLED', 'Enable Identity & Wallet under Settings → Identity first');
       try {
         const result = await fn(current(), ...args);
         if (mutates) broadcastToAllWebContents(IPC.AQUA_CLAIMS_CHANGED, {});

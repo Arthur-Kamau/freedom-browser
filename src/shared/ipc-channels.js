@@ -436,7 +436,7 @@ module.exports = {
   AQUA_CLAIMS_LIST: 'aqua:claims:list',
   AQUA_CLAIMS_CREATE: 'aqua:claims:create',
   AQUA_CLAIMS_REMOVE: 'aqua:claims:remove',
-  // Settings → Advanced → Identity: every claim to a file, or all of them gone.
+  // Settings → Identity: every claim to a file, or all of them gone.
   AQUA_CLAIMS_EXPORT_ALL: 'aqua:claims:export-all',
   AQUA_CLAIMS_REMOVE_ALL: 'aqua:claims:remove-all',
   AQUA_CLAIMS_REFRESH: 'aqua:claims:refresh',

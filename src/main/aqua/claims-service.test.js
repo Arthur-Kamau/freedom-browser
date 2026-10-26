@@ -335,10 +335,32 @@ describe('attestation: attester side', () => {
     return ctx;
   }
 
-  test('listSharedClaims shows what was shared with this wallet, skipping unavailable trees', async () => {
+  test('listSharedClaims shows what was shared with this wallet, and flags a tree the service cannot show', async () => {
     const { service } = attesterSetup();
     const shared = await service.listSharedClaims();
-    expect(shared).toEqual([expect.objectContaining({ contractHash: 'h1', sender: OWNER_DID, tip: CLAIM_TIP, templateName: 'name_claim', payload: expect.objectContaining({ given_name: 'Share' }) })]);
+    expect(shared).toEqual([
+      expect.objectContaining({ contractHash: 'h1', sender: OWNER_DID, tip: CLAIM_TIP, templateName: 'name_claim', payload: expect.objectContaining({ given_name: 'Share' }) }),
+      expect.objectContaining({ contractHash: 'h1', tip: '0x1620' + 'ff'.repeat(32), unavailable: true, reason: expect.stringContaining('not on the service') }),
+    ]);
+  });
+
+  test('listSharedClaims never drops a share silently: a refused or empty contract is listed with the reason', async () => {
+    const { service, client } = attesterSetup();
+    client.listSharesReceived = jest.fn(async () => ({ success: true, contracts: [
+      { hash: 'refused', sender: OWNER_DID, file_name: 'email_claim', created_at: '2026-10-26T09:00:00Z' },
+      { hash: 'empty', sender: OWNER_DID, file_name: 'phone_claim', created_at: '2026-10-26T09:01:00Z' },
+    ] }));
+    client.sharedData = jest.fn(async (_address, hash) => {
+      if (hash === 'refused') throw new Error('403 You do not have access to this contract');
+      return { success: true, contract: { hash }, trees: [] };
+    });
+    const shared = await service.listSharedClaims();
+    expect(shared).toEqual([
+      expect.objectContaining({ contractHash: 'refused', fileName: 'email_claim', unavailable: true, reason: expect.stringContaining('403') }),
+      expect.objectContaining({ contractHash: 'empty', fileName: 'phone_claim', unavailable: true, reason: expect.stringContaining('no tree') }),
+    ]);
+    // Only a readable share can be attested.
+    await expect(service.attestSharedClaim({ contractHash: 'refused', tip: null, context: 'x' })).rejects.toThrow('not shared with this wallet');
   });
 
   test('attestSharedClaim signs through the wallet, names the claim in the context, and keeps the tree', async () => {

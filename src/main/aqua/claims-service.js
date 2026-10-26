@@ -495,7 +495,24 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
     async listSharedClaims() {
       const wallet = await activeWalletOrThrow();
       const contracts = (await client.listSharesReceived(wallet.address))?.contracts || [];
+      // A contract the service lists but whose trees cannot be read is
+      // still returned, flagged, with the reason: a silent skip here is how
+      // a share that reached the service showed as "nothing shared" on the
+      // attester's page.
       const shared = [];
+      const unreadable = (contract, reason, tree = null) => ({
+        contractHash: contract.hash,
+        sender: contract.sender || null,
+        tip: tree?.tip || null,
+        fileName: tree?.file_name || contract.file_name || '',
+        payload: null,
+        templateName: null,
+        revisionCount: 0,
+        attestationCount: 0,
+        sharedAt: contract.created_at || null,
+        unavailable: true,
+        reason,
+      });
       for (const contract of contracts) {
         if (!contract?.hash) continue;
         let data;
@@ -503,10 +520,16 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
           data = await client.sharedData(wallet.address, contract.hash);
         } catch (err) {
           log.error('[AquaClaims] shared data unavailable:', err?.message || err);
+          shared.push(unreadable(contract, `The service refused to show it: ${err?.message || err}`));
           continue;
         }
-        for (const tree of data?.trees || []) {
-          if (!tree?.tip || tree.unavailable) continue;
+        const trees = data?.trees || [];
+        if (trees.length === 0) shared.push(unreadable(contract, 'The service lists no tree under this share'));
+        for (const tree of trees) {
+          if (!tree?.tip || tree.unavailable) {
+            shared.push(unreadable(contract, "The sender's tree is not on the service any more", tree));
+            continue;
+          }
           shared.push({
             contractHash: contract.hash,
             sender: contract.sender || data?.contract?.sender || null,
@@ -534,7 +557,7 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
       const words = text(context, 'context', { required: true, max: 1200 });
       // AS-REQ-0020: only a claim the service shows as shared with this
       // account is attested; the service enforces the same rule on its side.
-      const shared = (await this.listSharedClaims()).find((s) => s.contractHash === contractHash && s.tip === tip);
+      const shared = (await this.listSharedClaims()).find((s) => !s.unavailable && s.contractHash === contractHash && s.tip === tip);
       if (!shared) throw new Error('That claim is not shared with this wallet');
       const subjectDid = shared.payload?.signer_did || null;
       if (subjectDid && subjectDid.toLowerCase() === `did:pkh:eip155:1:${wallet.address}`.toLowerCase()) {

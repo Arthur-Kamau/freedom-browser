@@ -1044,7 +1044,7 @@ const syncBzzBase = (nextBase) => {
 // and telling a private-window user with a fully set-up wallet to flip a
 // Settings toggle that is already on leaves them nowhere to go (#240).
 const SEND_FLOW_REFUSAL_MESSAGES = {
-  [SEND_FLOW_DISABLED]: 'Enable Identity & Wallet (Settings → Advanced) to accept tips.',
+  [SEND_FLOW_DISABLED]: 'Enable Identity & Wallet (Settings → Identity) to accept tips.',
   [SEND_FLOW_PRIVATE]:
     'Wallet is unavailable in private windows. Open a normal window to accept tips.',
   [SEND_FLOW_SETUP]: 'Finish setting up Identity & Wallet to accept tips.',

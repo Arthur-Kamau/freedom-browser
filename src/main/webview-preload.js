@@ -1103,7 +1103,7 @@ contextBridge.exposeInMainWorld('freedomAPI', {
     ipcRenderer.invoke('aqua:claims:create', request)
   ),
   aquaRemoveClaim: guardInternal('aquaRemoveClaim', (id) => ipcRenderer.invoke('aqua:claims:remove', id)),
-  // Settings → Advanced → Identity: main shows the save dialog itself.
+  // Settings → Identity: main shows the save dialog itself.
   aquaExportAllClaims: guardInternal('aquaExportAllClaims', () => ipcRenderer.invoke('aqua:claims:export-all')),
   aquaRemoveAllClaims: guardInternal('aquaRemoveAllClaims', () => ipcRenderer.invoke('aqua:claims:remove-all')),
   aquaRefreshClaim: guardInternal('aquaRefreshClaim', (id) =>

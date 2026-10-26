@@ -931,7 +931,6 @@
       /* The Identity page shows either its controls or the line that says
          where the Beta switch is; the page has no `.hidden` class, so these
          go by the attribute like the other gated blocks. */
-      #identity-off[hidden],
       #identity-controls[hidden] {
         display: none;
       }
@@ -1983,16 +1982,29 @@
           </div>
         </section>
 
-        <!-- Identity (Beta): the service behind freedom://identity and the
-             claims it keeps in this profile. Its own entry, added at the
-             maintainer's request; the switch that turns the feature on stays
-             under Advanced, and this page says so while it is off. -->
+        <!-- Identity (Beta): the switch that turns the feature on, the
+             service behind freedom://identity, and the claims it keeps in
+             this profile. Its own entry, added at the maintainer's request;
+             the switch sits here rather than under Advanced so the page that
+             configures the feature is also the one that turns it off. -->
         <section class="section" id="identity" data-nav="identity">
           <h2 class="section-title">Identity</h2>
-          <div class="card" id="identity-off" hidden>
+          <div class="card">
             <div class="row">
               <div class="row-body">
-                <p class="row-help">Enable Identity &amp; Wallet under Advanced to use identity claims.</p>
+                <p class="row-label">
+                  Enable Identity &amp; Wallet
+                  <span class="resolver-badge">Beta</span>
+                </p>
+                <p class="row-help">
+                  Identity claims at <code>freedom://identity</code>, and the wallet in the sidebar.
+                </p>
+              </div>
+              <div class="row-control">
+                <label class="toggle">
+                  <input type="checkbox" id="enable-identity-wallet" />
+                  <span class="slider"></span>
+                </label>
               </div>
             </div>
           </div>
@@ -2073,20 +2085,6 @@
         <section class="section" id="experimental" data-nav="advanced">
           <h2 class="section-title">Advanced</h2>
           <div class="card">
-            <div class="row">
-              <div class="row-body">
-                <p class="row-label">
-                  Enable Identity &amp; Wallet
-                  <span class="resolver-badge">Beta</span>
-                </p>
-              </div>
-              <div class="row-control">
-                <label class="toggle">
-                  <input type="checkbox" id="enable-identity-wallet" />
-                  <span class="slider"></span>
-                </label>
-              </div>
-            </div>
             <div class="row" data-tor>
               <div class="row-body">
                 <p class="row-label">

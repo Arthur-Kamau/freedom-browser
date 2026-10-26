@@ -230,7 +230,7 @@ function errorText(result, fallback) {
   if (err.code === 'VAULT_LOCKED') {
     return hasVault ? 'Unlock your wallet first.' : 'Set up your wallet in the sidebar first.';
   }
-  if (err.code === 'DISABLED') return 'Enable Identity & Wallet under Settings → Advanced to use identity claims.';
+  if (err.code === 'DISABLED') return 'Enable Identity & Wallet under Settings → Identity to use identity claims.';
   return err.message || fallback;
 }
 
@@ -756,7 +756,24 @@ function sharedValue(entry) {
   );
 }
 
+// A share the service lists but cannot show: said on its own card, with
+// the reason, instead of vanishing from the list.
+function renderUnreadableShare(entry) {
+  const card = el('div', 'card');
+  card.dataset.contract = entry.contractHash || '';
+  card.appendChild(claimHead('shared', entry.fileName || 'Shared claim', ['Shared with you', '·', 'could not be read']));
+  const body = el('div', 'claim-body');
+  body.appendChild(statusLine('bad', 'x-circle', entry.reason || 'The service could not show this share.'));
+  const tech = el('div', 'tech-rows');
+  techRow(tech, 'Shared by', entry.sender || '');
+  techRow(tech, 'Share', entry.contractHash || '');
+  body.appendChild(tech);
+  card.appendChild(body);
+  return card;
+}
+
 function renderShared(entry) {
+  if (entry.unavailable) return renderUnreadableShare(entry);
   const card = el('div', 'card');
   card.dataset.tip = entry.tip;
   const type = sharedType(entry.templateName, entry.payload);

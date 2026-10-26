@@ -38,7 +38,7 @@ implements it. Settings has eleven entries, and a new setting joins one of them:
 | **Privacy and security** | What sites may do and what gets blocked: content blocking, site permissions, popups, per-site exceptions                                                                         | Which network or node serves the content (Networks, Nodes) |
 | **Networks**             | How Freedom reaches blockchains and resolves names: chains, RPC providers and keys, name resolution, verification. Per-chain options go in the chain's detail (`#networks/<id>`) | Running a node (Nodes)                                     |
 | **Nodes**                | The bundled services (Swarm, IPFS, Radicle, Ethereum and Gnosis nodes, Tor): mode, endpoint, whether each one starts with Freedom                                                | A protocol's network or chain choices (Networks)           |
-| **Identity**             | The identity service behind `freedom://identity` and the claims kept in this profile (export, remove). Beta: its switch stays in Advanced                                           | Wallet controls (the sidebar)                              |
+| **Identity**             | The identity service behind `freedom://identity` and the claims kept in this profile (export, remove), and the Beta switch that turns the feature on                                           | Wallet controls (the sidebar)                              |
 | **Advanced**             | Below the rule. Beta features and power-user controls                                                                                                                            | Anything finished. It is a waiting room, not a home        |
 | **About Freedom**        | Version, updates, licences, links                                                                                                                                                |                                                            |
 
@@ -66,7 +66,9 @@ The Ethereum and Gnosis nodes have no Advanced toggle at all: they are one
   "Start Ethereum node" / "Start Gnosis node"); don't rename an existing row
   just to match, and don't flag that pre-existing mismatch in an unrelated PR.
 - A Beta feature's on/off switch lives in Advanced, with the `.resolver-badge`
-  Beta badge, never "(Beta)" in the label. A Beta _node's_ own configuration
+  Beta badge, never "(Beta)" in the label. The one exception is a Beta feature
+  that has an entry of its own (Identity): its switch is that page's first
+  row, so the page that configures it is also the one that turns it off. A Beta _node's_ own configuration
   (mode, endpoint) stays in the Nodes panel beside the other nodes, as Tor's
   and Myotis's do; don't move node rows into Advanced. Its start-at-launch
   toggle, if it has one, goes in Nodes → Startup beside its siblings (§2).
