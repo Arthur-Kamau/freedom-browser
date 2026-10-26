@@ -46,7 +46,7 @@ function setup({ wallet = { index: 0, address: ADDRESS, type: 'mnemonic' }, atte
     verifyTree: jest.fn(async () => verifyResult || { success: true, is_valid: true, status: 'OK', logs: [] }),
     sendCode: jest.fn(async () => ({ success: true, message: 'sent' })),
     verifyCode: jest.fn(async () => ({ success: true, message: 'ok', verification_token: 'vt-1' })),
-    dnsInstructions: jest.fn(async () => ({ record_name: '_aqua.example.com', record_value: 'aqua=x' })),
+    dnsInstructions: jest.fn(async () => ({ txt_name: '_aqua.example.com', txt_value: 'aqua-identity=did:pkh:eip155:1:0xabc', domain: 'example.com' })),
     verifyDns: jest.fn(async () => ({ success: true, verification_status: 'verified' })),
   };
   const signer = { sign: jest.fn(async () => '0x' + 'ee'.repeat(65)) };
@@ -203,7 +203,7 @@ describe('codes, refresh, removal, domains', () => {
     const record = await service.createClaim({ type: 'domain', fields: { domain: 'Example.com' } });
     expect(client.createDnsClaim).toHaveBeenCalledWith(ADDRESS, { domain: 'example.com' });
     expect(record.domainVerification).toBe('pending');
-    expect(await service.dnsInstructions(record.id)).toMatchObject({ record_name: '_aqua.example.com' });
+    expect(await service.dnsInstructions(record.id)).toMatchObject({ txt_name: '_aqua.example.com', txt_value: 'aqua-identity=did:pkh:eip155:1:0xabc' });
     client.verifyDns.mockResolvedValueOnce({ success: true, verification_status: 'verified', attestation_tip: ATTESTATION_TIP });
     const verified = await service.verifyDns(record.id);
     expect(verified.domainVerification).toBe('verified');
