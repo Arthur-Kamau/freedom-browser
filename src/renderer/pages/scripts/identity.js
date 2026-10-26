@@ -118,6 +118,8 @@ let hasVault = true;
 // bare node does not, so those claim kinds are offered only when it does.
 let outOfBandVerification = true;
 let activeAddress = '';
+// The identity service this profile uses now, from the status line.
+let serviceUrl = '';
 // Whether the service holds a session for the active wallet. Until it does
 // the page shows the sign-in card and loads nothing that would need one.
 let signedIn = false;
@@ -180,6 +182,10 @@ function sharedType(templateName, payload) {
   if (tn.includes('phone') || p.phone_number) return 'phone';
   if (tn.includes('dns') || tn.includes('domain') || p.domain_name) return 'domain';
   return 'name';
+}
+
+function normalizeUrl(url) {
+  return String(url || '').replace(/\/+$/, '').toLowerCase();
 }
 
 function formatTime(iso) {
@@ -393,6 +399,14 @@ function renderClaim(claim) {
   );
 
   const body = el('div', 'claim-body');
+  // A claim is held by the service it was made on; after a service change
+  // the current one cannot share, pull or check it.
+  const elsewhere = Boolean(claim.nodeUrl && serviceUrl && normalizeUrl(claim.nodeUrl) !== normalizeUrl(serviceUrl));
+  if (elsewhere) {
+    body.appendChild(
+      statusLine('wait', 'server', `Made on ${claim.nodeUrl}. The service this profile uses now does not hold it; switch back under Settings → Identity to share or check it.`)
+    );
+  }
   const verification = claim.verification || {};
   if (verification.isValid) {
     const status = verification.status && verification.status !== 'OK' ? ` (${verification.status})` : '';
@@ -427,20 +441,26 @@ function renderClaim(claim) {
   card.appendChild(body);
 
   const actions = el('div', 'actions');
+  const onlyThere = (btn) => {
+    if (!elsewhere) return btn;
+    btn.disabled = true;
+    btn.title = `Made on ${claim.nodeUrl}`;
+    return btn;
+  };
   if (claim.type === 'domain') {
     const dnsBtn = button('btn small', 'globe', 'DNS record');
     dnsBtn.addEventListener('click', () => openDnsDialog(claim));
-    actions.appendChild(dnsBtn);
+    actions.appendChild(onlyThere(dnsBtn));
     const checkBtn = button('btn small', 'check', 'Check DNS');
     checkBtn.addEventListener('click', () => openDnsDialog(claim, { check: true }));
-    actions.appendChild(checkBtn);
+    actions.appendChild(onlyThere(checkBtn));
   }
   const share = button('btn small', 'share', 'Share for attestation');
   share.addEventListener('click', () => openShareDialog(claim));
-  actions.appendChild(share);
+  actions.appendChild(onlyThere(share));
   const pull = button('btn small', 'pull', 'Pull attestations');
   pull.addEventListener('click', () => pullAttestations(claim));
-  actions.appendChild(pull);
+  actions.appendChild(onlyThere(pull));
   const imp = button('btn small', 'import', 'Import attestation');
   imp.addEventListener('click', () => openImportDialog(claim));
   actions.appendChild(imp);
@@ -514,6 +534,7 @@ async function loadStatus() {
   hideNotice();
   hasVault = result.hasVault !== false;
   activeAddress = (result.vaultUnlocked && result.wallet?.address) || '';
+  serviceUrl = result.nodeUrl || '';
   outOfBandVerification = result.service ? result.service.outOfBandVerification !== false : true;
   kindButtons.email.disabled = !outOfBandVerification;
   kindButtons.phone.disabled = !outOfBandVerification;

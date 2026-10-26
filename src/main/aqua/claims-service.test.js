@@ -216,6 +216,31 @@ describe('codes, refresh, removal, domains', () => {
     expect(verified.attestations.map((a) => a.tip)).toEqual([ATTESTATION_TIP]);
   });
 
+  test('a claim made on another identity service is neither shared, pulled nor DNS-checked here, and says why', async () => {
+    const { service, store, client } = setup();
+    client.shareTree = jest.fn(async () => ({ success: true }));
+    client.listAttestations = jest.fn(async () => ({ success: true, attestations: [] }));
+    client.capabilities = jest.fn(async () => ({ reachable: true, serviceDid: 'did:x', outOfBandVerification: true }));
+    const name = await service.createClaim({ type: 'name', fields: { given_name: 'A', family_name: 'B' } });
+    expect(name.nodeUrl).toBe('https://aqua.test');
+    await store.upsert({ ...name, nodeUrl: 'https://other.example/' });
+    await expect(service.shareForAttestation(name.id, '0xC412d3047AffD97dC51C5C52E2588Ae4238CbF88')).rejects.toThrow(
+      'This claim was made on https://other.example/; https://aqua.test does not hold it'
+    );
+    expect(client.shareTree).not.toHaveBeenCalled();
+    const pulled = await service.pullAttestations(name.id);
+    expect(pulled.id).toBe(name.id);
+    expect(client.listAttestations).not.toHaveBeenCalled();
+    const domain = await service.createClaim({ type: 'domain', fields: { domain: 'example.com' } });
+    await store.upsert({ ...domain, nodeUrl: 'https://other.example' });
+    await expect(service.dnsInstructions(domain.id)).rejects.toThrow('Switch the identity service back');
+    await expect(service.verifyDns(domain.id)).rejects.toThrow('Switch the identity service back');
+    // The same address with a trailing slash is the same service.
+    await store.upsert({ ...name, nodeUrl: 'https://aqua.test/' });
+    await service.shareForAttestation(name.id, '0xC412d3047AffD97dC51C5C52E2588Ae4238CbF88');
+    expect(client.shareTree).toHaveBeenCalledTimes(1);
+  });
+
   test('status reports the service URL, whether the active wallet can sign, and whether it is signed in', async () => {
     const { service, client } = setup({ wallet: { index: 3, address: ADDRESS, type: 'ledger' } });
     client.hasSession = jest.fn(() => false);

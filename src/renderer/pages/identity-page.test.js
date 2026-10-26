@@ -449,6 +449,28 @@ describe('freedom://identity', () => {
   });
 });
 
+describe('freedom://identity service change', () => {
+  test('a claim made on another identity service says so and offers neither share, pull nor DNS check', async () => {
+    const page = await run(api({ aquaListClaims: async () => ({ success: true, claims: [
+      claim({ id: 'far', nodeUrl: 'https://aquafire.inblock.io' }),
+      claim({ id: 'near', nodeUrl: 'https://aqua.test/' }),
+      claim({ id: 'old' }),
+    ] }) }));
+    const cards = page.elements['claims-list'].querySelectorAll('.card');
+    const far = cards.find((c) => c.dataset.id === 'far');
+    expect(far.textContent).toContain('Made on https://aquafire.inblock.io');
+    expect(buttonNamed(far, 'Share for attestation').disabled).toBe(true);
+    expect(buttonNamed(far, 'Pull attestations').disabled).toBe(true);
+    expect(buttonNamed(far, 'Import attestation').disabled).toBeFalsy();
+    expect(buttonNamed(far, 'Remove').disabled).toBeFalsy();
+    for (const id of ['near', 'old']) {
+      const card = cards.find((c) => c.dataset.id === id);
+      expect(card.textContent).not.toContain('Made on');
+      expect(buttonNamed(card, 'Share for attestation').disabled).toBeFalsy();
+    }
+  });
+});
+
 describe('freedom://identity attestation', () => {
   test('a pending peer attestation says Freedom fetches it once shared back, with its source', async () => {
     const pending = claim({ attestations: [{ tip: '0x1', attesterDid: 'did:pkh:eip155:1:0xpeer', context: HOSTILE, source: 'peer', pending: true, verification: { isValid: false, status: 'held' } }] });
