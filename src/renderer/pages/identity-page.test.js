@@ -507,6 +507,34 @@ describe('freedom://identity attestation', () => {
     expect(page.elements['status-notice'].textContent).toContain('Attested');
   });
 
+  test('a share this wallet already attested says so and does not offer Attest again', async () => {
+    const shared = [{ contractHash: 'h1', tip: '0xt', sender: 'did:pkh:eip155:1:0xowner', templateName: 'name_claim', payload: { signer_did: 'did:pkh:eip155:1:0xowner', given_name: 'Ada', family_name: 'Probe' } }];
+    const issued = [];
+    const freedomAPI = api({
+      aquaListShared: async () => ({ success: true, shared }),
+      aquaListIssued: async () => ({ success: true, issued }),
+      aquaAttestShared: jest.fn(async () => {
+        issued.push({ id: 'a1', tip: '0xa', claimTip: '0xt', subjectDid: 'did:pkh:eip155:1:0xowner', context: HOSTILE, createdAt: '2026-10-26T10:00:00Z', verification: { isValid: true } });
+        return { success: true };
+      }),
+    });
+    const page = await run(freedomAPI);
+    let card = page.elements['shared-claims'].querySelector('.card');
+    expect(buttonNamed(card, 'Attest')).toBeDefined();
+    expect(card.querySelector('.badge')).toBeNull();
+    await buttonNamed(card, 'Attest').fire('click');
+    page.elements['attest-words'].value = 'I know this person';
+    await page.elements['attest-btn'].fire('click');
+    await page.flush();
+    card = page.elements['shared-claims'].querySelector('.card');
+    expect(card.querySelector('.badge').textContent).toBe('Attested by you');
+    expect(card.querySelector('.status-line').textContent).toContain('You attested this');
+    expect(Array.from(card.querySelectorAll('.btn')).map((b) => b.textContent)).toEqual(['See in Issued']);
+    await buttonNamed(card, 'See in Issued').fire('click');
+    expect(page.elements['nav-issued'].classList.contains('active')).toBe(true);
+    expect(page.document.htmlWrites).toHaveLength(0);
+  });
+
   test('a share the service lists but cannot show is said with its reason, not dropped', async () => {
     const freedomAPI = api({
       aquaListShared: async () => ({ success: true, shared: [

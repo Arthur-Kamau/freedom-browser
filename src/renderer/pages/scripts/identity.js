@@ -126,6 +126,9 @@ let signedIn = false;
 let serviceReachable = true;
 // The claim or shared entry a modal is open for.
 let current = null;
+// Attestations this wallet issued, by the revision they vouch for: a share
+// already attested says so instead of offering Attest again.
+let issuedByClaimTip = new Map();
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -545,7 +548,8 @@ async function loadAll() {
     issuedEl.replaceChildren();
     return;
   }
-  await Promise.all([loadClaims(), loadShared(), loadIssued()]);
+  await Promise.all([loadClaims(), loadIssued()]);
+  await loadShared();
 }
 
 async function signIn() {
@@ -785,8 +789,12 @@ function renderShared(entry) {
   const card = el('div', 'card');
   card.dataset.tip = entry.tip;
   const type = sharedType(entry.templateName, entry.payload);
-  card.appendChild(claimHead(type, sharedValue(entry), [TYPE_LABELS[type], '·', 'shared with you']));
+  const mine = issuedByClaimTip.get(entry.tip);
+  card.appendChild(
+    claimHead(type, sharedValue(entry), [TYPE_LABELS[type], '·', 'shared with you'], mine ? badge('attested', 'check-circle', 'Attested by you') : null)
+  );
   const body = el('div', 'claim-body');
+  if (mine) body.appendChild(statusLine('ok', 'check-circle', `You attested this ${formatTime(mine.createdAt)}. Send the attestation to the owner from Issued.`));
   const tech = el('div', 'tech-rows');
   techRow(tech, 'Subject', (entry.payload && entry.payload.signer_did) || '');
   techRow(tech, 'Shared by', entry.sender || '');
@@ -796,9 +804,18 @@ function renderShared(entry) {
   card.appendChild(body);
   const actions = el('div', 'actions');
   actions.appendChild(el('span', 'spacer'));
-  const attest = button('btn small primary', 'shield', 'Attest');
-  attest.addEventListener('click', () => openAttestDialog(entry));
-  actions.appendChild(attest);
+  if (mine) {
+    const see = button('btn small', 'file', 'See in Issued');
+    see.addEventListener('click', () => {
+      showPanel('issued');
+      if (window.location && typeof window.location.hash === 'string') window.location.hash = 'issued';
+    });
+    actions.appendChild(see);
+  } else {
+    const attest = button('btn small primary', 'shield', 'Attest');
+    attest.addEventListener('click', () => openAttestDialog(entry));
+    actions.appendChild(attest);
+  }
   card.appendChild(actions);
   return card;
 }
@@ -832,6 +849,7 @@ async function attestShared() {
   closeDialog(attestDialog);
   showNotice('', "Attested. Send the attestation from the Issued section to the claim's owner.");
   await loadIssued();
+  await loadShared();
 }
 
 async function loadShared() {
@@ -894,12 +912,14 @@ function renderIssued(entry) {
 
 async function loadIssued() {
   const result = await window.freedomAPI.aquaListIssued();
+  issuedByClaimTip = new Map();
   if (!result?.success) {
     issuedEl.replaceChildren();
     if (!isLocked(result)) issuedEl.appendChild(el('div', 'meta', errorText(result, 'Issued attestations could not be loaded.')));
     return;
   }
   const issued = result.issued || [];
+  for (const entry of issued) if (entry.claimTip && !issuedByClaimTip.has(entry.claimTip)) issuedByClaimTip.set(entry.claimTip, entry);
   issuedCount.textContent = String(issued.length);
   if (issued.length === 0) {
     issuedEl.replaceChildren(emptyState('file', "You have not attested anyone's claim yet"));
