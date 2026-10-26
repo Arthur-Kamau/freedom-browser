@@ -306,9 +306,6 @@
       .section-head .meta {
         flex: 1;
       }
-      .section-head.subhead {
-        margin-top: 32px;
-      }
       .section > .meta {
         margin: 0 0 14px;
       }
@@ -479,6 +476,20 @@
       .attestation .state {
         grid-column: 1 / 4;
         font-size: 12px;
+      }
+      /* An attestation you issued carries its hash and Copy JSON in the box. */
+      .attestation .tech-rows,
+      .attestation .actions {
+        grid-column: 1 / 4;
+      }
+      .attestation .tech-rows {
+        font-size: 12px;
+        margin-top: 0;
+      }
+      .attestation .actions {
+        border-top: none;
+        margin-top: 0;
+        padding-top: 0;
       }
       .badge.pending {
         border-color: var(--warn);
@@ -966,19 +977,13 @@
         <section class="section panel" id="panel-attest" data-nav="attest">
           <div class="section-head">
             <h2>Attest for someone else</h2>
-            <span class="meta">Claims other people shared with your wallet on the identity service.</span>
+            <span class="meta">Claims other people shared with your wallet, and the attestations you issued for them.</span>
           </div>
           <p class="meta">
             Attesting signs a statement with your wallet that you vouch for the claim. The identity service
             records it, and the owner's Freedom picks it up the next time they open their claims.
           </p>
           <div id="shared-claims"></div>
-          <div class="section-head subhead">
-            <h2>Attestations you issued</h2>
-            <span class="count" id="issued-count">0</span>
-            <span class="meta">Your record of them. Copy one as JSON if the owner needs it another way.</span>
-          </div>
-          <div id="issued-list"></div>
         </section>
 
         <section class="section panel" id="panel-requests" data-nav="requests">

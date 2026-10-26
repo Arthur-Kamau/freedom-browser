@@ -7,8 +7,8 @@ const { runPageScript } = require('../../../test/helpers/page-script-harness');
 
 const HOSTILE = `"><img src=x onerror=alert(1) data-xss="1">'<b>&amp;`;
 const IDS = {
-  'claims-list': 'div', 'claims-empty': 'div', 'shared-claims': 'div', 'issued-list': 'div',
-  'status-wallet': 'span', 'status-service': 'span', 'status-caps': 'span', 'claims-count': 'span', 'shared-count': 'span', 'issued-count': 'span',
+  'claims-list': 'div', 'claims-empty': 'div', 'shared-claims': 'div',
+  'status-wallet': 'span', 'status-service': 'span', 'status-caps': 'span', 'claims-count': 'span', 'shared-count': 'span',
   'status-lock': 'span', 'signin-card': 'div', 'signin-text': 'div', 'signin-btn': 'button', 'signin-error': 'div', 'service-down': 'div', 'service-down-text': 'div', 'service-retry-btn': 'button', 'service-settings-btn': 'button', 'locked-card': 'div', 'locked-title': 'div', 'locked-text': 'div', 'unlock-btn': 'button', 'status-notice': 'div', 'wallet-line': 'p',
   'nav-claims': 'button', 'nav-attest': 'button', 'nav-requests': 'button', 'panel-claims': 'section', 'panel-attest': 'section', 'panel-requests': 'section',
   // Add a claim
@@ -107,7 +107,6 @@ describe('freedom://identity', () => {
     expect(page.elements['claims-list'].children).toHaveLength(0);
     expect(page.elements['claims-empty'].classList.contains('hidden')).toBe(true);
     expect(page.elements['shared-claims'].children).toHaveLength(0);
-    expect(page.elements['issued-list'].children).toHaveLength(0);
     expect(page.elements['add-claim-btn'].disabled).toBe(true);
     expect(page.elements['request-open-btn'].disabled).toBe(true);
     // The page polls for an unlock made elsewhere while the vault is locked.
@@ -553,8 +552,13 @@ describe('freedom://identity attestation', () => {
     card = page.elements['shared-claims'].querySelector('.card');
     expect(card.querySelector('.badge').textContent).toBe('Attested by you');
     expect(card.querySelector('.status-line').textContent).toContain('You attested this');
-    expect(card.querySelectorAll('.btn')).toHaveLength(0);
-    expect(page.elements['issued-count'].textContent).toBe('1');
+    // The attestation sits on the same card: words, state, hash, Copy JSON.
+    const block = card.querySelector('.attestation');
+    expect(block.querySelector('.words').textContent).toBe(HOSTILE);
+    expect(block.querySelector('.badge').textContent).toBe('Signed');
+    expect(block.textContent).toContain('0xa');
+    expect(Array.from(card.querySelectorAll('.btn')).map((b) => b.textContent)).toEqual(['Copy JSON']);
+    expect(page.elements['shared-count'].textContent).toBe('1');
     expect(page.document.htmlWrites).toHaveLength(0);
   });
 
@@ -575,28 +579,52 @@ describe('freedom://identity attestation', () => {
     expect(page.document.htmlWrites).toHaveLength(0);
   });
 
-  test('an issued attestation can be copied as JSON for the owner', async () => {
+  test('an attestation issued for a claim no longer shared is its own card in the same list, and copies as JSON', async () => {
     const freedomAPI = api({
       aquaListIssued: async () => ({ success: true, issued: [{ id: 'a1', tip: '0xa', claimTip: '0xt', subjectDid: 'did:pkh:eip155:1:0xowner', context: HOSTILE, createdAt: '2026-10-22T12:00:00Z', verification: { isValid: true }, templateName: 'email_claim', subjectPayload: { email: 's@p.q' } }] }),
     });
     const page = await run(freedomAPI);
-    expect(page.elements['issued-count'].textContent).toBe('1');
-    const card = page.elements['issued-list'].querySelector('.card');
+    expect(page.elements['shared-count'].textContent).toBe('1');
+    const card = page.elements['shared-claims'].querySelector('.card');
     expect(card.textContent).toContain(HOSTILE);
+    expect(card.textContent).toContain('no longer shared with you');
     expect(card.querySelector('.claim-value').textContent).toBe('s@p.q');
     expect(card.querySelector('.claim-icon').querySelector('.ico-mail')).not.toBeNull();
-    expect(card.querySelector('.badge').textContent).toBe('Signed');
+    expect(card.querySelector('.badge').textContent).toBe('Attested by you');
     await buttonNamed(card, 'Copy JSON').fire('click');
     await page.flush();
     expect(freedomAPI.aquaExportIssued).toHaveBeenCalledWith('a1');
     expect(freedomAPI.copyText).toHaveBeenCalledWith('{"revisions":{}}');
   });
 
-  test('empty shared and issued lists show an icon and one line', async () => {
+  test('an empty Attest others list shows an icon and one line', async () => {
     const page = await run(api());
     expect(page.elements['shared-claims'].querySelector('.empty').textContent).toContain('Nothing has been shared');
     expect(page.elements['shared-claims'].querySelector('.empty').querySelector('.ico')).not.toBeNull();
-    expect(page.elements['issued-list'].querySelector('.empty').textContent).toContain('not attested');
+  });
+
+  test('the same claim shared twice is one card, with its latest share, and every attestation issued for it', async () => {
+    const freedomAPI = api({
+      aquaListShared: async () => ({ success: true, shared: [
+        { contractHash: 'h1', tip: '0xt', sender: 'did:pkh:eip155:1:0xowner', templateName: 'phone_claim', payload: { signer_did: 'did:pkh:eip155:1:0xowner', phone_number: '+10000000000' }, sharedAt: '2026-10-23T13:03:00Z' },
+        { contractHash: 'h2', tip: '0xt', sender: 'did:pkh:eip155:1:0xowner', templateName: 'phone_claim', payload: { signer_did: 'did:pkh:eip155:1:0xowner', phone_number: '+10000000000' }, sharedAt: '2026-10-26T14:21:00Z' },
+      ] }),
+      aquaListIssued: async () => ({ success: true, issued: [
+        { id: 'a1', tip: '0xa1', claimTip: '0xt', subjectDid: 'did:pkh:eip155:1:0xowner', context: 'first', createdAt: '2026-10-26T14:25:00Z', verification: { isValid: true } },
+        { id: 'a2', tip: '0xa2', claimTip: '0xt', subjectDid: 'did:pkh:eip155:1:0xowner', context: 'second', createdAt: '2026-10-26T14:26:00Z', verification: { isValid: false } },
+      ] }),
+    });
+    const page = await run(freedomAPI);
+    const cards = page.elements['shared-claims'].querySelectorAll('.card');
+    expect(cards).toHaveLength(1);
+    expect(page.elements['shared-count'].textContent).toBe('1');
+    expect(cards[0].dataset.contract).toBeUndefined();
+    const rows = cards[0].querySelectorAll('.tech-rows');
+    expect(rows[rows.length - 1].textContent).toContain(new Date('2026-10-26T14:21:00Z').toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }));
+    const blocks = cards[0].querySelectorAll('.attestation');
+    expect(blocks.map((b) => b.querySelector('.words').textContent)).toEqual(['first', 'second']);
+    expect(blocks.map((b) => b.querySelector('.badge').textContent)).toEqual(['Signed', 'Not verified']);
+    expect(cards[0].querySelectorAll('.btn').map((b) => b.textContent)).toEqual(['Copy JSON', 'Copy JSON']);
   });
 
   test('a service without out-of-band verification withholds email and phone claims', async () => {

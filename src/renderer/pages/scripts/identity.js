@@ -10,7 +10,6 @@ const $ = (id) => document.getElementById(id);
 const claimsEl = $('claims-list');
 const claimsEmpty = $('claims-empty');
 const sharedEl = $('shared-claims');
-const issuedEl = $('issued-list');
 const statusNotice = $('status-notice');
 const walletLine = $('wallet-line');
 const statusWallet = $('status-wallet');
@@ -18,7 +17,6 @@ const statusService = $('status-service');
 const statusCaps = $('status-caps');
 const claimsCount = $('claims-count');
 const sharedCount = $('shared-count');
-const issuedCount = $('issued-count');
 const statusLock = $('status-lock');
 const signinCard = $('signin-card');
 const signinText = $('signin-text');
@@ -127,8 +125,9 @@ let serviceReachable = true;
 // The claim or shared entry a modal is open for.
 let current = null;
 // Attestations this wallet issued, by the revision they vouch for: a share
-// already attested says so instead of offering Attest again.
+// already attested shows them on its card instead of offering Attest again.
 let issuedByClaimTip = new Map();
+let issuedAll = [];
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -567,7 +566,6 @@ async function loadAll({ pull = false } = {}) {
     claimsEl.replaceChildren();
     claimsEmpty.classList.add('hidden');
     sharedEl.replaceChildren();
-    issuedEl.replaceChildren();
     return;
   }
   await Promise.all([loadClaims({ pull }), loadIssued()]);
@@ -843,15 +841,17 @@ function renderShared(entry) {
   const card = el('div', 'card');
   card.dataset.tip = entry.tip;
   const type = sharedType(entry.templateName, entry.payload);
-  const mine = issuedByClaimTip.get(entry.tip);
+  const mine = issuedByClaimTip.get(entry.tip) || [];
   card.appendChild(
-    claimHead(type, sharedValue(entry), [TYPE_LABELS[type], '·', 'shared with you'], mine ? badge('attested', 'check-circle', 'Attested by you') : null)
+    claimHead(type, sharedValue(entry), [TYPE_LABELS[type], '·', 'shared with you'], mine.length > 0 ? badge('attested', 'check-circle', 'Attested by you') : null)
   );
   const body = el('div', 'claim-body');
-  if (mine) {
+  if (mine.length > 0) {
     body.appendChild(
-      statusLine('ok', 'check-circle', `You attested this ${formatTime(mine.createdAt)}. The owner's Freedom picks it up from the identity service; it is listed below.`)
+      statusLine('ok', 'check-circle', `You attested this ${formatTime(mine[mine.length - 1].createdAt)}. The owner's Freedom picks it up from the identity service.`)
     );
+    body.appendChild(el('div', 'att-title', mine.length === 1 ? 'Your attestation' : 'Your attestations'));
+    for (const issued of mine) body.appendChild(renderIssuedBlock(issued));
   }
   const tech = el('div', 'tech-rows');
   techRow(tech, 'Subject', (entry.payload && entry.payload.signer_did) || '');
@@ -860,7 +860,7 @@ function renderShared(entry) {
   techRow(tech, 'Revision', entry.tip || '');
   body.appendChild(tech);
   card.appendChild(body);
-  if (mine) return card;
+  if (mine.length > 0) return card;
   const actions = el('div', 'actions');
   actions.appendChild(el('span', 'spacer'));
   const attest = button('btn small primary', 'shield', 'Attest');
@@ -913,15 +913,83 @@ async function loadShared() {
     if (!isLocked(result)) sharedEl.appendChild(el('div', 'meta', errorText(result, 'Shared claims could not be loaded.')));
     return;
   }
-  const shared = result.shared || [];
-  sharedCount.textContent = String(shared.length);
-  if (shared.length === 0) {
+  // One card per claim: the same revision shared twice is one thing to
+  // attest, shown with its latest share. Unreadable shares stay as they are.
+  const byTip = new Map();
+  const entries = [];
+  for (const entry of result.shared || []) {
+    if (entry.unavailable || !entry.tip) {
+      entries.push(entry);
+      continue;
+    }
+    const seen = byTip.get(entry.tip);
+    if (!seen) {
+      byTip.set(entry.tip, entry);
+      entries.push(entry);
+    } else if (String(entry.sharedAt || '') > String(seen.sharedAt || '')) {
+      entries[entries.indexOf(seen)] = entry;
+      byTip.set(entry.tip, entry);
+    }
+  }
+  const cards = entries.map(renderShared);
+  // An attestation issued for a claim no longer shared with this wallet is
+  // still this wallet's record: its own card, after the shares.
+  for (const issued of issuedAll) if (!issued.claimTip || !byTip.has(issued.claimTip)) cards.push(renderIssued(issued));
+  sharedCount.textContent = String(cards.length);
+  if (cards.length === 0) {
     sharedEl.replaceChildren(emptyState('inbox', 'Nothing has been shared with this wallet'));
     return;
   }
-  sharedEl.replaceChildren(...shared.map(renderShared));
+  sharedEl.replaceChildren(...cards);
 }
 
+// Copy an issued attestation's tree as text, for an owner on another client.
+function copyIssuedButton(entry) {
+  const copyBtn = button('btn small', 'copy', 'Copy JSON');
+  copyBtn.addEventListener('click', async () => {
+    const result = await window.freedomAPI.aquaExportIssued(entry.id);
+    if (!result?.success) {
+      showNotice('error', errorText(result, 'The attestation could not be exported.'));
+      return;
+    }
+    await window.freedomAPI.copyText(result.json);
+    showNotice('', "Copied. The owner can import it under the claim if their Freedom has not picked it up.");
+  });
+  return copyBtn;
+}
+
+// One attestation this wallet issued, on the shared claim's card: the words,
+// its state, when, the attestation hash, and Copy JSON.
+function renderIssuedBlock(entry) {
+  const valid = Boolean(entry.verification?.isValid);
+  const box = el('div', valid ? 'attestation' : 'attestation invalid');
+  const source = el('span', 'source');
+  source.appendChild(icon('pen'));
+  source.appendChild(document.createTextNode('You'));
+  box.appendChild(source);
+  box.appendChild(el('span', 'who', formatTime(entry.createdAt)));
+  box.appendChild(valid ? badge('attested', 'check-circle', 'Signed') : badge('', 'x-circle', 'Not verified'));
+  if (entry.context) {
+    const words = el('div', 'words', entry.context);
+    words.title = 'Show more';
+    words.addEventListener('click', () => {
+      const open = words.classList.toggle('expanded');
+      words.title = open ? 'Show less' : 'Show more';
+    });
+    box.appendChild(words);
+  }
+  const tech = el('div', 'tech-rows');
+  techRow(tech, 'Attestation', entry.tip || '');
+  box.appendChild(tech);
+  const actions = el('div', 'actions');
+  actions.appendChild(el('span', 'spacer'));
+  actions.appendChild(copyIssuedButton(entry));
+  box.appendChild(actions);
+  return box;
+}
+
+// An attestation this wallet issued for a claim that is no longer shared
+// with it: still this wallet's record, on a card of its own.
 function renderIssued(entry) {
   const card = el('div', 'card');
   card.dataset.id = entry.id;
@@ -932,8 +1000,8 @@ function renderIssued(entry) {
     claimHead(
       type,
       sharedValue({ payload: p, fileName: '' }) || shortHash(entry.claimTip),
-      [TYPE_LABELS[type], '·', `issued ${formatTime(entry.createdAt)}`],
-      valid ? badge('attested', 'check-circle', 'Signed') : badge('', 'x-circle', 'Not verified')
+      [TYPE_LABELS[type], '·', `attested ${formatTime(entry.createdAt)}`, '·', 'no longer shared with you'],
+      valid ? badge('attested', 'check-circle', 'Attested by you') : badge('', 'x-circle', 'Not verified')
     )
   );
   const body = el('div', 'claim-body');
@@ -945,37 +1013,27 @@ function renderIssued(entry) {
   card.appendChild(body);
   const actions = el('div', 'actions');
   actions.appendChild(el('span', 'spacer'));
-  const copyBtn = button('btn small', 'copy', 'Copy JSON');
-  copyBtn.addEventListener('click', async () => {
-    const result = await window.freedomAPI.aquaExportIssued(entry.id);
-    if (!result?.success) {
-      showNotice('error', errorText(result, 'The attestation could not be exported.'));
-      return;
-    }
-    await window.freedomAPI.copyText(result.json);
-    showNotice('', "Copied. The owner can import it under the claim if their Freedom has not picked it up.");
-  });
-  actions.appendChild(copyBtn);
+  actions.appendChild(copyIssuedButton(entry));
   card.appendChild(actions);
   return card;
 }
 
+// The attestations this wallet issued, kept for the shared cards to show;
+// loadShared draws them.
 async function loadIssued() {
   const result = await window.freedomAPI.aquaListIssued();
   issuedByClaimTip = new Map();
+  issuedAll = [];
   if (!result?.success) {
-    issuedEl.replaceChildren();
-    if (!isLocked(result)) issuedEl.appendChild(el('div', 'meta', errorText(result, 'Issued attestations could not be loaded.')));
+    if (!isLocked(result)) showNotice('error', errorText(result, 'Issued attestations could not be loaded.'));
     return;
   }
-  const issued = result.issued || [];
-  for (const entry of issued) if (entry.claimTip && !issuedByClaimTip.has(entry.claimTip)) issuedByClaimTip.set(entry.claimTip, entry);
-  issuedCount.textContent = String(issued.length);
-  if (issued.length === 0) {
-    issuedEl.replaceChildren(emptyState('file', "You have not attested anyone's claim yet"));
-    return;
+  issuedAll = result.issued || [];
+  for (const entry of issuedAll) {
+    if (!entry.claimTip) continue;
+    if (!issuedByClaimTip.has(entry.claimTip)) issuedByClaimTip.set(entry.claimTip, []);
+    issuedByClaimTip.get(entry.claimTip).push(entry);
   }
-  issuedEl.replaceChildren(...issued.map(renderIssued));
 }
 
 // ── Disclosure: a request pasted by the user ─────────────────────────────
