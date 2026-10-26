@@ -427,7 +427,7 @@ describe('freedom://identity', () => {
 });
 
 describe('freedom://identity attestation', () => {
-  test('a pending peer attestation says the attester holds the tree, with its source', async () => {
+  test('a pending peer attestation says Freedom fetches it once shared back, with its source', async () => {
     const pending = claim({ attestations: [{ tip: '0x1', attesterDid: 'did:pkh:eip155:1:0xpeer', context: HOSTILE, source: 'peer', pending: true, verification: { isValid: false, status: 'held' } }] });
     const page = await run(api({ aquaListClaims: async () => ({ success: true, claims: [pending] }) }));
     const box = page.elements['claims-list'].querySelector('.attestation');
@@ -435,7 +435,7 @@ describe('freedom://identity attestation', () => {
     expect(box.querySelector('.source').querySelector('.ico-user')).not.toBeNull();
     expect(box.classList.contains('pending')).toBe(true);
     expect(box.querySelector('.badge').textContent).toBe('Pending');
-    expect(box.textContent).toContain('Import it to verify');
+    expect(box.textContent).toContain('once the attester shares it back');
     expect(page.elements['claims-list'].querySelector('.badge').textContent).toBe('Self-signed');
   });
 

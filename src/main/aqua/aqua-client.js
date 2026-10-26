@@ -210,6 +210,13 @@ function createAquaClient({ baseUrl = DEFAULT_NODE_URL, signMessage, fetchImpl, 
           body: { hash, recipients: [recipient], option: 'latest', items: [{ genesis_hash: genesis, latest: tip, file_name: fileName }] },
           session: s,
         })),
+    /**
+     * Take a copy of a share's trees into this account's own files, so they
+     * can be downloaded like anything it owns (an attestation a peer shared
+     * back with the claim's owner).
+     */
+    importShared: (address, hash) =>
+      withSession(address, (s) => request('POST', `/api/share/import/${encodeURIComponent(hash)}`, { session: s })),
     /** Share contracts addressed to `address` (claims others want attested). */
     listSharesReceived: (address) =>
       withSession(address, (s) =>

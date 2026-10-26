@@ -378,7 +378,7 @@ function renderAttestation(a) {
     box.appendChild(words);
   }
   if (state === 'wait') {
-    box.appendChild(el('div', 'state wait', 'Recorded by the service; the attester holds the tree. Import it to verify.'));
+    box.appendChild(el('div', 'state wait', 'Recorded by the service. Freedom fetches it once the attester shares it back; or import it here.'));
   } else if (state === 'bad') {
     box.appendChild(el('div', 'state bad', `Not verified: ${a.verification?.status || 'unknown'}`));
   }
@@ -558,7 +558,10 @@ function showSignIn(needed, nodeUrl) {
 
 // Everything the page lists needs the vault open and, for the service's
 // side, a session: load only once both are there.
-async function loadAll() {
+// `pull` asks the service for new attestations on every claim. Only the
+// page's own open does that: a pull is a mutation and is broadcast as a
+// claims change, so pulling again on that event would never stop.
+async function loadAll({ pull = false } = {}) {
   if (!signedIn) {
     claimsEl.replaceChildren();
     claimsEmpty.classList.add('hidden');
@@ -566,7 +569,7 @@ async function loadAll() {
     issuedEl.replaceChildren();
     return;
   }
-  await Promise.all([loadClaims({ pull: true }), loadIssued()]);
+  await Promise.all([loadClaims({ pull }), loadIssued()]);
   await loadShared();
 }
 
@@ -1265,4 +1268,4 @@ if (typeof window.freedomAPI.onAquaClaimsChanged === 'function') {
 }
 
 syncTypeFields();
-loadStatus().then(loadAll);
+loadStatus().then(() => loadAll({ pull: true }));

@@ -154,6 +154,17 @@ describe('createClaim', () => {
     expect(record.verification).toMatchObject({ isValid: false, status: 'Signature leaf invalid' });
   });
 
+  test('a failed verdict carries the verifier\'s own failing line, so the page can say what failed', async () => {
+    const { service } = setup({ verifyResult: { success: true, is_valid: false, status: 'FAILED', logs: [
+      { logType: 'info', log: 'Verifying revision 0x1' },
+      { logType: 'error', log: 'Linked tree 0x1620aa not found among the linked trees' },
+      { logType: 'error', log: 'Revision 0x2 signature invalid' },
+    ] } });
+    const record = await service.createClaim({ type: 'name', fields: { given_name: 'A', family_name: 'B' } });
+    expect(record.verification).toMatchObject({ isValid: false, status: 'FAILED: Linked tree 0x1620aa not found among the linked trees' });
+    expect(record.verification.reasons).toEqual(['Linked tree 0x1620aa not found among the linked trees', 'Revision 0x2 signature invalid']);
+  });
+
   test('AS-REQ-0013: a downloaded claim whose subject is another wallet is refused', async () => {
     const { service, client, store } = setup();
     const foreign = JSON.parse(JSON.stringify(FIXTURE));
@@ -235,6 +246,9 @@ describe('attestation: owner side', () => {
     ctx.client.completeSign.mockResolvedValue({ success: true, new_tip: SHARED_TIP, attestation_tip: null });
     ctx.client.createNameClaim.mockResolvedValue({ success: true, tip: SHARED_TIP });
     ctx.client.shareTree = jest.fn(async () => ({ success: true, hash: 'h' }));
+    ctx.client.listSharesReceived = jest.fn(async () => ({ success: true, contracts: [] }));
+    ctx.client.sharedData = jest.fn(async () => ({ success: true, trees: [] }));
+    ctx.client.importShared = jest.fn(async () => ({ success: true, imported: [] }));
     ctx.client.listAttestations = jest.fn(async () => ({ success: true, attestations: [], total: 0 }));
     ctx.client.capabilities = jest.fn(async () => ({ reachable: true, serviceDid: SERVICE_DID, outOfBandVerification: true }));
     return ctx;
@@ -286,6 +300,47 @@ describe('attestation: owner side', () => {
     expect((await service.pullAttestations(record.id)).attestations).toHaveLength(2);
   });
 
+  test('pullAttestations imports an attestation the attester shared back, and completes one left pending by an earlier pull', async () => {
+    const { service, client } = ownerSetup();
+    const record = await service.createClaim({ type: 'name', fields: { given_name: 'A', family_name: 'B' } });
+    const listing = { success: true, attestations: [{ tip: PEER_TIP, attester_did: PEER_DID, context: 'X: I know this person', created_at: '2026-10-22T12:10:34+00:00' }] };
+    client.listAttestations.mockResolvedValue(listing);
+    let imported = false;
+    client.downloadTree.mockImplementation(async (_a, tip) => {
+      if (tip === PEER_TIP) {
+        if (!imported) throw new Error('Tree not found');
+        return writeAquaArtifact({ attestation: PEER });
+      }
+      return writeAquaArtifact({ claim: SHARED });
+    });
+    // First pull: nothing shared back yet, so the attestation is pending.
+    const first = await service.pullAttestations(record.id);
+    expect(first.attestations[0]).toMatchObject({ tip: PEER_TIP, pending: true, tree: null });
+    expect(client.importShared).not.toHaveBeenCalled();
+    // The attester has since shared it back (under Freedom's naming), beside an unrelated share.
+    client.listSharesReceived.mockResolvedValue({ success: true, contracts: [
+      { hash: 'freedom-attest-other', sender: PEER_DID },
+      { hash: 'freedom-attestation-1', sender: PEER_DID, file_name: 'attestation' },
+    ] });
+    client.sharedData.mockImplementation(async (_a, hash) =>
+      hash === 'freedom-attestation-1'
+        ? { success: true, trees: [{ tip: PEER_TIP, file_name: 'attestation', template_name: 'attestation', revisions: [] }] }
+        : { success: true, trees: [{ tip: '0x1620' + '11'.repeat(32), template_name: 'name_claim', revisions: [] }] });
+    client.importShared.mockImplementation(async () => { imported = true; return { success: true, imported: [{ tip: PEER_TIP }] }; });
+    const second = await service.pullAttestations(record.id);
+    expect(client.importShared).toHaveBeenCalledTimes(1);
+    expect(client.importShared).toHaveBeenCalledWith('0x9dc33190f554d86fa4433394a1c4989774262979', 'freedom-attestation-1');
+    expect(second.attestations).toHaveLength(1);
+    expect(second.attestations[0]).toMatchObject({ tip: PEER_TIP, pending: false, source: 'peer', verification: { isValid: true } });
+    expect(second.attestations[0].tree).toEqual(PEER);
+    // Held now: a third pull neither imports nor downloads it again.
+    client.importShared.mockClear();
+    client.downloadTree.mockClear();
+    await service.pullAttestations(record.id);
+    expect(client.importShared).not.toHaveBeenCalled();
+    expect(client.downloadTree).not.toHaveBeenCalled();
+  });
+
   test('importAttestation accepts the attester\'s tree when it names this claim and verifies it linked', async () => {
     const { service, client } = ownerSetup();
     const record = await service.createClaim({ type: 'name', fields: { given_name: 'A', family_name: 'B' } });
@@ -330,6 +385,7 @@ describe('attestation: attester side', () => {
     ] }));
     ctx.client.attestPrepare = jest.fn(async () => ({ message_hex: '0x7b7d', message_utf8: '{"a":1}', signer_did: 'did:pkh:eip155:1:0xC412d3047AffD97dC51C5C52E2588Ae4238CbF88' }));
     ctx.client.attestComplete = jest.fn(async () => ({ success: true, attestation_tip: PEER_TIP, claim_tip: CLAIM_TIP }));
+    ctx.client.shareTree = jest.fn(async () => ({ success: true }));
     ctx.client.downloadTree.mockImplementation(async () => writeAquaArtifact({ attestation: PEER }));
     ctx.client.capabilities = jest.fn(async () => ({ reachable: true, serviceDid: 'did:x', outOfBandVerification: true }));
     return ctx;
@@ -370,6 +426,11 @@ describe('attestation: attester side', () => {
     expect(signer.sign).toHaveBeenCalledWith(expect.objectContaining({ purpose: 'attestation', message: '0x7b7d', display: '{"a":1}' }));
     expect(client.attestComplete).toHaveBeenCalledWith('0xC412d3047AffD97dC51C5C52E2588Ae4238CbF88', CLAIM_TIP, { message_hex: '0x7b7d', signature: '0x' + 'ee'.repeat(65) });
     expect(issued).toMatchObject({ tip: PEER_TIP, claimTip: CLAIM_TIP, subjectDid: OWNER_DID, verification: { isValid: true } });
+    // Shared back with the claim's owner, under Freedom's naming, so their Freedom can import it.
+    expect(client.shareTree).toHaveBeenCalledWith('0xC412d3047AffD97dC51C5C52E2588Ae4238CbF88', expect.objectContaining({
+      recipient: '0x9dc33190f554d86fa4433394a1c4989774262979', tip: PEER_TIP, fileName: 'attestation', hash: expect.stringMatching(/^freedom-attestation-/),
+    }));
+    expect(issued.sharedBack).toBe(client.shareTree.mock.calls[0][1].hash);
     expect(await store.listIssued()).toHaveLength(1);
     expect(await store.list()).toEqual([]);
     expect(JSON.parse(await service.exportIssued(issued.id))).toEqual(PEER);
@@ -385,6 +446,57 @@ describe('attestation: attester side', () => {
     expect(doc.claims[0].tree).toEqual(FIXTURE);
     expect(await service.removeAllClaims()).toBe(1);
     expect(await store.list()).toEqual([]);
+  });
+
+  test('listIssued shares back an attestation issued before share-back existed, once, and only this wallet\'s own', async () => {
+    const { service, client, store } = attesterSetup();
+    const mine = { id: 'old-1', tip: PEER_TIP, claimTip: CLAIM_TIP, subjectDid: OWNER_DID, attesterDid: 'did:pkh:eip155:1:0xc412d3047affd97dc51c5c52e2588ae4238cbf88', tree: PEER, context: 'x', createdAt: '2026-10-20T10:00:00Z', verification: { isValid: true } };
+    const other = { ...mine, id: 'old-2', attesterDid: 'did:pkh:eip155:1:0x' + '7'.repeat(40) };
+    const done = { ...mine, id: 'old-3', sharedBack: 'freedom-attestation-done' };
+    await store.addIssued(mine);
+    await store.addIssued(other);
+    await store.addIssued(done);
+    const listed = await service.listIssued();
+    expect(client.shareTree).toHaveBeenCalledTimes(1);
+    expect(client.shareTree).toHaveBeenCalledWith('0xC412d3047AffD97dC51C5C52E2588Ae4238CbF88', expect.objectContaining({ recipient: '0x9dc33190f554d86fa4433394a1c4989774262979', tip: PEER_TIP }));
+    expect(listed.find((e) => e.id === 'old-1').sharedBack).toMatch(/^freedom-attestation-/);
+    expect(listed.find((e) => e.id === 'old-2').sharedBack).toBeUndefined();
+    expect(listed.find((e) => e.id === 'old-3').sharedBack).toBe('freedom-attestation-done');
+    // Remembered: the next listing shares nothing again.
+    await service.listIssued();
+    expect(client.shareTree).toHaveBeenCalledTimes(1);
+    // A refused share is tried again next time.
+    client.shareTree.mockRejectedValueOnce(new Error('down'));
+    await store.addIssued({ ...mine, id: 'old-4' });
+    await service.listIssued();
+    await service.listIssued();
+    expect(client.shareTree).toHaveBeenCalledTimes(3);
+  });
+
+  test('a share-back that fails still keeps the attestation, with Copy JSON as the way to hand it over', async () => {
+    const { service, client, store } = attesterSetup();
+    client.shareTree.mockRejectedValue(new Error('share service down'));
+    const issued = await service.attestSharedClaim({ contractHash: 'h1', tip: CLAIM_TIP, context: 'I know this person' });
+    expect(issued).toMatchObject({ tip: PEER_TIP, sharedBack: null, verification: { isValid: true } });
+    expect(await store.listIssued()).toHaveLength(1);
+  });
+
+  test('listSharedClaims leaves out attestations shared back to this wallet: they are not claims to attest', async () => {
+    const { service, client } = attesterSetup();
+    client.listSharesReceived.mockResolvedValue({ success: true, contracts: [
+      { hash: 'h1', sender: OWNER_DID, file_name: 'name_claim_Share_Probe', created_at: '2026-10-22T12:10:33Z' },
+      { hash: 'freedom-attestation-9', sender: OWNER_DID, file_name: 'attestation', created_at: '2026-10-22T12:12:00Z' },
+      { hash: 'h-other-client', sender: OWNER_DID, file_name: 'attestation', created_at: '2026-10-22T12:13:00Z' },
+    ] });
+    client.sharedData.mockImplementation(async (_a, hash) =>
+      hash === 'h-other-client'
+        ? { success: true, trees: [{ tip: '0x1620' + '22'.repeat(32), template_name: 'attestation', payload: { signer_did: OWNER_DID, context: 'words' }, revisions: [] }] }
+        : { success: true, contract: { hash, sender: OWNER_DID }, trees: [
+          { tip: CLAIM_TIP, file_name: 'name_claim_Share_Probe', revision_count: 3, payload: { signer_did: OWNER_DID, given_name: 'Share', family_name: 'Probe' }, template_name: 'name_claim', attestation_count: 0 },
+        ] });
+    const shared = await service.listSharedClaims();
+    expect(shared.map((s) => s.contractHash)).toEqual(['h1']);
+    expect(client.sharedData).not.toHaveBeenCalledWith(expect.anything(), 'freedom-attestation-9');
   });
 
   test('AS-REQ-0020: a claim the service does not show as shared with this wallet is not attested', async () => {
