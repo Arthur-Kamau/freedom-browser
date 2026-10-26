@@ -756,6 +756,13 @@ function sharedValue(entry) {
   );
 }
 
+// When the owner shared the claim, as the service recorded it. Left out
+// when the service did not say, rather than shown as an empty row.
+function sharedOnRow(rows, entry) {
+  if (!entry.sharedAt) return;
+  techRow(rows, 'Shared on', el('span', null, formatTime(entry.sharedAt)));
+}
+
 // A share the service lists but cannot show: said on its own card, with
 // the reason, instead of vanishing from the list.
 function renderUnreadableShare(entry) {
@@ -766,6 +773,7 @@ function renderUnreadableShare(entry) {
   body.appendChild(statusLine('bad', 'x-circle', entry.reason || 'The service could not show this share.'));
   const tech = el('div', 'tech-rows');
   techRow(tech, 'Shared by', entry.sender || '');
+  sharedOnRow(tech, entry);
   techRow(tech, 'Share', entry.contractHash || '');
   body.appendChild(tech);
   card.appendChild(body);
@@ -782,6 +790,7 @@ function renderShared(entry) {
   const tech = el('div', 'tech-rows');
   techRow(tech, 'Subject', (entry.payload && entry.payload.signer_did) || '');
   techRow(tech, 'Shared by', entry.sender || '');
+  sharedOnRow(tech, entry);
   techRow(tech, 'Revision', entry.tip || '');
   body.appendChild(tech);
   card.appendChild(body);

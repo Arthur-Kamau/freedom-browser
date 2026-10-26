@@ -482,12 +482,15 @@ describe('freedom://identity attestation', () => {
 
   test('a shared claim is attested with the user\'s words through the wallet', async () => {
     const freedomAPI = api({
-      aquaListShared: async () => ({ success: true, shared: [{ contractHash: 'h1', tip: '0xt', sender: 'did:pkh:eip155:1:0xowner', templateName: 'name_claim', payload: { signer_did: 'did:pkh:eip155:1:0xowner', given_name: HOSTILE, family_name: 'Probe' } }] }),
+      aquaListShared: async () => ({ success: true, shared: [{ contractHash: 'h1', tip: '0xt', sender: 'did:pkh:eip155:1:0xowner', templateName: 'name_claim', payload: { signer_did: 'did:pkh:eip155:1:0xowner', given_name: HOSTILE, family_name: 'Probe' }, sharedAt: '2026-10-25T09:30:00Z' }] }),
     });
     const page = await run(freedomAPI);
     expect(page.elements['shared-count'].textContent).toBe('1');
     const card = page.elements['shared-claims'].querySelector('.card');
     expect(card.querySelector('.claim-value').textContent).toBe(`${HOSTILE} Probe`);
+    const labels = Array.from(card.querySelector('.tech-rows').querySelectorAll('.label')).map((n) => n.textContent);
+    expect(labels).toEqual(['Subject', 'Shared by', 'Shared on', 'Revision']);
+    expect(card.querySelector('.tech-rows').textContent).toContain(new Date('2026-10-25T09:30:00Z').toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }));
     expect(card.querySelector('.claim-icon').querySelector('.ico-user')).not.toBeNull();
     await buttonNamed(card, 'Attest').fire('click');
     expect(isOpen(page.elements['attest-dialog'])).toBe(true);
@@ -517,6 +520,7 @@ describe('freedom://identity attestation', () => {
     expect(card.textContent).toContain('could not be read');
     expect(card.querySelector('.status-line').textContent).toBe(HOSTILE);
     expect(card.querySelectorAll('.btn')).toHaveLength(0);
+    expect(Array.from(card.querySelector('.tech-rows').querySelectorAll('.label')).map((n) => n.textContent)).toEqual(['Shared by', 'Share']);
     expect(page.document.htmlWrites).toHaveLength(0);
   });
 
