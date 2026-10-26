@@ -405,7 +405,8 @@ function renderClaim(claim) {
   }
   if (claim.type === 'domain') {
     const dns = claim.domainVerification || 'pending';
-    body.appendChild(statusLine(dns === 'verified' ? 'ok' : 'wait', 'globe', `DNS check: ${dns}`));
+    const said = claim.dnsCheck?.message ? `DNS check: ${dns} · ${claim.dnsCheck.message}` : `DNS check: ${dns}`;
+    body.appendChild(statusLine(dns === 'verified' ? 'ok' : dns === 'pending' ? 'wait' : 'bad', 'globe', said));
   }
 
   body.appendChild(el('div', 'att-title', 'Attestations'));
@@ -432,7 +433,7 @@ function renderClaim(claim) {
     dnsBtn.addEventListener('click', () => openDnsDialog(claim));
     actions.appendChild(dnsBtn);
     const checkBtn = button('btn small', 'check', 'Check DNS');
-    checkBtn.addEventListener('click', () => verifyDns(claim));
+    checkBtn.addEventListener('click', () => openDnsDialog(claim, { check: true }));
     actions.appendChild(checkBtn);
   }
   const share = button('btn small', 'share', 'Share for attestation');
@@ -663,10 +664,28 @@ function dnsRow(label, value) {
   return row;
 }
 
-async function openDnsDialog(claim) {
+// The DNS dialog: the record to publish, and under it the outcome of the
+// last check. Both Check DNS buttons run the check here, so the result is
+// read next to the record it is about; the dialog stays open.
+const dnsResult = el('div', 'dns-result');
+
+function renderDnsResult(check) {
+  if (!check || !check.status) {
+    dnsResult.replaceChildren();
+    return;
+  }
+  const ok = check.status === 'verified';
+  const text = check.message || `DNS check: ${check.status}`;
+  dnsResult.replaceChildren(statusLine(ok ? 'ok' : 'bad', ok ? 'check-circle' : 'x-circle', text));
+  if (check.checkedAt) dnsResult.appendChild(el('div', 'meta', `Checked ${formatTime(check.checkedAt)}`));
+}
+
+async function openDnsDialog(claim, { check = false } = {}) {
   current = claim;
   dnsSummary.replaceChildren(summaryOf(claim.type, claimValue(claim), claim.signerDid));
   dnsBody.replaceChildren(el('p', 'meta', 'Fetching the record…'));
+  dnsCheckBtn.disabled = false;
+  setLabel(dnsCheckBtn, 'check', claim.dnsCheck ? 'Check again' : 'Check DNS');
   openDialog(dnsDialog, $('dns-cancel'));
   const result = await window.freedomAPI.aquaDnsInstructions(claim.id);
   if (current !== claim) return;
@@ -677,17 +696,30 @@ async function openDnsDialog(claim) {
   // The identity service answers `txt_name` / `txt_value` (plus `domain`).
   const name = result.txt_name || result.record_name || result.name || '';
   const value = result.txt_value || result.record_value || result.value || '';
+  renderDnsResult(claim.dnsCheck);
   dnsBody.replaceChildren(
     el('p', 'meta', 'Add this TXT record at your DNS provider, then press Check DNS.'),
     dnsRow('Name', name),
-    dnsRow('Value', value)
+    dnsRow('Value', value),
+    dnsResult
   );
+  if (check) await verifyDns(claim);
 }
 
+// Ask the service to look the record up now; the outcome goes under the
+// record in the dialog and onto the claim card.
 async function verifyDns(claim) {
+  dnsCheckBtn.disabled = true;
+  setLabel(dnsCheckBtn, 'clock', 'Checking…');
+  dnsResult.replaceChildren(el('div', 'meta', 'Looking the record up…'));
   const result = await window.freedomAPI.aquaVerifyDns(claim.id);
-  if (!result?.success) showNotice('error', errorText(result, 'The DNS check failed.'));
-  else hideNotice();
+  dnsCheckBtn.disabled = false;
+  setLabel(dnsCheckBtn, 'check', 'Check again');
+  if (!result?.success) {
+    dnsResult.replaceChildren(statusLine('bad', 'x-circle', errorText(result, 'The DNS check failed.')));
+    return;
+  }
+  renderDnsResult(result.claim?.dnsCheck || { status: result.claim?.domainVerification || 'pending' });
   await loadClaims();
 }
 
@@ -1249,11 +1281,8 @@ shareBtn.addEventListener('click', shareClaim);
 importBtn.addEventListener('click', importAttestation);
 attestBtn.addEventListener('click', attestShared);
 removeBtn.addEventListener('click', removeClaim);
-dnsCheckBtn.addEventListener('click', async () => {
-  if (!current) return;
-  const claim = current;
-  closeDialog(dnsDialog);
-  await verifyDns(claim);
+dnsCheckBtn.addEventListener('click', () => {
+  if (current && current.type === 'domain') verifyDns(current);
 });
 requestOpenBtn.addEventListener('click', openRequestDialog);
 requestBtn.addEventListener('click', reviewRequest);

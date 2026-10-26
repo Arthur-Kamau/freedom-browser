@@ -706,7 +706,16 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
       const record = await store.get(id);
       if (!record || record.type !== 'domain') throw new Error('Not a domain claim');
       const result = await client.verifyDns(record.address, record.tip);
-      record.domainVerification = result?.verification_status || (result?.verified ? 'verified' : 'pending');
+      // The service answers `dns_status` (verified | mismatch | not_found |
+      // error) with a sentence, the record name and the expected value.
+      record.domainVerification = result?.dns_status || result?.verification_status || (result?.verified ? 'verified' : 'pending');
+      record.dnsCheck = {
+        status: record.domainVerification,
+        message: typeof result?.message === 'string' ? result.message : '',
+        txtName: typeof result?.txt_name === 'string' ? result.txt_name : '',
+        txtExpected: typeof result?.txt_expected === 'string' ? result.txt_expected : '',
+        checkedAt: now().toISOString(),
+      };
       if (result?.attestation_tip && !record.attestations.some((a) => a.tip === result.attestation_tip)) {
         record.attestations.push(await attestationRecord(record.address, result.attestation_tip, record.tree));
         record.serverTips.attestation = result.attestation_tip;

@@ -48,7 +48,7 @@ function api(overrides = {}) {
     aquaSendCode: jest.fn(async ({ target }) => ({ success: true, target, message: 'sent' })),
     aquaVerifyCode: jest.fn(async () => ({ success: true, verificationToken: 'vt' })),
     aquaDnsInstructions: jest.fn(async () => ({ success: true, txt_name: '_aqua.example.com', txt_value: HOSTILE, domain: 'example.com' })),
-    aquaVerifyDns: jest.fn(async () => ({ success: true, claim: claim({ type: 'domain' }) })),
+    aquaVerifyDns: jest.fn(async () => ({ success: true, claim: claim({ type: 'domain', payload: { domain_name: 'example.com' }, domainVerification: 'mismatch', dnsCheck: { status: 'mismatch', message: HOSTILE, checkedAt: '2026-10-26T10:00:00Z' } }) })),
     aquaShareClaim: jest.fn(async () => ({ success: true, claim: claim() })),
     aquaPullAttestations: jest.fn(async () => ({ success: true, claim: null })),
     aquaImportAttestation: jest.fn(async () => ({ success: true, claim: claim() })),
@@ -407,7 +407,15 @@ describe('freedom://identity', () => {
   });
 
   test('a domain claim shows its DNS record in a dialog, as text, and Check DNS runs from it', async () => {
-    const freedomAPI = api({ aquaListClaims: async () => ({ success: true, claims: [claim({ type: 'domain', payload: { domain_name: 'example.com' }, domainVerification: 'pending' })] }) });
+    const checked = claim({ type: 'domain', payload: { domain_name: 'example.com' }, domainVerification: 'mismatch', dnsCheck: { status: 'mismatch', message: HOSTILE, checkedAt: '2026-10-26T10:00:00Z' } });
+    let claims = [claim({ type: 'domain', payload: { domain_name: 'example.com' }, domainVerification: 'pending' })];
+    const freedomAPI = api({
+      aquaListClaims: async () => ({ success: true, claims }),
+      aquaVerifyDns: jest.fn(async () => {
+        claims = [checked];
+        return { success: true, claim: checked };
+      }),
+    });
     const page = await run(freedomAPI);
     const card = page.elements['claims-list'].querySelector('.card');
     expect(card.textContent).toContain('DNS check: pending');
@@ -420,9 +428,25 @@ describe('freedom://identity', () => {
     await page.elements['dns-check-btn'].fire('click');
     await page.flush();
     expect(freedomAPI.aquaVerifyDns).toHaveBeenCalledWith('c1');
+    // The dialog stays open and says what the service found, as text.
+    expect(isOpen(page.elements['dns-dialog'])).toBe(true);
+    const result = page.elements['dns-body'].querySelector('.dns-result');
+    expect(result.querySelector('.status-line').textContent).toBe(HOSTILE);
+    expect(result.querySelector('.status-line').classList.contains('bad')).toBe(true);
+    expect(page.elements['dns-check-btn'].textContent).toContain('Check again');
+    expect(page.elements['dns-check-btn'].disabled).toBe(false);
+    // The card carries the outcome too, and its Check DNS opens the dialog and checks there.
+    const card2 = page.elements['claims-list'].querySelector('.card');
+    expect(card2.textContent).toContain(`DNS check: mismatch · ${HOSTILE}`);
+    await page.elements['dns-cancel'].fire('click');
     expect(isOpen(page.elements['dns-dialog'])).toBe(false);
-    await buttonNamed(page.elements['claims-list'].querySelector('.card'), 'Check DNS').fire('click');
+    await buttonNamed(card2, 'Check DNS').fire('click');
+    await page.flush();
+    expect(isOpen(page.elements['dns-dialog'])).toBe(true);
+    expect(freedomAPI.aquaDnsInstructions).toHaveBeenCalledTimes(2);
     expect(freedomAPI.aquaVerifyDns).toHaveBeenCalledTimes(2);
+    expect(page.elements['dns-body'].querySelector('.dns-result').textContent).toContain(HOSTILE);
+    expect(page.document.htmlWrites).toHaveLength(0);
   });
 });
 
