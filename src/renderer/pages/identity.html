@@ -306,6 +306,9 @@
       .section-head .meta {
         flex: 1;
       }
+      .section-head.subhead {
+        margin-top: 32px;
+      }
       .section > .meta {
         margin: 0 0 14px;
       }
@@ -846,16 +849,8 @@
               <path d="M12 3l8 4v5c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V7z"></path>
               <path d="M9 12l2 2 4-4"></path>
             </svg>
-            Attest for others
+            Attest others
             <span class="count" id="shared-count">0</span>
-          </button>
-          <button type="button" class="nav-item" id="nav-issued" data-target="issued">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
-              <path d="M14 3v6h6"></path>
-            </svg>
-            Issued
-            <span class="count" id="issued-count">0</span>
           </button>
           <button type="button" class="nav-item" id="nav-requests" data-target="requests">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -968,16 +963,14 @@
             <span class="meta">Claims other people shared with your wallet on the identity service.</span>
           </div>
           <p class="meta">
-            Attesting signs a statement with your wallet that you vouch for the claim. You then hand the
-            attestation back to its owner, since only you can download it.
+            Attesting signs a statement with your wallet that you vouch for the claim. The identity service
+            records it, and the owner's Freedom picks it up the next time they open their claims.
           </p>
           <div id="shared-claims"></div>
-        </section>
-
-        <section class="section panel" id="panel-issued" data-nav="issued">
-          <div class="section-head">
+          <div class="section-head subhead">
             <h2>Attestations you issued</h2>
-            <span class="meta">Copy one as JSON to send it to the claim's owner.</span>
+            <span class="count" id="issued-count">0</span>
+            <span class="meta">Your record of them. Copy one as JSON if the owner needs it another way.</span>
           </div>
           <div id="issued-list"></div>
         </section>

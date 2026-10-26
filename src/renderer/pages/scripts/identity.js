@@ -462,7 +462,24 @@ function isLocked(result) {
   return result?.error?.code === 'VAULT_LOCKED';
 }
 
-async function loadClaims() {
+// Attestations recorded on the identity service since the claim was last
+// looked at (a peer's, or the service's own): pulled for every claim when
+// the page opens, so they show up without a click. A pull that fails
+// leaves that claim as listed.
+async function pullAll(claims) {
+  return Promise.all(
+    claims.map(async (claim) => {
+      try {
+        const result = await window.freedomAPI.aquaPullAttestations(claim.id);
+        return result?.success && result.claim?.id === claim.id ? result.claim : claim;
+      } catch {
+        return claim;
+      }
+    })
+  );
+}
+
+async function loadClaims({ pull = false } = {}) {
   const result = await window.freedomAPI.aquaListClaims();
   if (!result?.success) {
     claimsEmpty.classList.add('hidden');
@@ -471,12 +488,13 @@ async function loadClaims() {
     if (!isLocked(result)) claimsEl.appendChild(el('div', 'meta', errorText(result, 'Claims could not be loaded.')));
     return;
   }
-  const claims = result.claims || [];
-  claimsCount.textContent = String(claims.length);
-  if (claims.length === 0) {
+  const listed = result.claims || [];
+  claimsCount.textContent = String(listed.length);
+  if (listed.length === 0) {
     renderEmpty();
     return;
   }
+  const claims = pull ? await pullAll(listed) : listed;
   claimsEmpty.classList.add('hidden');
   const sorted = [...claims].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
   claimsEl.replaceChildren(...sorted.map(renderClaim));
@@ -548,7 +566,7 @@ async function loadAll() {
     issuedEl.replaceChildren();
     return;
   }
-  await Promise.all([loadClaims(), loadIssued()]);
+  await Promise.all([loadClaims({ pull: true }), loadIssued()]);
   await loadShared();
 }
 
@@ -794,7 +812,11 @@ function renderShared(entry) {
     claimHead(type, sharedValue(entry), [TYPE_LABELS[type], '·', 'shared with you'], mine ? badge('attested', 'check-circle', 'Attested by you') : null)
   );
   const body = el('div', 'claim-body');
-  if (mine) body.appendChild(statusLine('ok', 'check-circle', `You attested this ${formatTime(mine.createdAt)}. Send the attestation to the owner from Issued.`));
+  if (mine) {
+    body.appendChild(
+      statusLine('ok', 'check-circle', `You attested this ${formatTime(mine.createdAt)}. The owner's Freedom picks it up from the identity service; it is listed below.`)
+    );
+  }
   const tech = el('div', 'tech-rows');
   techRow(tech, 'Subject', (entry.payload && entry.payload.signer_did) || '');
   techRow(tech, 'Shared by', entry.sender || '');
@@ -802,20 +824,12 @@ function renderShared(entry) {
   techRow(tech, 'Revision', entry.tip || '');
   body.appendChild(tech);
   card.appendChild(body);
+  if (mine) return card;
   const actions = el('div', 'actions');
   actions.appendChild(el('span', 'spacer'));
-  if (mine) {
-    const see = button('btn small', 'file', 'See in Issued');
-    see.addEventListener('click', () => {
-      showPanel('issued');
-      if (window.location && typeof window.location.hash === 'string') window.location.hash = 'issued';
-    });
-    actions.appendChild(see);
-  } else {
-    const attest = button('btn small primary', 'shield', 'Attest');
-    attest.addEventListener('click', () => openAttestDialog(entry));
-    actions.appendChild(attest);
-  }
+  const attest = button('btn small primary', 'shield', 'Attest');
+  attest.addEventListener('click', () => openAttestDialog(entry));
+  actions.appendChild(attest);
   card.appendChild(actions);
   return card;
 }
@@ -847,7 +861,7 @@ async function attestShared() {
     return;
   }
   closeDialog(attestDialog);
-  showNotice('', "Attested. Send the attestation from the Issued section to the claim's owner.");
+  showNotice('', "Attested. The owner's Freedom picks it up from the identity service; copy it as JSON below if they need it another way.");
   await loadIssued();
   await loadShared();
 }
@@ -903,7 +917,7 @@ function renderIssued(entry) {
       return;
     }
     await window.freedomAPI.copyText(result.json);
-    showNotice('', "Copied. Send it to the claim's owner; they import it under the claim.");
+    showNotice('', "Copied. The owner can import it under the claim if their Freedom has not picked it up.");
   });
   actions.appendChild(copyBtn);
   card.appendChild(actions);
@@ -976,13 +990,16 @@ async function reviewRequest() {
 
 // ── Left nav: one panel at a time, addressed by hash (freedom://identity#attest) ──
 
-const NAV_TARGETS = ['claims', 'attest', 'issued', 'requests'];
+const NAV_TARGETS = ['claims', 'attest', 'requests'];
+// The Issued list used to be its own panel; its links land on Attest others.
+const PANEL_ALIASES = { issued: 'attest' };
 
 // The hash names a panel, never an element: no element carries one of
 // these ids, so a hash navigation never scrolls to an anchor. The content
 // column starts at the top on every switch regardless.
 function showPanel(target) {
-  const name = NAV_TARGETS.includes(target) ? target : 'claims';
+  const wanted = PANEL_ALIASES[target] || target;
+  const name = NAV_TARGETS.includes(wanted) ? wanted : 'claims';
   for (const t of NAV_TARGETS) {
     $(`panel-${t}`)?.classList.toggle('active', t === name);
     $(`nav-${t}`)?.classList.toggle('active', t === name);
