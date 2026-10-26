@@ -10,7 +10,7 @@ const IDS = {
   'claims-list': 'div', 'claims-empty': 'div', 'shared-claims': 'div', 'issued-list': 'div',
   'status-wallet': 'span', 'status-service': 'span', 'status-caps': 'span', 'claims-count': 'span', 'shared-count': 'span', 'issued-count': 'span',
   'status-lock': 'span', 'signin-card': 'div', 'signin-text': 'div', 'signin-btn': 'button', 'signin-error': 'div', 'service-down': 'div', 'service-down-text': 'div', 'service-retry-btn': 'button', 'service-settings-btn': 'button', 'locked-card': 'div', 'locked-title': 'div', 'locked-text': 'div', 'unlock-btn': 'button', 'status-notice': 'div', 'wallet-line': 'p',
-  'nav-claims': 'button', 'nav-attest': 'button', 'nav-issued': 'button', 'nav-requests': 'button', 'panel-claims': 'section', 'panel-attest': 'section', 'panel-issued': 'section', 'panel-requests': 'section',
+  'nav-claims': 'button', 'nav-attest': 'button', 'nav-requests': 'button', 'panel-claims': 'section', 'panel-attest': 'section', 'panel-requests': 'section',
   // Add a claim
   'add-claim-btn': 'button', 'add-claim-dialog': 'dialog', 'add-claim-close': 'button', 'claim-form': 'form', 'claim-kind': 'div',
   'kind-name': 'button', 'kind-email': 'button', 'kind-phone': 'button', 'kind-domain': 'button',
@@ -50,7 +50,7 @@ function api(overrides = {}) {
     aquaDnsInstructions: jest.fn(async () => ({ success: true, record_name: '_aqua.example.com', record_value: HOSTILE })),
     aquaVerifyDns: jest.fn(async () => ({ success: true, claim: claim({ type: 'domain' }) })),
     aquaShareClaim: jest.fn(async () => ({ success: true, claim: claim() })),
-    aquaPullAttestations: jest.fn(async () => ({ success: true, claim: claim() })),
+    aquaPullAttestations: jest.fn(async () => ({ success: true, claim: null })),
     aquaImportAttestation: jest.fn(async () => ({ success: true, claim: claim() })),
     aquaListShared: jest.fn(async () => ({ success: true, shared: [] })),
     aquaAttestShared: jest.fn(async () => ({ success: true, issued: { id: 'a1' } })),
@@ -427,7 +427,7 @@ describe('freedom://identity', () => {
 });
 
 describe('freedom://identity attestation', () => {
-  test('a pending peer attestation says the attester holds the tree, with its source', async () => {
+  test('a pending peer attestation says Freedom fetches it once shared back, with its source', async () => {
     const pending = claim({ attestations: [{ tip: '0x1', attesterDid: 'did:pkh:eip155:1:0xpeer', context: HOSTILE, source: 'peer', pending: true, verification: { isValid: false, status: 'held' } }] });
     const page = await run(api({ aquaListClaims: async () => ({ success: true, claims: [pending] }) }));
     const box = page.elements['claims-list'].querySelector('.attestation');
@@ -435,7 +435,7 @@ describe('freedom://identity attestation', () => {
     expect(box.querySelector('.source').querySelector('.ico-user')).not.toBeNull();
     expect(box.classList.contains('pending')).toBe(true);
     expect(box.querySelector('.badge').textContent).toBe('Pending');
-    expect(box.textContent).toContain('Import it to verify');
+    expect(box.textContent).toContain('once the attester shares it back');
     expect(page.elements['claims-list'].querySelector('.badge').textContent).toBe('Self-signed');
   });
 
@@ -529,9 +529,8 @@ describe('freedom://identity attestation', () => {
     card = page.elements['shared-claims'].querySelector('.card');
     expect(card.querySelector('.badge').textContent).toBe('Attested by you');
     expect(card.querySelector('.status-line').textContent).toContain('You attested this');
-    expect(Array.from(card.querySelectorAll('.btn')).map((b) => b.textContent)).toEqual(['See in Issued']);
-    await buttonNamed(card, 'See in Issued').fire('click');
-    expect(page.elements['nav-issued'].classList.contains('active')).toBe(true);
+    expect(card.querySelectorAll('.btn')).toHaveLength(0);
+    expect(page.elements['issued-count'].textContent).toBe('1');
     expect(page.document.htmlWrites).toHaveLength(0);
   });
 
@@ -638,5 +637,26 @@ describe('freedom://identity left nav', () => {
     expect(page.elements['panel-claims'].classList.contains('active')).toBe(false);
     const deep = await run(api(), { location: { href: 'x', search: '', hash: '#requests' } });
     expect(deep.elements['panel-requests'].classList.contains('active')).toBe(true);
+    const old = await run(api(), { location: { href: 'x', search: '', hash: '#issued' } });
+    expect(old.elements['panel-attest'].classList.contains('active')).toBe(true);
+    expect(old.elements['nav-attest'].classList.contains('active')).toBe(true);
+  });
+
+  test('opening the page pulls new attestations for every claim, and a failed pull keeps the claim as listed', async () => {
+    const peer = { tip: '0xa1', attesterDid: 'did:pkh:eip155:1:0xpeer', context: HOSTILE, source: 'peer', issuedAt: '2026-10-26T10:00:00Z', verification: { isValid: true, status: 'OK' } };
+    const freedomAPI = api({
+      aquaListClaims: async () => ({ success: true, claims: [claim(), claim({ id: 'c2', tip: '0x2' })] }),
+      aquaPullAttestations: jest.fn(async (id) => (id === 'c1' ? { success: true, claim: claim({ attestations: [peer] }) } : { success: false, error: 'service down' })),
+    });
+    const page = await run(freedomAPI);
+    expect(freedomAPI.aquaPullAttestations.mock.calls.map((c) => c[0]).sort()).toEqual(['c1', 'c2']);
+    const cards = page.elements['claims-list'].querySelectorAll('.card');
+    expect(cards).toHaveLength(2);
+    const first = cards.find((c) => c.dataset.id === 'c1');
+    expect(first.querySelector('.badge').textContent).toBe('Attested');
+    expect(first.textContent).toContain(HOSTILE);
+    expect(cards.find((c) => c.dataset.id === 'c2').querySelector('.badge').textContent).toBe('Self-signed');
+    expect(page.elements['status-notice'].classList.contains('hidden')).toBe(true);
+    expect(page.document.htmlWrites).toHaveLength(0);
   });
 });

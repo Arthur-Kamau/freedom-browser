@@ -148,14 +148,39 @@ function attestationContext(words, claimTip) {
   return `${words.trim()} (attests claim ${claimTip})`;
 }
 
+/**
+ * The verifier's own failing lines (`{ logType: 'error', log }` entries),
+ * so a verdict says what failed rather than just "FAILED".
+ */
+function failingLogs(result) {
+  const logs = Array.isArray(result?.logs) ? result.logs : [];
+  return logs
+    .filter((entry) => /error|fail/i.test(String(entry?.logType || entry?.log_type || '')))
+    .map((entry) => String(entry?.log || '').trim())
+    .filter(Boolean);
+}
+
 function summarizeVerification(result, backend, checkedAt) {
+  const isValid = result?.is_valid === true;
+  const verdict = typeof result?.status === 'string' ? result.status : isValid ? 'OK' : 'unknown';
+  const reasons = isValid ? [] : failingLogs(result);
   return {
-    isValid: result?.is_valid === true,
-    status: typeof result?.status === 'string' ? result.status : result?.is_valid ? 'OK' : 'unknown',
+    isValid,
+    status: reasons.length > 0 ? `${verdict}: ${reasons[0]}` : verdict,
+    reasons,
     backend,
     checkedAt,
   };
 }
+
+/** The wallet address a `did:pkh:eip155:…` names, or null for any other DID. */
+function addressOfDid(did) {
+  const match = typeof did === 'string' && did.match(/^did:pkh:eip155:\d+:(0x[0-9a-fA-F]{40})$/);
+  return match ? match[1] : null;
+}
+
+/** Freedom's own naming for the contract that hands an attestation back to the claim's owner. */
+const SHARE_BACK_PREFIX = 'freedom-attestation-';
 
 /**
  * @param {object} deps
@@ -191,6 +216,43 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
     return chainWithTip(readAquaChains(zip), tip);
   }
 
+  // A peer's attestation is downloadable only by the peer, so Freedom's
+  // attester shares it back with the claim's owner; the owner imports that
+  // share, which gives them their own copy to download. Null when no share
+  // received holds the tree.
+  async function importSharedBack(address, tip) {
+    const contracts = (await client.listSharesReceived(address))?.contracts || [];
+    for (const contract of contracts) {
+      if (!contract?.hash) continue;
+      let data;
+      try {
+        data = await client.sharedData(address, contract.hash);
+      } catch {
+        continue;
+      }
+      if (!(data?.trees || []).some((tree) => tree?.tip === tip && !tree.unavailable)) continue;
+      await client.importShared(address, contract.hash);
+      return fetchChain(address, tip);
+    }
+    return null;
+  }
+
+  // Share an attestation this wallet issued with the claim's owner, under
+  // Freedom's naming, and return the contract hash; null when the owner is
+  // not a wallet address or the service refused, which the caller records
+  // so the share is tried again later.
+  async function shareBack(address, tree, tip, owner) {
+    if (!owner) return null;
+    const hash = `${SHARE_BACK_PREFIX}${crypto.randomUUID()}`;
+    try {
+      await client.shareTree(address, { hash, recipient: owner, genesis: genesisOf(tree), tip, fileName: 'attestation' });
+      return hash;
+    } catch (err) {
+      log.error('[AquaClaims] attestation could not be shared back with the owner:', err?.message || err);
+      return null;
+    }
+  }
+
   // An attestation anchors to the claim it attests (the service's own
   // attestations link to the claim's signature revision), so it verifies
   // only with the claim tree supplied as a linked tree.
@@ -222,7 +284,9 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
   async function verifyLinked(tree, claimTree) {
     const checkedAt = now().toISOString();
     try {
-      return summarizeVerification(await client.verifyTree(tree, { linkedTrees: [claimTree] }), 'service', checkedAt);
+      const summary = summarizeVerification(await client.verifyTree(tree, { linkedTrees: [claimTree] }), 'service', checkedAt);
+      if (!summary.isValid) log.error('[AquaClaims] attestation did not verify against its claim:', summary.status, summary.reasons);
+      return summary;
     } catch (err) {
       log.error('[AquaClaims] verification failed:', err?.message || err);
       return { isValid: false, status: `Verification unavailable: ${err?.message || err}`, backend: 'service', checkedAt };
@@ -425,8 +489,12 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
       const { serviceDid } = await serviceCapabilities();
       const listed = (await client.listAttestations(record.address, record.tip))?.attestations || [];
       for (const info of listed) {
-        if (!info?.tip || record.attestations.some((a) => a.tip === info.tip)) continue;
-        const entry = {
+        if (!info?.tip) continue;
+        const known = record.attestations.find((a) => a.tip === info.tip);
+        // One already held is done; one still pending is tried again, since
+        // the attester may have shared it back since the last pull.
+        if (known && !known.pending) continue;
+        const entry = known || {
           tip: info.tip,
           tree: null,
           attesterDid: info.attester_did || null,
@@ -434,16 +502,18 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
           source: sourceOf(info.attester_did, serviceDid),
           issuedAt: info.created_at || now().toISOString(),
           pending: true,
-          verification: { isValid: false, status: 'Tree held by the attester; import it to verify', backend: 'service', checkedAt: now().toISOString() },
+          verification: { isValid: false, status: 'Recorded by the service; waiting for the attester to share the tree', backend: 'service', checkedAt: now().toISOString() },
         };
         try {
-          entry.tree = await fetchChain(record.address, info.tip);
-          entry.pending = false;
-          entry.verification = await verifyLinked(entry.tree, record.tree);
+          entry.tree = await fetchChain(record.address, info.tip).catch(() => importSharedBack(record.address, info.tip));
+          if (entry.tree) {
+            entry.pending = false;
+            entry.verification = await verifyLinked(entry.tree, record.tree);
+          }
         } catch (err) {
           log.error('[AquaClaims] attestation tree not downloadable:', err?.message || err);
         }
-        record.attestations.push(entry);
+        if (!known) record.attestations.push(entry);
       }
       await store.upsert(record);
       return record;
@@ -514,7 +584,7 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
         reason,
       });
       for (const contract of contracts) {
-        if (!contract?.hash) continue;
+        if (!contract?.hash || contract.hash.startsWith(SHARE_BACK_PREFIX)) continue;
         let data;
         try {
           data = await client.sharedData(wallet.address, contract.hash);
@@ -530,6 +600,7 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
             shared.push(unreadable(contract, "The sender's tree is not on the service any more", tree));
             continue;
           }
+          if (tree.template_name === 'attestation') continue;
           shared.push({
             contractHash: contract.hash,
             sender: contract.sender || data?.contract?.sender || null,
@@ -549,8 +620,8 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
     /**
      * Attest a claim another account shared with this wallet: the service
      * prepares the attestation's pre-image, the wallet signs it, the service
-     * finalizes it, and the attester keeps the only downloadable copy to
-     * hand back to the owner.
+     * finalizes it, and the attester, who alone can download it, shares it
+     * back with the owner.
      */
     async attestSharedClaim({ contractHash, tip, context }) {
       const wallet = await activeWalletOrThrow();
@@ -575,11 +646,16 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
       const attestationTip = completed?.attestation_tip;
       if (!attestationTip) throw new Error('The service recorded no attestation');
       const tree = await fetchChain(wallet.address, attestationTip);
+      // Only the attester can download the attestation, so it is shared
+      // back with the claim's owner, whose Freedom imports it on its next
+      // pull. A share that fails leaves Copy JSON as the way to hand it over.
+      const sharedBack = await shareBack(wallet.address, tree, attestationTip, addressOfDid(subjectDid) || addressOfDid(shared.sender));
       const issued = {
         id: crypto.randomUUID(),
         tip: attestationTip,
         claimTip: tip,
         contractHash,
+        sharedBack,
         subjectDid,
         subjectPayload: shared.payload || null,
         templateName: shared.templateName || null,
@@ -593,7 +669,25 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
       return issued;
     },
 
-    listIssued: () => store.listIssued(),
+    /**
+     * Attestations this wallet issued. One issued before Freedom shared
+     * attestations back, or whose share failed, is shared back now, so the
+     * owner's Freedom picks it up without a file changing hands.
+     */
+    async listIssued() {
+      const issued = await store.listIssued();
+      const wallet = await getActiveWallet();
+      if (!wallet?.address) return issued;
+      for (const entry of issued) {
+        if (entry.sharedBack || !entry.tree || !entry.tip) continue;
+        if ((addressOfDid(entry.attesterDid) || '').toLowerCase() !== wallet.address.toLowerCase()) continue;
+        const hash = await shareBack(wallet.address, entry.tree, entry.tip, addressOfDid(entry.subjectDid));
+        if (!hash) continue;
+        entry.sharedBack = hash;
+        await store.addIssued(entry);
+      }
+      return issued;
+    },
 
     /** The attestation tree as text, for handing to the claim's owner. */
     async exportIssued(id) {
