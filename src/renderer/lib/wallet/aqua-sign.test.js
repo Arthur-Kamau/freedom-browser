@@ -138,8 +138,8 @@ describe('aqua-sign', () => {
 
     const attest = aquaSign.handleAquaSignRequest({ ...request, requestId: 'r-3', purpose: 'attestation' }, respond);
     await flush();
-    expect(elements['dapp-sign-site'].textContent).toBe('Attestation · aqua.test');
-    expect(elements['dapp-sign-action'].textContent).toBe('asks you to attest this claim');
+    expect(elements['dapp-sign-site'].textContent).toBe('Vouch · aqua.test');
+    expect(elements['dapp-sign-action'].textContent).toBe('asks you to vouch for this claim');
     elements['dapp-sign-reject'].dispatch('click');
     await attest;
   });

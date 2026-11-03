@@ -1,0 +1,18 @@
+<fbx-frame tab="me" give="1" address="0x254b0d7b91c2a4f3e81d0c6b7a5e9f2d318a8a1f">
+  <fbx-composer kind="phone">
+    <h3 class="text-base font-semibold text-foreground">Claim a phone number</h3>
+    <p class="mt-1 max-w-prose text-sm leading-relaxed text-muted-foreground">The node texts a one-time code to the number. When you enter it, the node signs that it checked the number. Then you sign the claim.</p>
+    <div class="mt-5"><fbx-field label="Phone number" type="tel" value="+254 712 345 678" readonly help="With the country code."></fbx-field></div>
+    <div class="mt-2 divide-y divide-border">
+      <fbx-step num="1" title="Send a code" state="done" note="Sent at 10:24"></fbx-step>
+      <fbx-step num="2" title="Enter the code" state="error">
+        <div class="flex flex-wrap items-end gap-2">
+          <div class="w-64"><fbx-field label="Code from the text" mono inputmode="numeric" value="481 903" error="That code does not match. 2 tries left."></fbx-field></div>
+          <div class="pb-6"><fbx-btn label="Check the code" icon="check"></fbx-btn></div>
+        </div>
+        <p class="mt-3 text-xs text-muted-foreground">No text yet? <a href="#" class="font-medium text-foreground underline underline-offset-4">Send a new code</a> in 0:41.</p>
+      </fbx-step>
+      <fbx-step num="3" title="Sign the claim with your wallet" state="waiting"></fbx-step>
+    </div>
+  </fbx-composer>
+</fbx-frame>

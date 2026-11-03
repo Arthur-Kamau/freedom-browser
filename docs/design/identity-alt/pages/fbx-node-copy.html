@@ -1,0 +1,33 @@
+<fbx-frame tab="me" node="local" address="0x254b0d7b91c2a4f3e81d0c6b7a5e9f2d318a8a1f">
+  <div class="mx-auto max-w-3xl">
+    <a href="/fbx-node-local" class="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><aq-icon name="arrow-left" class="size-3.5"></aq-icon>Back to Local node</a>
+    <h2 class="mt-3 text-xl font-semibold tracking-tight text-foreground">Copy claims from dev.aquafire to Local node</h2>
+    <p class="mt-1 max-w-prose text-sm leading-relaxed text-muted-foreground">Your signature and people’s vouches are signed, so they travel with the claim. A node’s check does not: it belongs to the node that ran it, so Local node shows “not checked here” until it checks again itself.</p>
+
+    <fieldset class="mt-6">
+      <legend class="text-sm font-semibold text-foreground">What to copy</legend>
+      <div class="mt-3 divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+        <label class="flex items-center gap-3 px-4 py-3.5">
+          <input type="checkbox" checked class="size-4 accent-primary">
+          <span class="min-w-0 flex-1"><span class="block text-sm font-medium text-foreground">Alice Mwangi</span><span class="block text-xs text-muted-foreground">Name · replaces the copy already here, which has no vouches</span></span>
+          <span class="text-right text-xs"><span class="block text-success">2 vouches come along</span><span class="block text-muted-foreground">nothing to check</span></span>
+        </label>
+        <label class="flex items-center gap-3 px-4 py-3.5">
+          <input type="checkbox" class="size-4 accent-primary">
+          <span class="min-w-0 flex-1"><span class="block text-sm font-medium text-foreground">alice@inblock.io</span><span class="block text-xs text-muted-foreground">Email</span></span>
+          <span class="text-right text-xs"><span class="block text-muted-foreground">no vouches</span><span class="block text-warning">Local node can’t check email</span></span>
+        </label>
+        <label class="flex items-center gap-3 px-4 py-3.5">
+          <input type="checkbox" checked class="size-4 accent-primary">
+          <span class="min-w-0 flex-1"><span class="block text-sm font-medium text-foreground">inblock.io</span><span class="block text-xs text-muted-foreground">Domain</span></span>
+          <span class="text-right text-xs"><span class="block text-muted-foreground">no vouches</span><span class="block text-muted-foreground">Local node checks it again</span></span>
+        </label>
+      </div>
+    </fieldset>
+    <p class="mt-4 text-sm text-muted-foreground">Nothing is removed from dev.aquafire. You sign once for the copy.</p>
+    <div class="mt-5 flex flex-wrap gap-2">
+      <fbx-btn variant="primary" label="Sign and copy 2 claims" icon="pen" href="/fbx-node-local"></fbx-btn>
+      <fbx-btn variant="ghost" label="Cancel" href="/fbx-node-local"></fbx-btn>
+    </div>
+  </div>
+</fbx-frame>

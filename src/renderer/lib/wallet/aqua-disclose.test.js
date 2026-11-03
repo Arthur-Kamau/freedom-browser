@@ -57,9 +57,9 @@ describe('Share Identity screen', () => {
     const boxes = rows.map((r) => r.querySelector('.aqua-disclose-check'));
     expect(boxes.map((b) => [b.checked, b.disabled])).toEqual([[true, false], [false, true], [false, false]]);
     expect(rows[0].querySelector('.aqua-disclose-value').textContent).toBe('Given name: Probe · Family name: Freedom');
-    expect(rows[0].querySelector('.aqua-disclose-meta').textContent).toBe('Attested by 1');
+    expect(rows[0].querySelector('.aqua-disclose-meta').textContent).toBe('Verified by 1');
     expect(rows[1].querySelector('.aqua-disclose-meta').textContent).toBe('You have no such claim');
-    expect(rows[2].querySelector('.aqua-disclose-meta').textContent).toContain('Self-signed');
+    expect(rows[2].querySelector('.aqua-disclose-meta').textContent).toContain('Not yet verified');
     // Hold back the family name, add the optional domain.
     rows[0].querySelectorAll('.aqua-disclose-field-check').find((b) => b.dataset.field === 'family_name').checked = false;
     boxes[2].checked = true;

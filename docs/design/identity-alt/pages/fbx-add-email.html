@@ -1,0 +1,18 @@
+<fbx-frame tab="me" give="1" address="0x254b0d7b91c2a4f3e81d0c6b7a5e9f2d318a8a1f">
+  <fbx-composer kind="email">
+    <h3 class="text-base font-semibold text-foreground">Claim an email address</h3>
+    <p class="mt-1 max-w-prose text-sm leading-relaxed text-muted-foreground">The node sends a one-time code to the inbox. When you enter it, the node signs that it checked the address. Then you sign the claim.</p>
+    <div class="mt-5"><fbx-field label="Email address" type="email" value="alice@inblock.io" readonly></fbx-field></div>
+    <div class="mt-2 divide-y divide-border">
+      <fbx-step num="1" title="Send a code" state="done" note="Sent at 10:02"></fbx-step>
+      <fbx-step num="2" title="Enter the code" state="done" note="dev.aquafire checked it"></fbx-step>
+      <fbx-step num="3" title="Sign the claim with your wallet" state="current">
+        <p class="mb-3 text-sm text-muted-foreground">Your wallet will show the claim before you sign.</p>
+        <div class="flex flex-wrap gap-2">
+          <fbx-btn variant="primary" label="Sign and add" icon="pen" href="/fbx-me-email"></fbx-btn>
+          <fbx-btn variant="ghost" label="Cancel" href="/fbx-me"></fbx-btn>
+        </div>
+      </fbx-step>
+    </div>
+  </fbx-composer>
+</fbx-frame>

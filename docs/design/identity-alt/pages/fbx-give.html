@@ -1,0 +1,28 @@
+<fbx-frame tab="give" give="1" address="0x254b0d7b91c2a4f3e81d0c6b7a5e9f2d318a8a1f">
+  <div class="grid gap-8 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
+    <div class="hidden lg:block"><fbx-give-list selected="bob"></fbx-give-list></div>
+    <div class="min-w-0 rounded-lg border border-border bg-card p-5 md:p-7">
+      <a href="/fbx-give-list" class="mb-4 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground lg:hidden"><aq-icon name="arrow-left" class="size-3.5"></aq-icon>Asked of you</a>
+      <p class="text-xs text-muted-foreground">Bob Otieno · <span class="font-mono">0x9a3f…b3a2</span> · asked 2 Nov 2026, 09:30</p>
+      <h2 class="mt-2 text-xl font-semibold tracking-tight text-foreground">Is “Bob Otieno” really Bob’s name?</h2>
+      <blockquote class="mt-4 rounded-md bg-muted/60 px-3 py-2 text-sm leading-relaxed text-muted-foreground">“Hi Alice, could you vouch for my name? We met at the inblock office.”</blockquote>
+      <div class="mt-5 rounded-md border border-border bg-background p-3">
+        <p class="text-xs text-muted-foreground">Their claim today</p>
+        <p class="mt-0.5 font-medium text-foreground">Name: Bob Otieno</p>
+        <div class="mt-2"><fbx-proof service="na" people="0"></fbx-proof></div>
+      </div>
+      <div class="mt-6 grid gap-5 border-t border-border pt-6">
+        <div>
+          <p class="text-sm font-semibold text-foreground">Vouch only for what you know first-hand</p>
+          <p class="mt-1 text-sm text-muted-foreground">Your words and your wallet address travel with this claim to everyone Bob shares it with.</p>
+        </div>
+        <fbx-field label="How do you know?" textarea rows="3" value="I have known Bob by this name since 2019. We worked together at inblock." help="One or two sentences."></fbx-field>
+        <div class="flex flex-wrap gap-2">
+          <fbx-btn variant="primary" label="Sign and vouch" icon="pen" href="/fbx-give-sent"></fbx-btn>
+          <fbx-btn variant="ghost" label="Not now" href="/fbx-give-sent"></fbx-btn>
+        </div>
+        <p class="text-xs text-muted-foreground">Not sure? Leaving it costs Bob nothing. He can ask someone else.</p>
+      </div>
+    </div>
+  </div>
+</fbx-frame>

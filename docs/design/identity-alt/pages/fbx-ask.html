@@ -1,0 +1,25 @@
+<fbx-frame tab="me" give="1" address="0x254b0d7b91c2a4f3e81d0c6b7a5e9f2d318a8a1f">
+  <fbx-me-split selected="name">
+    <a href="/fbx-me" class="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><aq-icon name="arrow-left" class="size-3.5"></aq-icon>Back to Alice Mwangi</a>
+    <h2 class="mt-3 text-xl font-semibold tracking-tight text-foreground">Ask someone to vouch for your name</h2>
+    <p class="mt-1 max-w-prose text-sm leading-relaxed text-muted-foreground">Pick someone who has known you by this name first-hand. dev.aquafire passes this one claim to their wallet. When they sign, their words appear here as evidence.</p>
+    <div class="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_17rem]">
+      <div class="grid content-start gap-5">
+        <fbx-field label="Their wallet address" mono value="0x9a3fe2c1b7d4a8f0c6e5d2b1a9c8f7e6d5c4b3a2" help="Get it from them in person or over a channel you trust. A vouch from the wrong wallet is worth nothing."></fbx-field>
+        <fbx-field label="A note to them" optional value="Hi Bob, could you confirm my name for my Freedom identity?" help="Shown to them with the request. It is not part of the claim."></fbx-field>
+        <div class="flex flex-wrap gap-2">
+          <fbx-btn variant="primary" label="Send the request" icon="send" href="/fbx-me"></fbx-btn>
+          <fbx-btn variant="ghost" label="Cancel" href="/fbx-me"></fbx-btn>
+        </div>
+      </div>
+      <div class="h-fit rounded-lg border border-dashed border-border p-4">
+        <p class="text-xs font-semibold text-foreground">What they will see</p>
+        <ul class="mt-3 grid gap-2 text-sm">
+          <li class="flex items-start gap-2"><aq-icon name="eye" class="mt-0.5 size-4 text-foreground"></aq-icon><span><span class="font-medium">Name: Alice Mwangi</span><span class="block text-xs text-muted-foreground">signed by 0x254b…8a1f</span></span></li>
+          <li class="flex items-start gap-2"><aq-icon name="eye" class="mt-0.5 size-4 text-foreground"></aq-icon><span>Your note</span></li>
+          <li class="flex items-start gap-2 text-muted-foreground"><aq-icon name="eye-off" class="mt-0.5 size-4"></aq-icon><span>Your email, your domain and everyone who vouched so far</span></li>
+        </ul>
+      </div>
+    </div>
+  </fbx-me-split>
+</fbx-frame>

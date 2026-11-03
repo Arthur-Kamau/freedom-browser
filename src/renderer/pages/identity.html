@@ -30,109 +30,46 @@
         box-sizing: border-box;
         min-height: 100vh;
       }
-      /* Same layout as Settings: a sticky left nav and a content column. */
+      /* The document never scrolls; `.layout` does, as on Settings. */
       .layout {
-        display: grid;
-        grid-template-columns: 240px 1fr;
         height: 100vh;
         overflow-y: auto;
       }
       .layout:focus {
         outline: none;
       }
-      .sidebar {
-        position: sticky;
-        top: 0;
-        align-self: start;
-        height: 100vh;
-        padding: 40px 20px 40px 32px;
-        border-right: 1px solid var(--border);
-        background: var(--sidebar-translucent);
-        backdrop-filter: blur(6px);
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-      }
-      .sidebar-title {
-        font-size: 13px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--text-muted);
-        margin: 0 0 4px 12px;
-      }
-      .nav {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-      }
-      .nav-item {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 9px 12px;
-        border-radius: 8px;
-        color: var(--text-muted);
-        cursor: pointer;
-        font-size: 14px;
-        background: transparent;
-        border: 0;
-        text-align: left;
-        font-family: inherit;
-        transition:
-          background 0.1s,
-          color 0.1s;
-      }
-      .nav-item:hover {
-        background: var(--bg-card);
-        color: var(--text);
-      }
-      .nav-item.active {
-        background: var(--accent-muted);
-        color: var(--accent);
-      }
-      .nav-item svg {
-        flex-shrink: 0;
-      }
-      .nav-item .count {
-        margin-left: auto;
-      }
-      .content {
-        padding: 48px 56px 80px 56px;
-        max-width: 880px;
-      }
-      .panel {
-        display: none;
-      }
-      .panel.active {
-        display: block;
-      }
-      /* Same header as every other internal page (#256). */
-      h1 {
-        font-size: 28px;
-        margin-bottom: 8px;
-        color: var(--accent);
-        font-weight: 600;
-        letter-spacing: -0.5px;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-      .subtitle {
-        color: var(--text-muted);
-        margin-bottom: 24px;
-        font-size: 14px;
-      }
       .hidden {
         display: none !important;
-      }
-      .meta {
-        font-size: 13px;
-        color: var(--text-muted);
       }
       .mono {
         font-family: var(--font-mono);
         font-size: 12px;
         word-break: break-all;
+      }
+      .meta {
+        font-size: 13px;
+        color: var(--text-muted);
+        line-height: 1.5;
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+      h2,
+      h3 {
+        margin: 0;
+        color: var(--text-strong);
+        font-weight: 600;
+      }
+      h3 {
+        font-size: 14px;
       }
 
       /* Icons: one glyph set, drawn as a CSS mask over currentColor so a
@@ -231,316 +168,91 @@
       .ico-paste {
         mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2'/><rect x='8' y='2' width='8' height='4' rx='1'/></svg>");
       }
-
-      /* Status strip: wallet, service, and the one thing to do next. */
-      .status-card {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px 24px;
-        align-items: center;
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 12px 18px;
-        margin-bottom: 28px;
-        font-size: 13px;
+      .ico-more {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='5' r='1'/><circle cx='12' cy='12' r='1'/><circle cx='12' cy='19' r='1'/></svg>");
       }
-      .status-item {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        min-width: 0;
-        color: var(--text-muted);
+      .ico-users {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2'/><circle cx='9' cy='7' r='4'/><path d='M23 21v-2a4 4 0 0 0-3-3.9'/><path d='M16 3.1a4 4 0 0 1 0 7.8'/></svg>");
       }
-      .status-item .value {
-        font-family: var(--font-mono);
-        font-size: 12px;
-        color: var(--text);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        max-width: 380px;
+      .ico-chevron {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
       }
-      .status-card .badge {
-        margin-left: auto;
+      .ico-shield-check {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'/><path d='m9 12 2 2 4-4'/></svg>");
       }
-      .notice {
-        display: flex;
-        gap: 10px;
-        align-items: flex-start;
-        background: var(--info-bg);
-        border: 1px solid var(--badge-info-border);
-        border-radius: 8px;
-        padding: 12px 16px;
-        font-size: 14px;
-        margin-bottom: 20px;
+      .ico-shield-plain {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'/></svg>");
       }
-      .notice .ico {
-        margin-top: 2px;
+      .ico-shield-x {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'/><path d='m14.5 9.5-5 5'/><path d='m9.5 9.5 5 5'/></svg>");
       }
-      .notice.warn {
-        background: var(--badge-warn-bg);
-        border-color: var(--warn);
+      .ico-user-check {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/><circle cx='9' cy='7' r='4'/><polyline points='16 11 18 13 22 9'/></svg>");
       }
-      .notice.error {
-        background: var(--danger-bg);
-        border-color: var(--danger);
+      .ico-arrow-left {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m12 19-7-7 7-7'/><path d='M19 12H5'/></svg>");
+      }
+      .ico-chevrons {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m7 15 5 5 5-5'/><path d='m7 9 5-5 5 5'/></svg>");
+      }
+      .ico-cloud-off {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m2 2 20 20'/><path d='M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193'/><path d='M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07'/></svg>");
+      }
+      .ico-key {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z'/><circle cx='16.5' cy='7.5' r='.5'/></svg>");
+      }
+      .ico-eye {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0'/><circle cx='12' cy='12' r='3'/></svg>");
+      }
+      .ico-send {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z'/><path d='m21.854 2.147-10.94 10.939'/></svg>");
+      }
+      .ico-login {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4'/><polyline points='10 17 15 12 10 7'/><line x1='15' x2='3' y1='12' y2='12'/></svg>");
+      }
+      .ico-history {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/><path d='M3 3v5h5'/><path d='M12 7v5l4 2'/></svg>");
+      }
+      .ico-settings {
+        mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='3'/><path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'/></svg>");
       }
 
-      /* Sections */
-      .section {
-        margin-bottom: 36px;
+      /* Tones: one vocabulary for marks, tiles and timeline icons. The icon
+         names the source; the colour says only how it stands. */
+      .tone-service {
+        background: var(--service-muted);
+        color: var(--service);
       }
-      .section-head {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 14px;
+      .tone-success {
+        background: var(--success-muted);
+        color: var(--success);
       }
-      h2 {
-        font-size: 16px;
-        font-weight: 600;
-        margin: 0;
-        color: var(--text-strong);
+      .tone-warn {
+        background: var(--warn-muted);
+        color: var(--warn);
       }
-      .section-head .meta {
-        flex: 1;
+      .tone-danger {
+        background: var(--danger-muted);
+        color: var(--danger);
       }
-      .section > .meta {
-        margin: 0 0 14px;
-      }
-      .count {
-        font-size: 12px;
-        color: var(--text);
-        background: var(--bg-raised);
-        border: 1px solid var(--border);
-        border-radius: 999px;
-        padding: 1px 8px;
-      }
-
-      /* Claim cards: icon, value, badge; a verification line; the
-         attestation list; technical details folded away; one action row. */
-      .card {
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 16px 20px;
-        margin-bottom: 12px;
-      }
-      .claim-head {
-        display: flex;
-        align-items: center;
-        gap: 14px;
-      }
-      .claim-icon {
-        width: 40px;
-        height: 40px;
-        border-radius: 10px;
+      .tone-accent {
         background: var(--accent-muted);
         color: var(--accent);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
       }
-      .claim-icon .ico {
-        width: 20px;
-        height: 20px;
-      }
-      .claim-title {
-        flex: 1;
-        min-width: 0;
-      }
-      .claim-value {
-        font-size: 16px;
-        font-weight: 600;
-        color: var(--text-strong);
-        word-break: break-word;
-      }
-      .claim-sub {
-        font-size: 12px;
-        color: var(--text-muted);
-        margin-top: 2px;
-        display: flex;
-        gap: 6px;
-        flex-wrap: wrap;
-        align-items: center;
-      }
-      .claim-sub .mono {
-        font-size: 11px;
-      }
-      .badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        font-size: 12px;
-        padding: 3px 10px;
-        border-radius: 999px;
-        border: 1px solid var(--border-strong);
-        color: var(--text-muted);
-        white-space: nowrap;
-        flex-shrink: 0;
-      }
-      .badge .ico {
-        width: 13px;
-        height: 13px;
-      }
-      .badge.attested {
-        border-color: var(--success);
-        color: var(--success);
-      }
-      .badge.invalid {
-        border-color: var(--danger);
-        color: var(--danger);
-      }
-      .claim-body {
-        margin-top: 12px;
-        display: grid;
-        gap: 8px;
-        font-size: 13px;
-      }
-      .dns-result {
-        margin-top: 4px;
-      }
-      .dns-result .meta {
-        margin: 4px 0 0;
-      }
-      .status-line {
-        display: flex;
-        gap: 8px;
-        align-items: flex-start;
-        color: var(--text-muted);
-      }
-      .status-line .ico {
-        margin-top: 1px;
-      }
-      .status-line.ok .ico {
-        color: var(--success);
-      }
-      .status-line.bad .ico {
-        color: var(--danger);
-      }
-      .status-line.wait .ico {
-        color: var(--warn);
-      }
-      .att-title {
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: var(--text-muted);
-        margin-top: 4px;
-      }
-      .attestation {
-        display: grid;
-        grid-template-columns: auto 1fr auto;
-        gap: 6px 10px;
-        align-items: center;
-        padding: 10px 12px;
-        border-left: 3px solid var(--success);
+      .tone-muted {
         background: var(--bg-raised);
-        border-radius: 6px;
-      }
-      .attestation.invalid {
-        border-left-color: var(--danger);
-      }
-      .attestation.pending {
-        border-left-color: var(--warn);
-      }
-      .attestation .source {
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
         color: var(--text-muted);
       }
-      .attestation .who {
-        min-width: 0;
-      }
-      .attestation .words {
-        grid-column: 1 / 4;
-        color: var(--text);
-        font-size: 13px;
-        line-height: 1.45;
-        display: -webkit-box;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
-        overflow: hidden;
-        cursor: pointer;
-      }
-      .attestation .words.expanded {
-        -webkit-line-clamp: unset;
-        display: block;
-      }
-      .attestation .state {
-        grid-column: 1 / 4;
-        font-size: 12px;
-      }
-      /* An attestation you issued carries its hash and Copy JSON in the box. */
-      .attestation .tech-rows,
-      .attestation .actions {
-        grid-column: 1 / 4;
-      }
-      .attestation .tech-rows {
-        font-size: 12px;
-        margin-top: 0;
-      }
-      .attestation .actions {
-        border-top: none;
-        margin-top: 0;
-        padding-top: 0;
-      }
-      .badge.pending {
-        border-color: var(--warn);
-        color: var(--warn);
-      }
-      .attestation .state.ok {
-        color: var(--success);
-      }
-      .attestation .state.bad {
-        color: var(--danger);
-      }
-      .attestation .state.wait {
+      .tone-dashed {
+        border: 1px dashed var(--border);
         color: var(--text-muted);
       }
-      details.tech {
-        font-size: 12px;
-        color: var(--text-muted);
-      }
-      details.tech summary {
-        cursor: pointer;
-        user-select: none;
-      }
-      details.tech summary:hover {
-        color: var(--text);
-      }
-      .tech-rows {
-        margin-top: 6px;
-        display: grid;
-        grid-template-columns: 80px 1fr;
-        gap: 4px 12px;
-        align-items: baseline;
-      }
-      .tech-rows .label {
+      .tone-quiet {
         color: var(--text-meta);
       }
-      .actions {
-        display: flex;
-        gap: 8px;
-        margin-top: 14px;
-        flex-wrap: wrap;
-        align-items: center;
-      }
-      .actions .spacer {
-        flex: 1;
-      }
-      .card .actions {
-        border-top: 1px solid var(--border);
-        padding-top: 12px;
-      }
 
-      /* Buttons: primary filled accent, secondary outlined, destructive outlined danger. */
+      /* Buttons: primary filled accent, secondary outlined, destructive
+         outlined danger, ghost borderless. */
       .btn {
         display: inline-flex;
         align-items: center;
@@ -553,6 +265,7 @@
         font-size: 13px;
         font-family: inherit;
         cursor: pointer;
+        white-space: nowrap;
         transition:
           border-color 0.15s,
           background-color 0.15s;
@@ -587,60 +300,1242 @@
         border-color: var(--danger);
         color: var(--danger);
       }
+      .btn.ghost {
+        border-color: transparent;
+        background: transparent;
+      }
+      .btn.ghost:hover {
+        background: var(--bg-raised);
+      }
       .btn.icon-only {
         padding: 6px;
-      }
-      .empty {
-        text-align: center;
-        padding: 48px 24px;
+        border: 0;
+        background: transparent;
         color: var(--text-muted);
-        background: var(--bg-card);
-        border: 1px dashed var(--border);
-        border-radius: 10px;
       }
-      .empty .ico {
-        width: 40px;
-        height: 40px;
-        margin-bottom: 10px;
-        opacity: 0.6;
-      }
-      .empty-title {
-        font-size: 14px;
+      .btn.icon-only:hover {
         color: var(--text);
+        background: var(--bg-raised);
       }
-      .empty.locked {
-        margin-bottom: 28px;
-        display: grid;
-        justify-items: center;
-        gap: 8px;
+      .link-btn {
+        background: none;
+        border: 0;
+        padding: 0;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--accent);
+        cursor: pointer;
       }
-      .empty.locked .ico {
-        margin-bottom: 2px;
-      }
-      .empty.locked .btn {
-        margin-top: 6px;
-      }
-      .empty.locked .actions {
-        margin-top: 0;
-        justify-content: center;
+      .link-btn:hover {
+        text-decoration: underline;
       }
 
-      /* Forms */
+      /* ── Identity bar: who you are, the node, three tabs ─────────────── */
+      .idbar {
+        border-bottom: 1px solid var(--border);
+        background: var(--sidebar-translucent);
+        backdrop-filter: blur(6px);
+      }
+      .idbar-inner {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 28px 40px 0;
+      }
+      .idbar-row {
+        display: flex;
+        gap: 20px;
+        align-items: flex-end;
+        justify-content: space-between;
+        flex-wrap: wrap;
+      }
+      .who {
+        min-width: 0;
+        flex: 1;
+      }
+      /* Same header as every other internal page (#256). */
+      h1 {
+        font-size: 28px;
+        margin: 0;
+        color: var(--accent);
+        font-weight: 600;
+        letter-spacing: -0.5px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .subtitle {
+        color: var(--text-muted);
+        margin: 6px 0 0;
+        font-size: 14px;
+        max-width: 640px;
+        line-height: 1.5;
+      }
+      .who-line {
+        margin-top: 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        flex-wrap: wrap;
+      }
+      .who-line .value {
+        font-family: var(--font-mono);
+        font-size: 13px;
+        color: var(--text-strong);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 100%;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 2px 8px;
+        border-radius: 6px;
+        background: var(--bg-raised);
+        font-size: 12px;
+        color: var(--text);
+      }
+      .chip .ico {
+        width: 13px;
+        height: 13px;
+      }
+
+      /* The node card: a <details>, so the menu needs no script to open,
+         and Escape or a click elsewhere closes it. */
+      details.node {
+        position: relative;
+        min-width: 300px;
+      }
+      details.node > summary {
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 12px 16px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--bg-card);
+        cursor: pointer;
+        user-select: none;
+      }
+      details.node > summary::-webkit-details-marker {
+        display: none;
+      }
+      details.node[open] > summary,
+      details.node > summary:hover {
+        border-color: var(--border-strong);
+      }
+      .node-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        background: var(--bg-raised);
+        color: var(--text);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .node-icon .ico {
+        width: 20px;
+        height: 20px;
+      }
+      .node-body {
+        flex: 1;
+        min-width: 0;
+      }
+      .node-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+      }
+      .node-label {
+        font-size: 12px;
+        color: var(--text-muted);
+        font-weight: 500;
+      }
+      .node-state {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 6px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .node-state .ico {
+        width: 14px;
+        height: 14px;
+      }
+      .node-host {
+        display: block;
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--text-strong);
+        line-height: 1.2;
+        margin-top: 2px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .node-url {
+        display: block;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--text-muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .node-chev {
+        color: var(--text-muted);
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      details.node .menu {
+        position: absolute;
+        right: 0;
+        top: calc(100% + 8px);
+        width: 384px;
+        max-width: calc(100vw - 40px);
+        z-index: 5;
+        padding: 8px;
+        background: var(--bg-elev);
+        border: 1px solid var(--border-strong);
+        border-radius: 12px;
+        /* theme-literal: a drop shadow, not a surface */
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+      }
+      .menu-note {
+        font-size: 12px;
+        color: var(--text-muted);
+        padding: 6px 12px 8px;
+        margin: 0;
+        line-height: 1.45;
+      }
+      .node-item {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: var(--bg-raised);
+      }
+      .node-item .ni {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: var(--accent);
+        /* theme-literal: the fixed contrast pair on a filled accent tile */
+        color: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .node-item .ni .ico {
+        width: 16px;
+        height: 16px;
+      }
+      .node-item .nb {
+        min-width: 0;
+        flex: 1;
+      }
+      .node-item .nt {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-strong);
+      }
+      .node-item .nu {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--text-muted);
+        word-break: break-all;
+      }
+      .node-item .nc {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 4px;
+      }
+      .menu .sep {
+        height: 1px;
+        background: var(--border);
+        margin: 8px 2px;
+      }
+      .menu .btn.row-btn {
+        width: 100%;
+        justify-content: flex-start;
+        border: 0;
+        background: transparent;
+        padding: 9px 12px;
+        border-radius: 8px;
+      }
+      .menu .btn.row-btn:hover {
+        background: var(--bg-raised);
+      }
+
+      .tabs {
+        display: flex;
+        gap: 24px;
+        margin-top: 12px;
+        margin-bottom: -1px;
+        overflow-x: auto;
+      }
+      .tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 44px;
+        padding: 0 4px;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: transparent;
+        color: var(--text-muted);
+        font-size: 14px;
+        font-family: inherit;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .tab:hover {
+        color: var(--text);
+      }
+      .tab.active {
+        color: var(--text-strong);
+        font-weight: 600;
+        border-bottom-color: var(--accent);
+      }
+      .tab .count {
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 20px;
+        padding: 0 6px;
+        border-radius: 4px;
+        background: var(--accent);
+        /* theme-literal: the fixed contrast pair on a filled accent counter */
+        color: #ffffff;
+      }
+      .tab .count.zero {
+        display: none;
+      }
+
+      .content {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 28px 40px 80px;
+      }
+      .panel {
+        display: none;
+      }
+      .panel.active {
+        display: block;
+      }
+      /* While a gate stands, the panels wait behind the checklist. */
+      .content.gated .panel {
+        display: none;
+      }
+
+      .notice {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        background: var(--info-bg);
+        border: 1px solid var(--badge-info-border);
+        border-radius: 8px;
+        padding: 12px 16px;
+        font-size: 14px;
+        margin-bottom: 20px;
+        line-height: 1.45;
+      }
+      .notice .ico {
+        margin-top: 2px;
+      }
+      .notice.warn {
+        background: var(--badge-warn-bg);
+        border-color: var(--warn);
+      }
+      .notice.error {
+        background: var(--danger-bg);
+        border-color: var(--danger);
+      }
+
+      /* ── Readiness: one checklist in place of four gate cards ────────── */
+      .ready {
+        max-width: 880px;
+        display: grid;
+        gap: 40px;
+        grid-template-columns: minmax(0, 1fr) 256px;
+        margin: 0 auto 28px;
+      }
+      .ready h2 {
+        font-size: 20px;
+        letter-spacing: -0.3px;
+      }
+      .ready .lead {
+        margin: 4px 0 0;
+        font-size: 14px;
+        color: var(--text-muted);
+      }
+      .ready ol {
+        list-style: none;
+        margin: 24px 0 0;
+        padding: 0 20px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--bg-card);
+      }
+      .step {
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr);
+        gap: 0 16px;
+        padding: 16px 0;
+        border-top: 1px solid var(--border);
+      }
+      .step:first-child {
+        border-top: 0;
+      }
+      .step-mark {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 600;
+        border: 1px solid var(--border);
+        color: var(--text-muted);
+        box-sizing: border-box;
+      }
+      .step-mark .ico {
+        width: 16px;
+        height: 16px;
+      }
+      .step.done .step-mark {
+        background: var(--success-muted);
+        color: var(--success);
+        border-color: transparent;
+      }
+      .step.current .step-mark {
+        background: var(--accent);
+        /* theme-literal: the fixed contrast pair on a filled accent mark */
+        color: #ffffff;
+        border-color: transparent;
+      }
+      .step-title {
+        font-size: 14px;
+        color: var(--text-muted);
+        padding-top: 4px;
+      }
+      .step.done .step-title {
+        color: var(--text);
+      }
+      .step.current .step-title {
+        color: var(--text-strong);
+        font-weight: 600;
+      }
+      .step-title .done-tag {
+        margin-left: 8px;
+        font-size: 12px;
+        font-weight: 400;
+        color: var(--success);
+      }
+      .step-body {
+        display: none;
+      }
+      .step.current .step-body {
+        display: block;
+      }
+      .step-body .meta {
+        margin: 4px 0 0;
+        max-width: 60ch;
+        font-size: 14px;
+      }
+      .step-body .actions {
+        margin-top: 12px;
+      }
+      .ready aside {
+        border-left: 1px solid var(--border);
+        padding-left: 24px;
+        font-size: 14px;
+        color: var(--text-muted);
+        display: grid;
+        gap: 12px;
+        align-content: start;
+        line-height: 1.5;
+      }
+      .ready aside p {
+        margin: 0;
+      }
+      .ready aside .aside-title {
+        font-weight: 600;
+        color: var(--text-strong);
+      }
+      .field-error {
+        font-size: 13px;
+        color: var(--danger);
+      }
+
+      /* ── Me: claims as rows on the left, the selected one on the right ─ */
+      .me-split {
+        display: grid;
+        gap: 32px;
+        grid-template-columns: minmax(0, 400px) minmax(0, 1fr);
+        align-items: start;
+      }
+      .list-head {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .list-head .meta {
+        font-size: 12px;
+        margin: 2px 0 0;
+      }
+      .rows-box {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--bg-card);
+        overflow: hidden;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 14px 16px;
+        border: 0;
+        border-top: 1px solid var(--border);
+        background: transparent;
+        color: var(--text);
+        text-align: left;
+        font-family: inherit;
+        font-size: 14px;
+        cursor: pointer;
+        box-sizing: border-box;
+      }
+      .rows-box > div:first-child > .row:first-child {
+        border-top: 0;
+      }
+      .row:hover {
+        background: var(--bg-card-hover);
+      }
+      .row.selected {
+        background: var(--accent-muted);
+      }
+      .claim-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: var(--bg-raised);
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .claim-icon .ico {
+        width: 16px;
+        height: 16px;
+      }
+      .row.selected .claim-icon {
+        background: var(--accent);
+        /* theme-literal: the fixed contrast pair on a filled accent tile */
+        color: #ffffff;
+      }
+      .row-body {
+        flex: 1;
+        min-width: 0;
+      }
+      .row-value {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text-strong);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .row-sub {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 2px;
+      }
+      .row-proof {
+        flex-shrink: 0;
+      }
+      .row.slot {
+        color: var(--text-muted);
+      }
+      .row.slot .claim-icon {
+        border: 1px dashed var(--border);
+        background: transparent;
+      }
+      .row.slot:hover {
+        color: var(--text);
+      }
+      .row.slot .row-body {
+        font-size: 14px;
+      }
+      .row.slot:disabled {
+        cursor: default;
+        opacity: 0.6;
+      }
+      .list-note {
+        margin: 16px 0 0;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      /* Marks: the node's check (shield) and people (users + one pip per
+         vouch). A broken claim gets one red mark instead of both. */
+      .proof {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .mark {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 24px;
+        padding: 0 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        white-space: nowrap;
+        box-sizing: border-box;
+      }
+      .mark .ico {
+        width: 14px;
+        height: 14px;
+      }
+      .mark.tone-quiet {
+        padding: 0 4px;
+      }
+      .pips {
+        display: inline-flex;
+        gap: 2px;
+      }
+      .pip {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--success);
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 12px;
+        padding: 3px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border-strong);
+        color: var(--text-muted);
+        white-space: nowrap;
+        flex-shrink: 0;
+        font-weight: 400;
+      }
+      .badge .ico {
+        width: 13px;
+        height: 13px;
+      }
+      .badge.attested {
+        border-color: var(--success);
+        color: var(--success);
+      }
+      .badge.invalid {
+        border-color: var(--danger);
+        color: var(--danger);
+      }
+      .badge.pending {
+        border-color: var(--warn);
+        color: var(--warn);
+      }
+
+      .proof-lg {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin-top: 16px;
+      }
+      .tile {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        min-width: 0;
+      }
+      .tile-ic {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        box-sizing: border-box;
+      }
+      .tile-ic .ico {
+        width: 20px;
+        height: 20px;
+      }
+      .tile-body {
+        min-width: 0;
+      }
+      .tile-label {
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+      .tile-value {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text-strong);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .tile-value.quiet {
+        color: var(--text-muted);
+      }
+      .pips-lg {
+        display: inline-flex;
+        gap: 6px;
+      }
+      .pip-lg {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--success);
+        border: 2px solid var(--bg-card);
+        padding: 0;
+        cursor: pointer;
+        box-sizing: content-box;
+      }
+      .pip-lg:hover {
+        transform: scale(1.25);
+      }
+      .broken {
+        display: flex;
+        gap: 12px;
+        padding: 16px;
+        border-radius: 10px;
+        background: var(--danger-muted);
+        margin-top: 16px;
+      }
+      .broken-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--danger);
+      }
+      .broken-text {
+        font-size: 14px;
+        color: var(--text);
+        margin-top: 2px;
+        line-height: 1.5;
+      }
+
+      .me-panel {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--bg-card);
+        padding: 28px;
+        min-width: 0;
+      }
+      .back-link {
+        display: none;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+        color: var(--text-muted);
+        background: none;
+        border: 0;
+        padding: 0;
+        cursor: pointer;
+        font-family: inherit;
+        margin-bottom: 16px;
+      }
+      .back-link .ico {
+        width: 14px;
+        height: 14px;
+      }
+      .panel-meta {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+      .panel-meta .ico {
+        width: 14px;
+        height: 14px;
+      }
+      .panel-meta .mono {
+        font-size: 12px;
+      }
+      .panel-value {
+        font-size: 24px;
+        font-weight: 600;
+        letter-spacing: -0.3px;
+        color: var(--text-strong);
+        margin: 4px 0 0;
+        word-break: break-word;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .panel-copy {
+        margin: 16px 0 0;
+        font-size: 14px;
+        line-height: 1.5;
+        color: var(--text-muted);
+        max-width: 65ch;
+      }
+      .panel-ok {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--success);
+        margin-bottom: 12px;
+      }
+      .panel-ok .ico {
+        width: 14px;
+        height: 14px;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 20px;
+        align-items: center;
+      }
+      .actions .spacer {
+        flex: 1;
+      }
+      .actions-note {
+        margin: 8px 0 0;
+        font-size: 12px;
+      }
+      .callout {
+        margin-top: 20px;
+        padding: 16px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+      }
+      .callout.warn {
+        border-color: var(--warn);
+        background: var(--warn-muted);
+      }
+      .callout.info {
+        border-color: var(--badge-info-border);
+        background: var(--info-bg);
+      }
+      .callout.bad {
+        border-color: var(--danger);
+        background: var(--danger-muted);
+      }
+      .callout-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text-strong);
+      }
+      .callout .meta {
+        margin-top: 4px;
+        font-size: 14px;
+      }
+      .evidence-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 12px;
+        margin-top: 32px;
+        padding-top: 20px;
+        border-top: 1px solid var(--border);
+      }
+      .section-title {
+        margin-top: 24px;
+      }
+      .section-title + .meta {
+        margin: 4px 0 0;
+        font-size: 14px;
+      }
+      .check-list {
+        list-style: none;
+        margin: 8px 0 0;
+        padding: 0;
+        display: grid;
+        gap: 6px;
+        font-size: 14px;
+      }
+      .check-list li {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+      }
+      .check-list .ico {
+        margin-top: 2px;
+      }
+      .check-list .ok {
+        color: var(--success);
+      }
+      .check-list .bad {
+        color: var(--danger);
+      }
+
+      /* DNS record rows, inline in the claim panel. */
+      .dns-box {
+        margin-top: 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--bg-elev);
+      }
+      .dns-row {
+        display: grid;
+        grid-template-columns: 56px 1fr auto;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 12px;
+        border-top: 1px solid var(--border);
+      }
+      .dns-box .dns-row:first-child {
+        border-top: 0;
+      }
+      .dns-row .label {
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+      .dns-result {
+        margin-top: 12px;
+      }
+      .dns-result .meta {
+        margin: 4px 0 0;
+      }
+      .status-line {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        color: var(--text);
+        line-height: 1.45;
+        font-size: 13px;
+      }
+      .status-line .ico {
+        margin-top: 2px;
+      }
+      .status-line.ok .ico {
+        color: var(--success);
+      }
+      .status-line.bad .ico {
+        color: var(--danger);
+      }
+      .status-line.wait .ico {
+        color: var(--warn);
+      }
+      .status-line.quiet {
+        color: var(--text-muted);
+      }
+
+      /* Evidence, newest first: one event per signature. */
+      .timeline {
+        margin-top: 16px;
+      }
+      .event {
+        display: grid;
+        grid-template-columns: 32px minmax(0, 1fr);
+        gap: 0 12px;
+      }
+      .event-rail {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .event-ic {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        box-sizing: border-box;
+      }
+      .event-ic .ico {
+        width: 16px;
+        height: 16px;
+      }
+      .event-line {
+        width: 1px;
+        flex: 1;
+        background: var(--border);
+      }
+      .event-body {
+        padding: 4px 0 24px;
+        min-width: 0;
+      }
+      .event.last .event-body {
+        padding-bottom: 4px;
+      }
+      .event-head {
+        font-size: 14px;
+        color: var(--text-strong);
+      }
+      .event-head .source {
+        font-weight: 600;
+      }
+      .event-head .source .ico {
+        display: none;
+      }
+      .event-head .verb {
+        color: var(--text-muted);
+      }
+      .event-sub {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0 8px;
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 2px;
+      }
+      .event-sub .who {
+        font-family: var(--font-mono);
+      }
+      .event .words {
+        margin-top: 8px;
+        padding: 8px 12px;
+        border-radius: 6px;
+        background: var(--bg-raised);
+        font-size: 14px;
+        line-height: 1.5;
+        color: var(--text);
+        max-width: 65ch;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        overflow: hidden;
+        cursor: pointer;
+      }
+      .event .words::before {
+        content: '“';
+      }
+      .event .words::after {
+        content: '”';
+      }
+      .event .words.expanded {
+        -webkit-line-clamp: unset;
+        display: block;
+      }
+      .event .state {
+        font-size: 12px;
+        margin-top: 6px;
+        line-height: 1.45;
+      }
+      .state.bad {
+        color: var(--danger);
+      }
+      .state.wait {
+        color: var(--text-muted);
+      }
+      .event .tech-rows {
+        margin-top: 8px;
+      }
+      .event .actions {
+        margin-top: 8px;
+      }
+      .event .badge {
+        margin-left: 8px;
+      }
+
+      details.tech {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 20px;
+      }
+      details.tech summary {
+        cursor: pointer;
+        user-select: none;
+      }
+      details.tech summary:hover {
+        color: var(--text);
+      }
+      .tech-rows {
+        margin-top: 8px;
+        display: grid;
+        grid-template-columns: 90px 1fr;
+        gap: 4px 12px;
+        align-items: baseline;
+        font-size: 12px;
+      }
+      .tech-rows .label {
+        color: var(--text-meta);
+      }
+
+      /* ── Composer: Add a claim, in place of the list ─────────────────── */
+      .composer h2 {
+        font-size: 24px;
+        letter-spacing: -0.3px;
+        margin-top: 12px;
+      }
+      .composer-node {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        font-size: 14px;
+        color: var(--text-muted);
+        margin-top: 4px;
+      }
+      .composer-grid {
+        display: grid;
+        gap: 32px;
+        grid-template-columns: 272px minmax(0, 1fr);
+        margin-top: 24px;
+        align-items: start;
+      }
+      .kind-picker {
+        border: 0;
+        padding: 0;
+        margin: 0;
+        min-width: 0;
+      }
+      .kind-picker legend {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-strong);
+        padding: 0;
+      }
+      .kinds {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .kind {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: transparent;
+        color: var(--text);
+        text-align: left;
+        font-family: inherit;
+        cursor: pointer;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .kind:hover {
+        background: var(--bg-card-hover);
+      }
+      .kind[aria-pressed='true'] {
+        border-color: var(--accent);
+        background: var(--accent-muted);
+      }
+      .kind .radio {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        border: 1px solid var(--border-strong);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        box-sizing: border-box;
+      }
+      .kind[aria-pressed='true'] .radio {
+        border-color: var(--accent);
+      }
+      .kind[aria-pressed='true'] .radio::after {
+        content: '';
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      .kind > .ico {
+        width: 16px;
+        height: 16px;
+        color: var(--text-muted);
+      }
+      .kind[aria-pressed='true'] > .ico {
+        color: var(--accent);
+      }
+      .kind-name {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text-strong);
+        display: block;
+      }
+      .kind .how {
+        font-size: 12px;
+        color: var(--text-muted);
+        display: block;
+      }
+      .kind:disabled {
+        border-style: dashed;
+        opacity: 0.7;
+        cursor: default;
+      }
+      .kinds-note {
+        margin: 12px 0 0;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .composer-form {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--bg-card);
+        padding: 28px;
+        min-width: 0;
+      }
+      .form-title {
+        font-size: 16px;
+      }
+      .form-title + .meta {
+        margin: 4px 0 0;
+        font-size: 14px;
+        max-width: 65ch;
+      }
       .form {
         display: grid;
-        gap: 14px;
+        gap: 20px;
+        margin-top: 20px;
+      }
+      .form .form {
+        margin-top: 0;
       }
       .field {
         display: grid;
         gap: 6px;
       }
       .field label {
-        font-size: 13px;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text-strong);
+      }
+      .field label .opt {
+        font-weight: 400;
         color: var(--text-muted);
       }
       .field input,
       .field textarea {
-        padding: 10px 14px;
+        padding: 10px 12px;
         background: var(--bg-elev);
         border: 1px solid var(--border);
         border-radius: 8px;
@@ -657,6 +1552,11 @@
         font-size: 12px;
         min-height: 96px;
         resize: vertical;
+        line-height: 1.5;
+      }
+      .field textarea.plain {
+        font-family: inherit;
+        font-size: 14px;
       }
       .field input.mono-input {
         font-family: var(--font-mono);
@@ -665,79 +1565,145 @@
       .field textarea:focus {
         border-color: var(--accent);
       }
+      .field input:read-only {
+        background: var(--bg-raised);
+        color: var(--text-muted);
+      }
       .field .help {
         font-size: 12px;
         color: var(--text-muted);
+        line-height: 1.45;
       }
-      .field-error {
-        font-size: 13px;
-        color: var(--danger);
-      }
-      .code-row {
-        display: flex;
-        gap: 8px;
-        align-items: end;
-      }
-      .code-row .field {
-        flex: 1;
-      }
-      .file-row {
-        display: flex;
-        gap: 10px;
-        align-items: center;
-        font-size: 13px;
-        color: var(--text-muted);
-      }
-      .file-row input {
-        font-family: inherit;
-        font-size: 13px;
-        color: var(--text);
-      }
-
-      /* Kind picker: four icon tiles, one pressed. */
-      .kind-picker {
+      .two-up {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 8px;
+        gap: 16px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
-      .kind {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 6px;
-        padding: 12px 8px;
-        background: var(--bg-elev);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        color: var(--text-muted);
+      .preview {
+        border: 1px dashed var(--border);
+        border-radius: 8px;
+        padding: 12px;
+      }
+      .preview .meta {
         font-size: 12px;
-        font-family: inherit;
-        cursor: pointer;
-        transition:
-          border-color 0.15s,
-          color 0.15s;
       }
-      .kind .ico {
-        width: 20px;
-        height: 20px;
+      .preview-value {
+        font-weight: 500;
+        color: var(--text-strong);
+        margin-top: 4px;
+        word-break: break-word;
       }
-      .kind:hover {
-        border-color: var(--border-strong);
-        color: var(--text);
+      .preview .proof {
+        margin-top: 8px;
       }
-      .kind[aria-pressed='true'] {
-        border-color: var(--accent);
-        background: var(--accent-muted);
-        color: var(--accent);
+      .otp-steps {
+        margin-top: 4px;
       }
-      .kind:disabled {
-        opacity: 0.45;
-        cursor: default;
+      .otp-steps .step {
+        gap: 0 12px;
+      }
+      .otp-steps .step .step-body {
+        display: none;
+      }
+      .otp-steps .step.current .step-body,
+      .otp-steps .step.error .step-body {
+        display: block;
+        margin-top: 10px;
+      }
+      .otp-steps .step.error .step-mark {
+        background: var(--danger-muted);
+        color: var(--danger);
+        border-color: transparent;
+      }
+      .step-note {
+        margin-left: 8px;
+        font-size: 12px;
+        font-weight: 400;
+        color: var(--text-muted);
+      }
+      .step.done .step-note {
+        color: var(--success);
+      }
+      .otp-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .otp-row .field {
+        flex: 0 1 200px;
+      }
+      .form-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        border-top: 1px solid var(--border);
+        padding-top: 20px;
       }
 
-      /* Modals: native <dialog>, painted from the page palette so the
-         fields inside match the page. One head, one body, one footer with
-         the primary/secondary (or danger) pair. */
+      /* ── Requests: what they ask, and exactly what leaves ────────────── */
+      .req-intro {
+        max-width: 65ch;
+      }
+      .req-intro h2 {
+        font-size: 20px;
+        letter-spacing: -0.3px;
+      }
+      .req-intro .meta {
+        margin: 4px 0 0;
+        font-size: 14px;
+      }
+      .req-grid {
+        display: grid;
+        gap: 24px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin-top: 24px;
+        align-items: start;
+      }
+      .req-col-title {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-muted);
+        margin: 0 0 8px;
+      }
+      .req-box {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--bg-card);
+        padding: 20px;
+      }
+      .req-box.answer {
+        border: 2px solid var(--accent);
+      }
+      .req-box .form {
+        margin-top: 0;
+      }
+      .req-aside {
+        display: grid;
+        gap: 12px;
+        padding: 20px;
+        border-radius: 12px;
+        background: var(--bg-raised);
+        font-size: 14px;
+        color: var(--text-muted);
+        line-height: 1.5;
+        align-content: start;
+      }
+      .req-aside p {
+        margin: 0;
+      }
+      .req-aside .aside-title {
+        font-weight: 600;
+        color: var(--text-strong);
+      }
+      .req-status {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin: 12px 0 0;
+        min-height: 1.5em;
+      }
+
+      /* ── Dialogs: the two that stay modal ───────────────────────────── */
       dialog.modal {
         width: min(520px, calc(100vw - 32px));
         padding: 0;
@@ -751,6 +1717,9 @@
       dialog.modal::backdrop {
         background: var(--modal-backdrop);
       }
+      #vouches-dialog {
+        width: min(680px, calc(100vw - 32px));
+      }
       .modal-head {
         display: flex;
         align-items: center;
@@ -761,6 +1730,9 @@
         width: 18px;
         height: 18px;
         color: var(--accent);
+      }
+      .modal-head.danger .ico {
+        color: var(--danger);
       }
       .modal-head h2 {
         flex: 1;
@@ -796,13 +1768,9 @@
         gap: 10px;
         padding: 16px 20px 20px;
       }
-      .modal-foot .status {
+      .modal-foot .spacer {
         flex: 1;
-        font-size: 12px;
-        color: var(--text-muted);
-        align-self: center;
       }
-      /* A claim quoted inside a modal. */
       .summary {
         display: flex;
         align-items: center;
@@ -812,432 +1780,867 @@
         border: 1px solid var(--border);
         border-radius: 8px;
       }
-      .summary .claim-icon {
-        width: 32px;
-        height: 32px;
-        border-radius: 8px;
-      }
-      .summary .claim-icon .ico {
-        width: 16px;
-        height: 16px;
+      .summary .claim-title {
+        min-width: 0;
+        flex: 1;
       }
       .summary .claim-value {
         font-size: 14px;
+        font-weight: 600;
+        color: var(--text-strong);
+        word-break: break-word;
+      }
+      .summary .claim-sub {
+        font-size: 12px;
+        color: var(--text-muted);
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        min-width: 0;
       }
       .summary .mono {
         font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 100%;
       }
-      .dns-row {
+      .vouch-list {
         display: grid;
-        grid-template-columns: 56px 1fr auto;
         gap: 10px;
-        align-items: center;
-        padding: 8px 12px;
+        max-height: 55vh;
+        overflow: auto;
+      }
+      .vouch {
+        display: grid;
+        gap: 8px;
+        padding: 10px 12px;
+        border-left: 3px solid var(--success);
         background: var(--bg-raised);
+        border-radius: 6px;
+      }
+      .vouch.pending {
+        border-left-color: var(--warn);
+      }
+      .vouch.invalid {
+        border-left-color: var(--danger);
+      }
+      .vouch-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .vouch-head .source {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .vouch-head .source .ico {
+        width: 14px;
+        height: 14px;
+      }
+      .vouch-head .spacer {
+        flex: 1;
+      }
+      .vouch .dns-row {
+        padding: 6px 10px;
+        background: var(--bg-card);
         border: 1px solid var(--border);
         border-radius: 8px;
       }
-      .dns-row .label {
+      .vouch .dns-row .mono {
+        min-width: 0;
+        overflow-wrap: anywhere;
         font-size: 12px;
+      }
+      .vouch .words {
+        font-size: 13px;
+        line-height: 1.45;
+      }
+      .vouch .words::before {
+        content: '“';
+      }
+      .vouch .words::after {
+        content: '”';
+      }
+      .vouch .state {
+        font-size: 12px;
+      }
+      .vouch .state.bad {
+        color: var(--danger);
+      }
+      .vouch .state.wait {
         color: var(--text-muted);
+      }
+      .vouches-empty {
+        color: var(--text-muted);
+        font-size: 13px;
+      }
+      .remove-grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .remove-grid .meta {
+        margin: 0;
+      }
+      .remove-grid .check-list {
+        margin-top: 6px;
+      }
+      .empty {
+        text-align: center;
+        padding: 40px 24px;
+        color: var(--text-muted);
+        background: var(--bg-card);
+        border: 1px dashed var(--border);
+        border-radius: 12px;
+      }
+      .empty .ico {
+        width: 36px;
+        height: 36px;
+        margin-bottom: 10px;
+        opacity: 0.6;
+      }
+      .empty-title {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--text);
+      }
+
+      @media (max-width: 960px) {
+        .idbar-inner,
+        .content {
+          padding-left: 20px;
+          padding-right: 20px;
+        }
+        .idbar-row {
+          align-items: stretch;
+        }
+        details.node {
+          min-width: 0;
+          width: 100%;
+        }
+        .ready {
+          grid-template-columns: 1fr;
+          gap: 20px;
+        }
+        .ready aside {
+          border-left: 0;
+          padding-left: 0;
+        }
+        .me-split {
+          grid-template-columns: 1fr;
+        }
+        .me-split.show-pane .me-list {
+          display: none;
+        }
+        .me-split:not(.show-pane) .me-panel {
+          display: none;
+        }
+        .back-link {
+          display: flex;
+          width: fit-content;
+        }
+        .composer-grid,
+        .req-grid,
+        .proof-lg,
+        .two-up,
+        .remove-grid {
+          grid-template-columns: 1fr;
+        }
+        .me-panel,
+        .composer-form {
+          padding: 20px;
+        }
       }
     </style>
   </head>
   <body>
     <div class="layout" tabindex="-1">
-      <aside class="sidebar">
-        <h2 class="sidebar-title">Identity</h2>
-        <nav class="nav" id="nav">
-          <button type="button" class="nav-item active" id="nav-claims" data-target="claims">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3 7V5a2 2 0 0 1 2-2h2"></path>
-              <path d="M17 3h2a2 2 0 0 1 2 2v2"></path>
-              <path d="M21 17v2a2 2 0 0 1-2 2h-2"></path>
-              <path d="M7 21H5a2 2 0 0 1-2-2v-2"></path>
-              <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
-              <path d="M9 9h.01"></path>
-              <path d="M15 9h.01"></path>
-            </svg>
-            Your claims
-            <span class="count" id="claims-count">0</span>
-          </button>
-          <button type="button" class="nav-item" id="nav-attest" data-target="attest">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 3l8 4v5c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V7z"></path>
-              <path d="M9 12l2 2 4-4"></path>
-            </svg>
-            Attest others
-            <span class="count" id="shared-count">0</span>
-          </button>
-          <button type="button" class="nav-item" id="nav-requests" data-target="requests">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-            </svg>
-            Requests
-          </button>
-        </nav>
-      </aside>
+      <header class="idbar">
+        <div class="idbar-inner">
+          <div class="idbar-row">
+            <div class="who">
+              <h1>
+                <svg
+                  width="26"
+                  height="26"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M3 7V5a2 2 0 0 1 2-2h2"></path>
+                  <path d="M17 3h2a2 2 0 0 1 2 2v2"></path>
+                  <path d="M21 17v2a2 2 0 0 1-2 2h-2"></path>
+                  <path d="M7 21H5a2 2 0 0 1-2-2v-2"></path>
+                  <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+                  <path d="M9 9h.01"></path>
+                  <path d="M15 9h.01"></path>
+                </svg>
+                Your identity
+              </h1>
+              <p class="subtitle">
+                What you have proved about yourself, and who vouches for it. A site only ever sees
+                what you choose to share.
+              </p>
+              <div class="who-line">
+                <span class="chip"
+                  ><span class="ico ico-wallet" aria-hidden="true"></span>Wallet</span
+                >
+                <span class="badge hidden" id="status-lock"
+                  ><span class="ico ico-lock" aria-hidden="true"></span>Locked</span
+                >
+                <span class="value" id="status-wallet">—</span>
+                <button
+                  type="button"
+                  class="btn icon-only"
+                  id="copy-address-btn"
+                  aria-label="Copy address"
+                  title="Copy address"
+                >
+                  <span class="ico ico-copy" aria-hidden="true"></span>
+                </button>
+              </div>
+              <p class="meta hidden" id="wallet-line"></p>
+            </div>
 
-      <main class="content">
-        <h1>
-          <svg
-            width="28"
-            height="28"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M3 7V5a2 2 0 0 1 2-2h2"></path>
-            <path d="M17 3h2a2 2 0 0 1 2 2v2"></path>
-            <path d="M21 17v2a2 2 0 0 1-2 2h-2"></path>
-            <path d="M7 21H5a2 2 0 0 1-2-2v-2"></path>
-            <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
-            <path d="M9 9h.01"></path>
-            <path d="M15 9h.01"></path>
-          </svg>
-          Identity
-        </h1>
-        <p class="subtitle" id="subtitle">
-          Signed statements about you that a site or another person can verify without a central provider.
-        </p>
+            <!-- Your node: the identity service that keeps the claims. Claims
+                 live on the node, so the card says which one and how it stands.
+                 Changing it is a Settings matter; the menu says so and links there. -->
+            <details class="node" id="node-menu">
+              <summary id="node-card" aria-label="Your node">
+                <span class="node-icon"
+                  ><span class="ico ico-server" aria-hidden="true"></span
+                ></span>
+                <span class="node-body">
+                  <span class="node-top">
+                    <span class="node-label">Your node</span>
+                    <span class="node-state tone-muted" id="node-state"
+                      ><span class="ico ico-clock" aria-hidden="true"></span
+                      ><span id="node-state-text">Checking…</span></span
+                    >
+                  </span>
+                  <span class="node-host" id="status-service">—</span>
+                  <span
+                    class="node-url"
+                    id="node-url"
+                    title="The identity service that keeps your claims and runs the checks"
+                  ></span>
+                </span>
+                <span class="node-chev"
+                  ><span class="ico ico-chevrons" aria-hidden="true"></span
+                ></span>
+              </summary>
+              <div class="menu" role="menu" aria-label="Your node">
+                <p class="menu-note">
+                  Your claims live on the node. Changing it under Settings shows that node's claims;
+                  nothing on this one is lost.
+                </p>
+                <div class="node-item" role="menuitemradio" aria-checked="true">
+                  <span class="ni"><span class="ico ico-check" aria-hidden="true"></span></span>
+                  <span class="nb">
+                    <span class="nt" id="node-item-host">—</span>
+                    <span class="nu" id="node-item-url"></span>
+                    <span class="nc" id="status-caps"></span>
+                  </span>
+                </div>
+                <div class="sep"></div>
+                <button type="button" class="btn row-btn" id="node-settings-btn" role="menuitem">
+                  <span class="ico ico-settings" aria-hidden="true"></span>Change the node under
+                  Settings → Identity
+                </button>
+              </div>
+            </details>
+          </div>
 
-        <div class="status-card">
-          <div class="status-item" title="Wallet">
-            <span class="ico ico-wallet" aria-hidden="true"></span>
-            <span class="value" id="status-wallet">—</span>
-          </div>
-          <div class="status-item" title="Identity service">
-            <span class="ico ico-server" aria-hidden="true"></span>
-            <span class="value" id="status-service">—</span>
-          </div>
-          <span class="badge hidden" id="status-lock"><span class="ico ico-lock" aria-hidden="true"></span>Locked</span>
-          <div class="status-item meta" id="status-caps"></div>
-          <p class="meta hidden" id="wallet-line"></p>
+          <nav class="tabs" id="nav" aria-label="Identity">
+            <button type="button" class="tab active" id="nav-claims" data-target="claims">
+              Me<span class="count zero" id="claims-count">0</span>
+            </button>
+            <button type="button" class="tab" id="nav-attest" data-target="attest">
+              Vouches I give<span class="count zero" id="shared-count">0</span>
+            </button>
+            <button type="button" class="tab" id="nav-requests" data-target="requests">
+              Requests
+            </button>
+          </nav>
         </div>
+      </header>
 
+      <main class="content" id="content">
         <div class="notice hidden" id="status-notice"></div>
 
-        <!-- The identity service did not answer: nothing on this page works
-             until it does, so say so once and offer the setting. -->
-        <div class="empty locked hidden" id="service-down">
-          <span class="ico ico-server" aria-hidden="true"></span>
-          <div class="empty-title">The identity service did not answer</div>
-          <div class="meta" id="service-down-text"></div>
-          <div class="actions">
-            <button type="button" class="btn" id="service-retry-btn">
-              <span class="ico ico-refresh" aria-hidden="true"></span>Try again
-            </button>
-            <button type="button" class="btn primary" id="service-settings-btn">
-              <span class="ico ico-server" aria-hidden="true"></span>Change identity service
-            </button>
+        <!-- Readiness: where you are and the one thing to do next. The three
+             rows keep the ids of the gate cards they replaced; the row that
+             blocks is `current`, the ones behind it are `done`. -->
+        <section class="ready hidden" id="ready" aria-labelledby="ready-title">
+          <div>
+            <h2 id="ready-title">Getting ready</h2>
+            <p class="lead" id="ready-lead"></p>
+            <ol>
+              <li class="step" id="locked-card">
+                <span class="step-mark" id="locked-mark">1</span>
+                <div>
+                  <div class="step-title" id="locked-title">A wallet in this browser</div>
+                  <div class="step-body">
+                    <p class="meta" id="locked-text">
+                      Everything on this page is signed by your wallet.
+                    </p>
+                    <div class="actions">
+                      <button type="button" class="btn primary" id="unlock-btn">
+                        <span class="ico ico-key" aria-hidden="true"></span>Unlock the wallet
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </li>
+              <li class="step" id="service-down">
+                <span class="step-mark" id="service-mark">2</span>
+                <div>
+                  <div class="step-title">A node that answers</div>
+                  <div class="step-body">
+                    <p class="meta" id="service-down-text"></p>
+                    <div class="actions">
+                      <button type="button" class="btn primary" id="service-retry-btn">
+                        <span class="ico ico-refresh" aria-hidden="true"></span>Try again
+                      </button>
+                      <button type="button" class="btn" id="service-settings-btn">
+                        <span class="ico ico-settings" aria-hidden="true"></span>Change the node
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </li>
+              <li class="step" id="signin-card">
+                <span class="step-mark" id="signin-mark">3</span>
+                <div>
+                  <div class="step-title">Signed in to the node</div>
+                  <div class="step-body">
+                    <p class="meta" id="signin-text"></p>
+                    <div class="actions">
+                      <button type="button" class="btn primary" id="signin-btn">
+                        <span class="ico ico-pen" aria-hidden="true"></span>Sign in with my wallet
+                      </button>
+                    </div>
+                    <div class="field-error hidden" id="signin-error"></div>
+                  </div>
+                </div>
+              </li>
+            </ol>
           </div>
-        </div>
-
-        <!-- The service holds no session for this wallet yet: nothing that
-             needs one is shown until the sign-in message is signed. -->
-        <div class="empty locked hidden" id="signin-card">
-          <span class="ico ico-pen" aria-hidden="true"></span>
-          <div class="empty-title">Sign in to the identity service</div>
-          <div class="meta" id="signin-text"></div>
-          <button type="button" class="btn primary" id="signin-btn">
-            <span class="ico ico-pen" aria-hidden="true"></span>Sign in with my wallet
-          </button>
-          <div class="field-error hidden" id="signin-error"></div>
-        </div>
-
-        <!-- The one place the locked (or missing) wallet is said: the lists
-             below stay empty until it opens. -->
-        <div class="empty locked hidden" id="locked-card">
-          <span class="ico ico-lock" aria-hidden="true"></span>
-          <div class="empty-title" id="locked-title">Your wallet is locked</div>
-          <div class="meta" id="locked-text">Claims are kept encrypted with your wallet seed, so they are readable only while it is unlocked.</div>
-          <button type="button" class="btn primary" id="unlock-btn">
-            <span class="ico ico-unlock" aria-hidden="true"></span>Unlock wallet
-          </button>
-        </div>
-
-        <section class="section panel active" id="panel-claims" data-nav="claims">
-          <div class="section-head">
-            <h2>Your claims</h2>
-            <span class="meta">Each one is signed by your wallet; a self-signed claim is not yet attested.</span>
-            <button type="button" class="btn primary" id="add-claim-btn" disabled>
-              <span class="ico ico-plus" aria-hidden="true"></span>Add a claim
-            </button>
-          </div>
-          <div class="empty hidden" id="claims-empty">
-            <span class="ico ico-user" aria-hidden="true"></span>
-            <div class="empty-title">No claims yet</div>
-          </div>
-          <div id="claims-list"></div>
+          <aside>
+            <p class="aside-title" id="ready-aside-title">What signing in does</p>
+            <p id="ready-aside-text">
+              Proves to the node that this wallet is yours. It does not share any claim, and it
+              costs nothing.
+            </p>
+          </aside>
         </section>
 
-        <section class="section panel" id="panel-attest" data-nav="attest">
-          <div class="section-head">
-            <h2>Attest for someone else</h2>
-            <span class="meta">Claims other people shared with your wallet, and the attestations you issued for them.</span>
+        <!-- Me -->
+        <section class="panel active" id="panel-claims" data-nav="claims">
+          <div class="me-split" id="me-split">
+            <section class="me-list" aria-label="Your claims">
+              <div class="list-head">
+                <div>
+                  <h2>What you claim</h2>
+                  <p class="meta" id="claims-line">No claims yet</p>
+                </div>
+                <button type="button" class="btn small" id="add-claim-btn" disabled>
+                  <span class="ico ico-plus" aria-hidden="true"></span>Add a claim
+                </button>
+              </div>
+              <div class="rows-box">
+                <div id="claims-list"></div>
+                <div id="claims-slots"></div>
+              </div>
+              <p class="meta list-note">
+                A site sees the node's check and the vouches when you share a claim. The more there
+                is, the more it is worth to them.
+              </p>
+            </section>
+
+            <section class="me-panel" id="claim-panel" aria-live="polite">
+              <!-- First visit: nothing claimed yet. -->
+              <div class="hidden" id="claims-empty">
+                <p class="panel-ok">
+                  <span class="ico ico-check-circle" aria-hidden="true"></span>Signed in. Your
+                  identity is empty.
+                </p>
+                <h2 class="panel-value">Start with the name people know you by</h2>
+                <p class="panel-copy">
+                  It takes one signature. Afterwards you can ask someone who knows you to vouch for
+                  it.
+                </p>
+                <div class="actions">
+                  <button type="button" class="btn primary" id="start-name-btn">
+                    <span class="ico ico-pen" aria-hidden="true"></span>Add your name
+                  </button>
+                </div>
+              </div>
+              <div id="claim-detail"></div>
+
+              <!-- Ask someone to vouch: the one claim goes to the wallet named. -->
+              <div class="hidden" id="ask-view">
+                <button type="button" class="link-btn" id="share-cancel">
+                  <span class="ico ico-arrow-left" aria-hidden="true"></span> Back to the claim
+                </button>
+                <h2 class="panel-value" id="ask-title">Ask someone to vouch</h2>
+                <p class="panel-copy">
+                  Pick someone who knows this about you first-hand. The node passes this one claim
+                  to their wallet. When they sign, their words appear here as evidence.
+                </p>
+                <div class="form">
+                  <div class="summary" id="share-summary"></div>
+                  <div class="field">
+                    <label for="share-address">Their wallet address</label>
+                    <input
+                      type="text"
+                      id="share-address"
+                      class="mono-input"
+                      placeholder="0x…"
+                      maxlength="64"
+                    />
+                    <span class="help"
+                      >Get it from them in person or over a channel you trust. A vouch from the
+                      wrong wallet is worth nothing.</span
+                    >
+                  </div>
+                  <div class="field-error hidden" id="share-error"></div>
+                  <div class="form-actions">
+                    <button type="button" class="btn primary" id="share-btn">
+                      <span class="ico ico-send" aria-hidden="true"></span>Send the request
+                    </button>
+                    <button type="button" class="btn ghost" id="share-cancel-btn">Cancel</button>
+                  </div>
+                  <ul class="check-list meta">
+                    <li>
+                      <span class="ico ico-eye" aria-hidden="true"></span>They see this claim and
+                      who signed it.
+                    </li>
+                    <li>
+                      <span class="ico ico-x" aria-hidden="true"></span>They do not see your other
+                      claims or who vouched so far.
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              <!-- Import a vouch someone sent as text or a file. -->
+              <div class="hidden" id="import-view">
+                <button type="button" class="link-btn" id="import-cancel">
+                  <span class="ico ico-arrow-left" aria-hidden="true"></span> Back to the claim
+                </button>
+                <h2 class="panel-value">Import a vouch</h2>
+                <p class="panel-copy">
+                  For a vouch someone signed outside the node and sent you as text or a file. It is
+                  checked against this claim before it is kept.
+                </p>
+                <div class="form">
+                  <div class="summary" id="import-summary"></div>
+                  <div class="field">
+                    <label for="import-text">The vouch</label>
+                    <textarea
+                      id="import-text"
+                      rows="5"
+                      placeholder="Paste the attestation here"
+                    ></textarea>
+                  </div>
+                  <div class="otp-row meta">
+                    <input
+                      type="file"
+                      id="import-file"
+                      accept=".json,application/json"
+                      aria-label="Attestation file"
+                    />
+                  </div>
+                  <div class="field-error hidden" id="import-error"></div>
+                  <div class="form-actions">
+                    <button type="button" class="btn primary" id="import-btn">
+                      <span class="ico ico-import" aria-hidden="true"></span>Add to evidence
+                    </button>
+                    <button type="button" class="btn ghost" id="import-cancel-btn">Cancel</button>
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
-          <p class="meta">
-            Attesting signs a statement with your wallet that you vouch for the claim. The identity service
-            records it, and the owner's Freedom picks it up the next time they open their claims.
-          </p>
-          <div id="shared-claims"></div>
+
+          <!-- Add a claim: the composer takes the place of the list. -->
+          <div class="composer hidden" id="composer">
+            <button type="button" class="link-btn" id="cancel-btn">
+              <span class="ico ico-arrow-left" aria-hidden="true"></span> All claims
+            </button>
+            <h2>Add a claim</h2>
+            <p class="composer-node">
+              <span class="ico ico-server" aria-hidden="true"></span>Kept on
+              <span id="composer-node">the node</span>
+            </p>
+            <div class="composer-grid">
+              <fieldset class="kind-picker">
+                <legend>What do you want to claim?</legend>
+                <div class="kinds" id="claim-kind" role="group" aria-label="Kind of claim">
+                  <button
+                    type="button"
+                    class="kind"
+                    id="kind-name"
+                    data-kind="name"
+                    aria-pressed="true"
+                  >
+                    <span class="radio"></span><span class="ico ico-user" aria-hidden="true"></span>
+                    <span
+                      ><span class="kind-name">Name</span
+                      ><span class="how">People who know you vouch for it</span></span
+                    >
+                  </button>
+                  <button
+                    type="button"
+                    class="kind"
+                    id="kind-email"
+                    data-kind="email"
+                    aria-pressed="false"
+                  >
+                    <span class="radio"></span><span class="ico ico-mail" aria-hidden="true"></span>
+                    <span
+                      ><span class="kind-name">Email address</span
+                      ><span class="how">Checked with a code sent to the inbox</span></span
+                    >
+                  </button>
+                  <button
+                    type="button"
+                    class="kind"
+                    id="kind-phone"
+                    data-kind="phone"
+                    aria-pressed="false"
+                  >
+                    <span class="radio"></span
+                    ><span class="ico ico-phone" aria-hidden="true"></span>
+                    <span
+                      ><span class="kind-name">Phone number</span
+                      ><span class="how">Checked with a code sent by SMS</span></span
+                    >
+                  </button>
+                  <button
+                    type="button"
+                    class="kind"
+                    id="kind-domain"
+                    data-kind="domain"
+                    aria-pressed="false"
+                  >
+                    <span class="radio"></span
+                    ><span class="ico ico-globe" aria-hidden="true"></span>
+                    <span
+                      ><span class="kind-name">Domain</span
+                      ><span class="how">Checked with a DNS record you add</span></span
+                    >
+                  </button>
+                </div>
+                <p class="meta kinds-note hidden" id="kinds-note">
+                  This node does not send codes, so it cannot check an email address or a phone
+                  number. Change the node under Settings → Identity to claim those.
+                </p>
+              </fieldset>
+
+              <form class="composer-form" id="claim-form" autocomplete="off">
+                <h3 class="form-title" id="add-claim-title">Claim a name</h3>
+                <p class="meta" id="kind-help"></p>
+                <div class="form">
+                  <div id="fields-name" class="form">
+                    <div class="two-up">
+                      <div class="field">
+                        <label for="given-name">Given name</label>
+                        <input type="text" id="given-name" maxlength="256" />
+                      </div>
+                      <div class="field">
+                        <label for="family-name">Family name</label>
+                        <input type="text" id="family-name" maxlength="256" />
+                      </div>
+                      <div class="field">
+                        <label for="middle-name"
+                          >Middle name <span class="opt">(optional)</span></label
+                        >
+                        <input type="text" id="middle-name" maxlength="256" />
+                      </div>
+                      <div class="field">
+                        <label for="nickname">Nickname <span class="opt">(optional)</span></label>
+                        <input type="text" id="nickname" maxlength="256" />
+                      </div>
+                    </div>
+                  </div>
+                  <div id="fields-email" class="form hidden">
+                    <div class="field">
+                      <label for="email">Email address</label>
+                      <input type="email" id="email" maxlength="320" />
+                    </div>
+                  </div>
+                  <div id="fields-phone" class="form hidden">
+                    <div class="field">
+                      <label for="phone-number">Phone number</label>
+                      <input
+                        type="tel"
+                        id="phone-number"
+                        class="mono-input"
+                        maxlength="20"
+                        placeholder="+ country code and number"
+                      />
+                    </div>
+                  </div>
+                  <div id="fields-domain" class="form hidden">
+                    <div class="field">
+                      <label for="domain">Domain</label>
+                      <input
+                        type="text"
+                        id="domain"
+                        class="mono-input"
+                        maxlength="253"
+                        placeholder="example.com"
+                      />
+                      <span class="help">Without https:// or www.</span>
+                    </div>
+                  </div>
+
+                  <!-- How it will look to a site: the value and an empty meter. -->
+                  <div class="preview" id="preview">
+                    <p class="meta">How it will look to a site</p>
+                    <div class="preview-value" id="preview-value">—</div>
+                    <div class="proof" id="preview-proof"></div>
+                  </div>
+
+                  <!-- The one-time code, as numbered steps under the address. -->
+                  <div id="code-section" class="otp-steps hidden">
+                    <div class="step current" id="otp-step-send">
+                      <span class="step-mark">1</span>
+                      <div>
+                        <div class="step-title">
+                          Send a code<span class="step-note" id="otp-send-note"></span>
+                        </div>
+                        <div class="step-body">
+                          <div class="otp-row">
+                            <button type="button" class="btn" id="send-code-btn">
+                              <span class="ico ico-send" aria-hidden="true"></span>Send code
+                            </button>
+                            <span class="meta" id="code-help"
+                              >The node sends a one-time code to this address.</span
+                            >
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="step" id="otp-step-enter">
+                      <span class="step-mark">2</span>
+                      <div>
+                        <div class="step-title">
+                          Enter the code<span class="step-note" id="otp-enter-note"></span>
+                        </div>
+                        <div class="step-body">
+                          <div class="otp-row">
+                            <div class="field">
+                              <label for="code" class="sr-only">Code</label>
+                              <input
+                                type="text"
+                                id="code"
+                                class="mono-input"
+                                maxlength="16"
+                                inputmode="numeric"
+                                placeholder="The code you received"
+                              />
+                            </div>
+                            <button type="button" class="btn" id="verify-code-btn" disabled>
+                              <span class="ico ico-check" aria-hidden="true"></span>Verify code
+                            </button>
+                          </div>
+                          <span class="meta" id="code-status"></span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="step" id="otp-step-sign">
+                      <span class="step-mark">3</span>
+                      <div>
+                        <div class="step-title">Sign the claim with your wallet</div>
+                        <div class="step-body">
+                          <p class="meta">Your wallet shows the claim before you sign.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="field-error hidden" id="form-error"></div>
+                  <div class="form-actions">
+                    <button type="submit" class="btn primary" id="create-btn">
+                      <span class="ico ico-pen" aria-hidden="true"></span>Sign and add
+                    </button>
+                    <button type="button" class="btn ghost" id="cancel-compose-btn">Cancel</button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
         </section>
 
-        <section class="section panel" id="panel-requests" data-nav="requests">
-          <div class="section-head">
-            <h2>Respond to a request</h2>
-            <span class="meta">A site asks through its wallet connection; a person can hand you a request as text.</span>
-            <button type="button" class="btn primary" id="request-open-btn" disabled>
-              <span class="ico ico-paste" aria-hidden="true"></span>Paste a request
-            </button>
+        <!-- Vouches I give -->
+        <section class="panel" id="panel-attest" data-nav="attest">
+          <div class="me-split" id="give-split">
+            <section class="me-list" aria-label="Asked of you">
+              <div class="list-head">
+                <div>
+                  <h2>Asked of you</h2>
+                  <p class="meta" id="shared-line">Nothing waiting</p>
+                </div>
+              </div>
+              <div class="rows-box"><div id="shared-claims"></div></div>
+              <p class="meta list-note">
+                People ask through the node. They see your words and your wallet address whenever
+                they share the claim.
+              </p>
+            </section>
+            <section class="me-panel" id="shared-panel" aria-live="polite">
+              <div id="shared-detail"></div>
+              <!-- Vouching: your words, signed with your wallet. -->
+              <div class="hidden" id="attest-view">
+                <div class="form">
+                  <div>
+                    <h3>Vouch only for what you know first-hand</h3>
+                    <p class="meta">
+                      Your words and your wallet address travel with this claim to everyone they
+                      share it with.
+                    </p>
+                  </div>
+                  <div class="field">
+                    <label for="attest-words">How do you know?</label>
+                    <textarea
+                      id="attest-words"
+                      class="plain"
+                      rows="3"
+                      maxlength="1200"
+                      placeholder="I have known her by this name since 2019"
+                    ></textarea>
+                    <span class="help">One or two sentences.</span>
+                  </div>
+                  <div class="field-error hidden" id="attest-error"></div>
+                  <div class="form-actions">
+                    <button type="button" class="btn primary" id="attest-btn">
+                      <span class="ico ico-pen" aria-hidden="true"></span>Sign and vouch
+                    </button>
+                  </div>
+                  <p class="meta">
+                    Not sure? Leaving it costs them nothing. They can ask someone else.
+                  </p>
+                </div>
+              </div>
+              <div id="shared-tech"></div>
+            </section>
           </div>
-          <div class="empty">
-            <span class="ico ico-chat" aria-hidden="true"></span>
-            <div class="empty-title">No request to review</div>
+        </section>
+
+        <!-- Requests -->
+        <section class="panel" id="panel-requests" data-nav="requests">
+          <div class="req-intro">
+            <h2>Answer a request someone sent you</h2>
+            <p class="meta">
+              Paste a disclosure request you received as text, for example in a chat or an email.
+              You decide in the sidebar what to release, and the answer appears here to send back.
+            </p>
+          </div>
+          <div class="req-grid">
+            <div>
+              <p class="req-col-title">They ask</p>
+              <div class="req-box" id="request-box">
+                <div class="form">
+                  <div class="field">
+                    <label for="request-input">The request</label>
+                    <textarea
+                      id="request-input"
+                      rows="6"
+                      aria-label="Disclosure request JSON"
+                      placeholder='{"aqua":1,"need":["email"],"purpose":"…","nonce":"…"}'
+                    ></textarea>
+                  </div>
+                  <div class="actions" style="margin-top: 0">
+                    <button type="button" class="btn primary" id="request-btn" disabled>
+                      <span class="ico ico-eye" aria-hidden="true"></span>Read the request
+                    </button>
+                    <button type="button" class="btn ghost" id="request-cancel">Clear</button>
+                  </div>
+                </div>
+                <p class="req-status" id="request-status"></p>
+              </div>
+            </div>
+            <div>
+              <div class="req-box answer hidden" id="response-box">
+                <p class="req-col-title">You answer with</p>
+                <div class="form">
+                  <div class="field">
+                    <label for="response-output">The response, exactly</label>
+                    <textarea
+                      id="response-output"
+                      rows="8"
+                      aria-label="Disclosure response JSON"
+                      readonly
+                    ></textarea>
+                  </div>
+                  <div class="actions" style="margin-top: 0">
+                    <button type="button" class="btn primary" id="response-copy">
+                      <span class="ico ico-copy" aria-hidden="true"></span>Copy the response
+                    </button>
+                  </div>
+                  <p class="meta">
+                    Freedom does not send it for you, because the request came as text. Paste it
+                    into the chat or email it came from.
+                  </p>
+                </div>
+              </div>
+              <div class="req-aside" id="request-aside">
+                <p class="aside-title">Sites ask differently</p>
+                <p>
+                  A site asks through its wallet connection, and the question opens in the Freedom
+                  sidebar next to the site. You answer it there.
+                </p>
+                <p>
+                  Every request is decided fresh. Freedom keeps no list of what each site received
+                  and remembers no answers.
+                </p>
+              </div>
+            </div>
           </div>
         </section>
       </main>
     </div>
 
-    <!-- Add a claim -->
-    <dialog class="modal" id="add-claim-dialog" aria-labelledby="add-claim-title">
-      <form class="form" id="claim-form" autocomplete="off">
-        <div class="modal-head">
-          <span class="ico ico-plus" aria-hidden="true"></span>
-          <h2 id="add-claim-title">Add a claim</h2>
-          <button type="button" class="modal-close" id="add-claim-close" aria-label="Close">
-            <span class="ico ico-x" aria-hidden="true"></span>
-          </button>
-        </div>
-        <div class="modal-body">
-          <p class="meta">
-            Freedom sends the claim to the identity service, you sign it with your wallet, and a copy is kept in
-            this profile. Email and phone claims are attested by the service after you enter the code it sends.
-          </p>
-          <div class="kind-picker" id="claim-kind" role="group" aria-label="Kind of claim">
-            <button type="button" class="kind" id="kind-name" data-kind="name" aria-pressed="true">
-              <span class="ico ico-user" aria-hidden="true"></span>Name
-            </button>
-            <button type="button" class="kind" id="kind-email" data-kind="email" aria-pressed="false">
-              <span class="ico ico-mail" aria-hidden="true"></span>Email
-            </button>
-            <button type="button" class="kind" id="kind-phone" data-kind="phone" aria-pressed="false">
-              <span class="ico ico-phone" aria-hidden="true"></span>Phone
-            </button>
-            <button type="button" class="kind" id="kind-domain" data-kind="domain" aria-pressed="false">
-              <span class="ico ico-globe" aria-hidden="true"></span>Domain
-            </button>
-          </div>
-
-          <div id="fields-name" class="form">
-            <div class="field">
-              <label for="given-name">Given name</label>
-              <input type="text" id="given-name" maxlength="256" />
-            </div>
-            <div class="field">
-              <label for="family-name">Family name</label>
-              <input type="text" id="family-name" maxlength="256" />
-            </div>
-            <div class="field">
-              <label for="middle-name">Middle name (optional)</label>
-              <input type="text" id="middle-name" maxlength="256" />
-            </div>
-            <div class="field">
-              <label for="nickname">Nickname (optional)</label>
-              <input type="text" id="nickname" maxlength="256" />
-            </div>
-          </div>
-
-          <div id="fields-email" class="form hidden">
-            <div class="field">
-              <label for="email">Email address</label>
-              <input type="email" id="email" maxlength="320" />
-            </div>
-          </div>
-
-          <div id="fields-phone" class="form hidden">
-            <div class="field">
-              <label for="phone-number">Phone number</label>
-              <input type="tel" id="phone-number" class="mono-input" maxlength="20" placeholder="+ country code and number" />
-              <span class="help">International format: a plus sign, the country code, then the number, no spaces.</span>
-            </div>
-          </div>
-
-          <div id="fields-domain" class="form hidden">
-            <div class="field">
-              <label for="domain">Domain name</label>
-              <input type="text" id="domain" class="mono-input" maxlength="253" placeholder="example.com" />
-              <span class="help">You will add a DNS TXT record to prove you control it.</span>
-            </div>
-          </div>
-
-          <div id="code-section" class="form hidden">
-            <div class="code-row">
-              <div class="field">
-                <label for="code">Verification code</label>
-                <input type="text" id="code" class="mono-input" maxlength="16" inputmode="numeric" />
-              </div>
-              <button type="button" class="btn" id="send-code-btn">
-                <span class="ico ico-mail" aria-hidden="true"></span>Send code
-              </button>
-              <button type="button" class="btn" id="verify-code-btn" disabled>
-                <span class="ico ico-check" aria-hidden="true"></span>Verify code
-              </button>
-            </div>
-            <span class="meta" id="code-status"></span>
-          </div>
-
-          <div class="field-error hidden" id="form-error"></div>
-        </div>
-        <div class="modal-foot">
-          <button type="button" class="btn" id="cancel-btn">Cancel</button>
-          <button type="submit" class="btn primary" id="create-btn">
-            <span class="ico ico-pen" aria-hidden="true"></span>Create and sign
-          </button>
-        </div>
-      </form>
-    </dialog>
-
-    <!-- Share for attestation -->
-    <dialog class="modal" id="share-dialog" aria-labelledby="share-title">
+    <!-- All details: every vouch in full, the technical rows, and removal. -->
+    <dialog class="modal" id="vouches-dialog" aria-labelledby="vouches-title">
       <div class="modal-head">
-        <span class="ico ico-share" aria-hidden="true"></span>
-        <h2 id="share-title">Share for attestation</h2>
-        <button type="button" class="modal-close" id="share-close" aria-label="Close">
+        <span class="ico ico-users" aria-hidden="true"></span>
+        <h2 id="vouches-title">All details</h2>
+        <button type="button" class="modal-close" id="vouches-close" aria-label="Close">
           <span class="ico ico-x" aria-hidden="true"></span>
         </button>
       </div>
       <div class="modal-body">
-        <div class="summary" id="share-summary"></div>
-        <div class="field">
-          <label for="share-address">Attester's wallet address</label>
-          <input type="text" id="share-address" class="mono-input" placeholder="0x…" maxlength="64" />
-          <span class="help">The attester needs an account on the same identity service, under that wallet.</span>
-        </div>
-        <div class="field-error hidden" id="share-error"></div>
+        <div class="summary" id="vouches-summary"></div>
+        <p class="meta">
+          Every piece of evidence, newest first. Each one is signed by the wallet shown; anyone you
+          share this claim with can check every signature themselves.
+        </p>
+        <div class="vouch-list" id="vouches-list"></div>
       </div>
       <div class="modal-foot">
-        <button type="button" class="btn" id="share-cancel">Cancel</button>
-        <button type="button" class="btn primary" id="share-btn">
-          <span class="ico ico-share" aria-hidden="true"></span>Share
+        <button type="button" class="btn danger" id="vouches-remove-btn">
+          <span class="ico ico-trash" aria-hidden="true"></span>Remove this claim…
         </button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="vouches-done">Done</button>
       </div>
     </dialog>
 
-    <!-- Import attestation -->
-    <dialog class="modal" id="import-dialog" aria-labelledby="import-title">
-      <div class="modal-head">
-        <span class="ico ico-import" aria-hidden="true"></span>
-        <h2 id="import-title">Import attestation</h2>
-        <button type="button" class="modal-close" id="import-close" aria-label="Close">
-          <span class="ico ico-x" aria-hidden="true"></span>
-        </button>
-      </div>
-      <div class="modal-body">
-        <div class="summary" id="import-summary"></div>
-        <div class="field">
-          <label for="import-text">Attestation tree JSON</label>
-          <textarea id="import-text" placeholder="Paste the attestation tree JSON the attester sent you"></textarea>
-        </div>
-        <div class="file-row">
-          <span>Or choose the file</span>
-          <input type="file" id="import-file" accept=".json,application/json" aria-label="Attestation file" />
-        </div>
-        <div class="field-error hidden" id="import-error"></div>
-      </div>
-      <div class="modal-foot">
-        <button type="button" class="btn" id="import-cancel">Cancel</button>
-        <button type="button" class="btn primary" id="import-btn">
-          <span class="ico ico-import" aria-hidden="true"></span>Import
-        </button>
-      </div>
-    </dialog>
-
-    <!-- Attest a shared claim -->
-    <dialog class="modal" id="attest-dialog" aria-labelledby="attest-title">
-      <div class="modal-head">
-        <span class="ico ico-shield" aria-hidden="true"></span>
-        <h2 id="attest-title">Attest this claim</h2>
-        <button type="button" class="modal-close" id="attest-close" aria-label="Close">
-          <span class="ico ico-x" aria-hidden="true"></span>
-        </button>
-      </div>
-      <div class="modal-body">
-        <div class="summary" id="attest-summary"></div>
-        <div class="field">
-          <label for="attest-words">What you vouch for, in your words</label>
-          <input type="text" id="attest-words" maxlength="1200" />
-          <span class="help">Signed with your wallet and recorded on the identity service against this claim.</span>
-        </div>
-        <div class="field-error hidden" id="attest-error"></div>
-      </div>
-      <div class="modal-foot">
-        <button type="button" class="btn" id="attest-cancel">Cancel</button>
-        <button type="button" class="btn primary" id="attest-btn">
-          <span class="ico ico-pen" aria-hidden="true"></span>Attest with my wallet
-        </button>
-      </div>
-    </dialog>
-
-    <!-- DNS record for a domain claim -->
-    <dialog class="modal" id="dns-dialog" aria-labelledby="dns-title">
-      <div class="modal-head">
-        <span class="ico ico-globe" aria-hidden="true"></span>
-        <h2 id="dns-title">DNS record</h2>
-        <button type="button" class="modal-close" id="dns-close" aria-label="Close">
-          <span class="ico ico-x" aria-hidden="true"></span>
-        </button>
-      </div>
-      <div class="modal-body">
-        <div class="summary" id="dns-summary"></div>
-        <div class="form" id="dns-body"></div>
-      </div>
-      <div class="modal-foot">
-        <button type="button" class="btn" id="dns-cancel">Close</button>
-        <button type="button" class="btn primary" id="dns-check-btn">
-          <span class="ico ico-check" aria-hidden="true"></span>Check DNS
-        </button>
-      </div>
-    </dialog>
-
-    <!-- Respond to a disclosure request -->
-    <dialog class="modal" id="request-dialog" aria-labelledby="request-title">
-      <div class="modal-head">
-        <span class="ico ico-chat" aria-hidden="true"></span>
-        <h2 id="request-title">Respond to a request</h2>
-        <button type="button" class="modal-close" id="request-close" aria-label="Close">
-          <span class="ico ico-x" aria-hidden="true"></span>
-        </button>
-      </div>
-      <div class="modal-body">
-        <div class="field" id="request-box">
-          <label for="request-input">Disclosure request</label>
-          <textarea id="request-input" aria-label="Disclosure request JSON" placeholder='{"aqua":1,"need":["email"],"purpose":"…","nonce":"…"}'></textarea>
-          <span class="help">You choose in the sidebar which claims to release.</span>
-        </div>
-        <div class="field hidden" id="response-box">
-          <label for="response-output">Response</label>
-          <textarea id="response-output" aria-label="Disclosure response JSON" readonly></textarea>
-        </div>
-        <span class="meta" id="request-status"></span>
-      </div>
-      <div class="modal-foot">
-        <button type="button" class="btn" id="request-cancel">Cancel</button>
-        <button type="button" class="btn hidden" id="response-copy">
-          <span class="ico ico-copy" aria-hidden="true"></span>Copy response
-        </button>
-        <button type="button" class="btn primary" id="request-btn">
-          <span class="ico ico-check" aria-hidden="true"></span>Review request
-        </button>
-      </div>
-    </dialog>
-
-    <!-- Remove a claim -->
+    <!-- Remove a claim: what goes, what stays. -->
     <dialog class="modal" id="remove-dialog" aria-labelledby="remove-title">
-      <div class="modal-head">
+      <div class="modal-head danger">
         <span class="ico ico-trash" aria-hidden="true"></span>
         <h2 id="remove-title">Remove this claim?</h2>
         <button type="button" class="modal-close" id="remove-close" aria-label="Close">
@@ -1246,11 +2649,29 @@
       </div>
       <div class="modal-body">
         <div class="summary" id="remove-summary"></div>
-        <p class="meta">It is removed from this profile. The identity service keeps its copy.</p>
+        <div class="remove-grid">
+          <div>
+            <p class="meta"><strong>What goes</strong></p>
+            <ul class="check-list" id="remove-goes"></ul>
+          </div>
+          <div>
+            <p class="meta"><strong>What stays</strong></p>
+            <ul class="check-list">
+              <li>
+                <span class="ico ico-check" aria-hidden="true"></span>Copies sites already received
+                when you shared it
+              </li>
+              <li><span class="ico ico-check" aria-hidden="true"></span>Your other claims</li>
+            </ul>
+          </div>
+        </div>
+        <p class="meta">
+          You can add it again later, but you would have to ask for the vouches again.
+        </p>
         <div class="field-error hidden" id="remove-error"></div>
       </div>
       <div class="modal-foot">
-        <button type="button" class="btn" id="remove-cancel">Cancel</button>
+        <button type="button" class="btn" id="remove-cancel">Keep it</button>
         <button type="button" class="btn danger" id="remove-btn">
           <span class="ico ico-trash" aria-hidden="true"></span>Remove
         </button>

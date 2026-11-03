@@ -15,7 +15,7 @@ import { openOrFocusInternalPage } from '../tabs.js';
 const PURPOSE_COPY = {
   login: { action: 'asks you to sign in', labelPrefix: 'Identity service' },
   claim: { action: 'asks you to sign this claim', labelPrefix: 'Identity claim' },
-  attestation: { action: 'asks you to attest this claim', labelPrefix: 'Attestation' },
+  attestation: { action: 'asks you to vouch for this claim', labelPrefix: 'Vouch' },
 };
 
 function labelFor(request) {

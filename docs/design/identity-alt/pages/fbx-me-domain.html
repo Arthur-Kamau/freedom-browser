@@ -1,0 +1,27 @@
+<fbx-frame tab="me" give="1" address="0x254b0d7b91c2a4f3e81d0c6b7a5e9f2d318a8a1f">
+  <fbx-me-split selected="domain">
+    <fbx-claim-head kind="domain" value="inblock.io" signed="2 Nov 2026" service="pending" people="0" back="/fbx-me-list"></fbx-claim-head>
+    <div class="mt-5 rounded-lg border border-warning/40 bg-warning/10 p-4">
+      <p class="inline-flex items-center gap-2 text-sm font-medium text-foreground"><aq-icon name="clock" class="size-4 text-warning"></aq-icon>The record is not visible yet</p>
+      <p class="mt-1 text-sm leading-relaxed text-muted-foreground">Last checked 2 minutes ago: no TXT record at <span class="font-mono">_aqua.inblock.io</span>. DNS changes can take up to an hour to show.</p>
+    </div>
+    <h3 class="mt-6 text-sm font-semibold text-foreground">Add this record at your DNS provider</h3>
+    <p class="mt-1 text-sm text-muted-foreground">Freedom does not look up DNS itself. dev.aquafire checks the record and signs that it found it.</p>
+    <div class="mt-3 divide-y divide-border rounded-lg border border-border bg-background">
+      <fbx-copy label="Type" value="TXT"></fbx-copy>
+      <fbx-copy label="Name" value="_aqua.inblock.io"></fbx-copy>
+      <fbx-copy label="Value" value="aqua-identity=did:pkh:eip155:1:0x254b0d7b91c2a4f3e81d0c6b7a5e9f2d318a8a1f"></fbx-copy>
+    </div>
+    <div class="mt-5 flex flex-wrap gap-2">
+      <fbx-btn variant="primary" label="Check now" icon="refresh"></fbx-btn>
+      <fbx-btn variant="ghost" label="Remove this claim" icon="trash" href="/fbx-remove"></fbx-btn>
+    </div>
+    <div class="mt-8 border-t border-border pt-5">
+      <h3 class="text-sm font-semibold text-foreground">Evidence, newest first</h3>
+      <div class="mt-4">
+        <fbx-event tone="pending" who="dev.aquafire" verb="looked, found nothing yet" address="dev.aquafire.inblock.io" when="3 Nov 2026, 10:12"></fbx-event>
+        <fbx-event tone="signed" who="You" address="0x254b…8a1f" when="2 Nov 2026, 16:20" last></fbx-event>
+      </div>
+    </div>
+  </fbx-me-split>
+</fbx-frame>

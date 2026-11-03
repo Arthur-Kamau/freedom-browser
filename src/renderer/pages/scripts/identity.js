@@ -4,37 +4,82 @@
 // shown here came from the identity service or the user, so rows are built
 // with DOM APIs and textContent, never HTML strings (#432). Icons are spans
 // the stylesheet masks (`.ico.ico-<name>`), so no SVG is built here either.
+//
+// Vocabulary on this page, kept to three words so a first visit needs no
+// glossary: a *claim* is something you say about yourself and sign; it is
+// *verified* once the node (a code, a DNS record) or a person who knows you
+// has signed it too; asking a person to do that is asking them to *vouch*.
+// "Attestation" stays in the technical rows and the JSON.
+//
+// The page is a record you can check: the claims are rows on the left, and
+// the selected one shows its evidence on the right. Each claim carries two
+// marks, the node's check (shield) and the people who vouch (one pip each);
+// the icon names the source and the colour says only how it stands.
 
 const $ = (id) => document.getElementById(id);
 
-const claimsEl = $('claims-list');
-const claimsEmpty = $('claims-empty');
-const sharedEl = $('shared-claims');
-const statusNotice = $('status-notice');
-const walletLine = $('wallet-line');
+// Identity bar
 const statusWallet = $('status-wallet');
+const copyAddressBtn = $('copy-address-btn');
+const statusLock = $('status-lock');
+const walletLine = $('wallet-line');
 const statusService = $('status-service');
+const nodeUrlEl = $('node-url');
+const nodeState = $('node-state');
+const nodeStateText = $('node-state-text');
+const nodeItemHost = $('node-item-host');
+const nodeItemUrl = $('node-item-url');
 const statusCaps = $('status-caps');
+const nodeSettingsBtn = $('node-settings-btn');
+const nodeMenu = $('node-menu');
+const statusNotice = $('status-notice');
 const claimsCount = $('claims-count');
 const sharedCount = $('shared-count');
-const statusLock = $('status-lock');
-const signinCard = $('signin-card');
-const signinText = $('signin-text');
-const signinBtn = $('signin-btn');
-const signinError = $('signin-error');
-const serviceDown = $('service-down');
-const serviceDownText = $('service-down-text');
-const serviceRetryBtn = $('service-retry-btn');
-const serviceSettingsBtn = $('service-settings-btn');
-const SETTINGS_IDENTITY_URL = 'freedom://settings/identity';
+const contentEl = $('content');
+
+// Readiness
+const ready = $('ready');
+const readyTitle = $('ready-title');
+const readyLead = $('ready-lead');
+const readyAsideTitle = $('ready-aside-title');
+const readyAsideText = $('ready-aside-text');
 const lockedCard = $('locked-card');
+const lockedMark = $('locked-mark');
 const lockedTitle = $('locked-title');
 const lockedText = $('locked-text');
 const unlockBtn = $('unlock-btn');
+const serviceDown = $('service-down');
+const serviceMark = $('service-mark');
+const serviceDownText = $('service-down-text');
+const serviceRetryBtn = $('service-retry-btn');
+const serviceSettingsBtn = $('service-settings-btn');
+const signinCard = $('signin-card');
+const signinMark = $('signin-mark');
+const signinText = $('signin-text');
+const signinBtn = $('signin-btn');
+const signinError = $('signin-error');
+const SETTINGS_IDENTITY_URL = 'freedom://settings/identity';
 
-// Add a claim
+// Me
+const meSplit = $('me-split');
+const claimsLine = $('claims-line');
 const addClaimBtn = $('add-claim-btn');
-const addClaimDialog = $('add-claim-dialog');
+const claimsEl = $('claims-list');
+const claimsSlots = $('claims-slots');
+const claimsEmpty = $('claims-empty');
+const startNameBtn = $('start-name-btn');
+const claimDetail = $('claim-detail');
+const askView = $('ask-view');
+const askTitle = $('ask-title');
+const importView = $('import-view');
+
+// Composer
+const composer = $('composer');
+const composerNode = $('composer-node');
+const addClaimTitle = $('add-claim-title');
+const kindHelp = $('kind-help');
+const kindsNote = $('kinds-note');
+const codeHelp = $('code-help');
 const form = $('claim-form');
 const kindButtons = {
   name: $('kind-name'),
@@ -58,42 +103,56 @@ const inputs = {
   domain: $('domain'),
   code: $('code'),
 };
+const previewValue = $('preview-value');
+const previewProof = $('preview-proof');
 const codeSection = $('code-section');
+const otpStepSend = $('otp-step-send');
+const otpStepEnter = $('otp-step-enter');
+const otpStepSign = $('otp-step-sign');
+const otpSendNote = $('otp-send-note');
+const otpEnterNote = $('otp-enter-note');
 const sendCodeBtn = $('send-code-btn');
 const verifyCodeBtn = $('verify-code-btn');
 const codeStatus = $('code-status');
 const formError = $('form-error');
 const createBtn = $('create-btn');
+const cancelBtn = $('cancel-btn');
+const cancelComposeBtn = $('cancel-compose-btn');
 
-// Per-claim modals
-const shareDialog = $('share-dialog');
+// Ask someone to vouch, Import a vouch (views in the claim panel)
 const shareSummary = $('share-summary');
 const shareAddress = $('share-address');
 const shareBtn = $('share-btn');
 const shareError = $('share-error');
-const importDialog = $('import-dialog');
 const importSummary = $('import-summary');
 const importText = $('import-text');
 const importFile = $('import-file');
 const importBtn = $('import-btn');
 const importError = $('import-error');
-const dnsDialog = $('dns-dialog');
-const dnsSummary = $('dns-summary');
-const dnsBody = $('dns-body');
-const dnsCheckBtn = $('dns-check-btn');
+
+// All details, Remove (the two dialogs)
+const vouchesDialog = $('vouches-dialog');
+const vouchesSummary = $('vouches-summary');
+const vouchesList = $('vouches-list');
+const vouchesRemoveBtn = $('vouches-remove-btn');
 const removeDialog = $('remove-dialog');
 const removeSummary = $('remove-summary');
+const removeGoes = $('remove-goes');
 const removeBtn = $('remove-btn');
 const removeError = $('remove-error');
-const attestDialog = $('attest-dialog');
-const attestSummary = $('attest-summary');
+
+// Vouches I give
+const giveSplit = $('give-split');
+const sharedLine = $('shared-line');
+const sharedEl = $('shared-claims');
+const sharedDetail = $('shared-detail');
+const attestView = $('attest-view');
+const sharedTech = $('shared-tech');
 const attestWords = $('attest-words');
 const attestBtn = $('attest-btn');
 const attestError = $('attest-error');
 
 // Requests
-const requestOpenBtn = $('request-open-btn');
-const requestDialog = $('request-dialog');
 const requestInput = $('request-input');
 const requestBtn = $('request-btn');
 const requestStatus = $('request-status');
@@ -101,10 +160,43 @@ const requestCancel = $('request-cancel');
 const responseBox = $('response-box');
 const responseOutput = $('response-output');
 const responseCopy = $('response-copy');
+const requestAside = $('request-aside');
 
 const TYPE_LABELS = { name: 'Name', email: 'Email', phone: 'Phone', domain: 'Domain' };
 const TYPE_ICONS = { name: 'user', email: 'mail', phone: 'phone', domain: 'globe' };
+const KIND_ORDER = ['name', 'email', 'phone', 'domain'];
 const OTP_TYPES = new Set(['email', 'phone']);
+
+// What each kind is for: on its empty slot ("why would I add this"), and in
+// the composer ("what happens when I do").
+const KIND_COPY = {
+  name: {
+    slot: 'Add your name',
+    why: 'How sites and people should know you. People who know you can vouch for it.',
+    title: 'Claim a name',
+    help: 'A node cannot check a name. It becomes worth something when people who know you by it vouch.',
+  },
+  email: {
+    slot: 'Add your email address',
+    why: 'Checked with a one-time code the node sends to the inbox.',
+    title: 'Claim an email address',
+    help: 'The node sends a one-time code to the inbox. When you enter it, the node signs that it checked the address. Then you sign the claim.',
+    sendHelp: 'The node sends a one-time code to this address.',
+  },
+  phone: {
+    slot: 'Add your phone number',
+    why: 'Checked with a code sent by SMS.',
+    title: 'Claim a phone number',
+    help: 'The node sends a one-time code by SMS. When you enter it, the node signs that it checked the number. Then you sign the claim.',
+    sendHelp: 'The node sends a one-time code to this number by SMS.',
+  },
+  domain: {
+    slot: 'Add a domain you own',
+    why: 'Checked with a DNS record you add at your provider.',
+    title: 'Claim a domain',
+    help: 'You sign the claim now. Then you add a DNS record at your provider, and the node signs once it can see the record. Until then the claim shows a pending check.',
+  },
+};
 
 // One-time-code state for the email/phone flow: the target the code was
 // sent to and the token the service handed back once it was entered.
@@ -114,20 +206,25 @@ let selectedKind = 'name';
 // From the last status read: whether this profile has a wallet at all, so a
 // locked-store answer reads as "set one up" rather than "unlock it".
 let hasVault = true;
-// Whether the configured service runs the email/phone code round trip; a
-// bare node does not, so those claim kinds are offered only when it does.
+// Whether the configured node runs the email/phone code round trip; a bare
+// node does not, so those claim kinds are offered only when it does.
 let outOfBandVerification = true;
 let activeAddress = '';
-// The identity service this profile uses now, from the status line.
+// The node this profile uses now, from the status line.
 let serviceUrl = '';
-// Whether the service holds a session for the active wallet. Until it does
-// the page shows the sign-in card and loads nothing that would need one.
+// Whether the node holds a session for the active wallet. Until it does the
+// page shows the sign-in step and loads nothing that would need one.
 let signedIn = false;
-let serviceReachable = true;
-// The claim or shared entry a modal is open for.
+// The claims as last listed, and which one the panel shows.
+let claims = [];
+let selectedClaimId = null;
+// The claim or shared entry a view or dialog is open for.
 let current = null;
+// Vouches I give: the entries as last listed and which one the panel shows.
+let sharedEntries = [];
+let selectedSharedKey = null;
 // Attestations this wallet issued, by the revision they vouch for: a share
-// already attested shows them on its card instead of offering Attest again.
+// already vouched for shows them instead of offering Vouch again.
 let issuedByClaimTip = new Map();
 let issuedAll = [];
 
@@ -185,7 +282,26 @@ function sharedType(templateName, payload) {
 }
 
 function normalizeUrl(url) {
-  return String(url || '').replace(/\/+$/, '').toLowerCase();
+  return String(url || '')
+    .replace(/\/+$/, '')
+    .toLowerCase();
+}
+
+function hostOf(url) {
+  try {
+    return new URL(url).host || String(url || '');
+  } catch {
+    return String(url || '');
+  }
+}
+
+// The node's short name: the first label of its host, or the host itself
+// when it is an address or a single word.
+function nodeName(url) {
+  const host = hostOf(url);
+  const bare = host.replace(/:\d+$/, '');
+  if (/^[\d.]+$/.test(bare) || bare === 'localhost' || !bare.includes('.')) return host;
+  return bare.split('.').slice(0, 2).join('.');
 }
 
 function formatTime(iso) {
@@ -195,6 +311,13 @@ function formatTime(iso) {
   return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+function formatDay(iso) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return String(iso);
+  return date.toLocaleDateString(undefined, { dateStyle: 'medium' });
+}
+
 // A DID shown in a row: its address part, with the whole DID on hover.
 function shortDid(did) {
   const s = String(did || '');
@@ -202,9 +325,33 @@ function shortDid(did) {
   return addr.length > 14 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr || s;
 }
 
+// The wallet address inside a DID, whole.
+function addressOf(did) {
+  const s = String(did || '');
+  return s.slice(s.lastIndexOf(':') + 1);
+}
+
+// When a vouch was signed: the latest timestamp in its tree (the attester's
+// signature revision), or failing that when this profile recorded it.
+function attestedAt(a) {
+  const revisions = a?.tree?.revisions;
+  if (revisions && typeof revisions === 'object') {
+    let latest = 0;
+    for (const rev of Object.values(revisions)) {
+      const t = Number(rev?.local_timestamp);
+      if (Number.isFinite(t) && t > latest) latest = t;
+    }
+    if (latest > 0) return new Date(latest * 1000).toISOString();
+  }
+  return a?.issuedAt || a?.createdAt || '';
+}
+
 function showNotice(kind, message) {
   statusNotice.className = kind ? `notice ${kind}` : 'notice';
-  statusNotice.replaceChildren(icon(kind === 'error' ? 'x-circle' : kind === 'warn' ? 'alert' : 'check-circle'), el('span', null, message));
+  statusNotice.replaceChildren(
+    icon(kind === 'error' ? 'x-circle' : kind === 'warn' ? 'alert' : 'check-circle'),
+    el('span', null, message)
+  );
   statusNotice.classList.remove('hidden');
 }
 
@@ -232,17 +379,23 @@ function setLabel(btn, iconName, label) {
   btn.replaceChildren(icon(iconName), document.createTextNode(label));
 }
 
+function setCount(node, n) {
+  node.textContent = String(n);
+  node.classList.toggle('zero', n === 0);
+}
+
 function errorText(result, fallback) {
   const err = result && result.error;
   if (!err) return fallback;
   if (err.code === 'VAULT_LOCKED') {
     return hasVault ? 'Unlock your wallet first.' : 'Set up your wallet in the sidebar first.';
   }
-  if (err.code === 'DISABLED') return 'Enable Identity & Wallet under Settings → Identity to use identity claims.';
+  if (err.code === 'DISABLED')
+    return 'Enable Identity & Wallet under Settings → Identity to use identity claims.';
   return err.message || fallback;
 }
 
-// ── Modals ───────────────────────────────────────────────────────────────
+// ── Dialogs ──────────────────────────────────────────────────────────────
 // Native <dialog>s. The test harness's fake elements have no showModal, so
 // the open state falls back to the `open` property the browser would set
 // itself.
@@ -277,14 +430,19 @@ function wireDialog(dialog, closeIds, reset) {
   for (const id of closeIds) $(id)?.addEventListener('click', () => closeDialog(dialog));
 }
 
-function emptyState(iconName, title) {
+function focusOn(node) {
+  if (node && typeof node.focus === 'function') node.focus();
+}
+
+function emptyState(iconName, title, text) {
   const box = el('div', 'empty');
   box.appendChild(icon(iconName));
   box.appendChild(el('div', 'empty-title', title));
+  if (text) box.appendChild(el('div', 'meta', text));
   return box;
 }
 
-// A claim quoted inside a modal: icon, value, kind and signer.
+// A claim quoted inside a view or dialog: icon, value, kind and signer.
 function summaryOf(type, value, sub) {
   const box = el('div', 'summary');
   const ic = el('span', 'claim-icon');
@@ -300,12 +458,7 @@ function summaryOf(type, value, sub) {
   return box;
 }
 
-// ── Claims list ──────────────────────────────────────────────────────────
-
-function renderEmpty() {
-  claimsEl.replaceChildren();
-  claimsEmpty.classList.remove('hidden');
-}
+// ── How a claim stands ───────────────────────────────────────────────────
 
 function badge(className, iconName, label) {
   const b = el('span', `badge ${className}`.trim());
@@ -314,19 +467,207 @@ function badge(className, iconName, label) {
   return b;
 }
 
+function validAttestations(claim) {
+  return (claim.attestations || []).filter((a) => a.verification?.isValid === true);
+}
+
+// One word a verifier and a newcomer both read the same way: it does not
+// verify, it is verified (the node or at least one person signed it too),
+// or only you have signed it so far.
 function statusBadge(claim) {
-  const attested = (claim.attestations || []).filter((a) => a.verification?.isValid !== false);
   if (claim.verification && claim.verification.isValid === false) {
-    return badge('invalid', 'x-circle', 'Verification failed');
+    return badge('invalid', 'x-circle', 'Does not verify');
   }
-  if (attested.length > 0) {
-    return badge('attested', 'check-circle', attested.length === 1 ? 'Attested' : `Attested ×${attested.length}`);
+  if (claim.type === 'domain' && claim.domainVerification === 'verified') {
+    return badge('attested', 'check-circle', 'Verified');
   }
-  return badge('', 'pen', 'Self-signed');
+  const valid = validAttestations(claim);
+  if (valid.length > 0) {
+    return badge(
+      'attested',
+      'check-circle',
+      valid.length === 1 ? 'Verified' : `Verified by ${valid.length}`
+    );
+  }
+  return badge('', 'pen', 'Not yet verified');
+}
+
+// A claim is held by the node it was made on; after a node change the
+// current one cannot share, pull or check it.
+function madeElsewhere(claim) {
+  return Boolean(
+    claim.nodeUrl && serviceUrl && normalizeUrl(claim.nodeUrl) !== normalizeUrl(serviceUrl)
+  );
+}
+
+// The two marks, from the claim: the node's check and the people who
+// vouch. `broken` is set when the claim itself does not verify, and then
+// one red mark replaces both.
+function proofOf(claim) {
+  const valid = validAttestations(claim);
+  const people = valid.filter((a) => a.source !== 'service').length;
+  const verification = claim.verification || {};
+  if (verification.isValid === false) {
+    return {
+      service: 'failed',
+      people,
+      broken: verification.status || 'unknown',
+    };
+  }
+  // A check the node signed counts whatever the kind; otherwise a name has
+  // nothing to check, a claim kept elsewhere cannot be checked here, and a
+  // domain's check is its DNS record.
+  const byService = (claim.attestations || []).filter((a) => a.source === 'service');
+  let service = 'no';
+  if (byService.some((a) => a.verification?.isValid === true)) service = 'yes';
+  else if (byService.length > 0) service = 'failed';
+  else if (claim.type === 'name') service = 'na';
+  else if (madeElsewhere(claim)) service = 'elsewhere';
+  else if (claim.type === 'domain') {
+    const dns = claim.domainVerification || 'pending';
+    service = dns === 'verified' ? 'yes' : dns === 'pending' ? 'pending' : 'failed';
+  }
+  return { service, people, broken: null };
+}
+
+const SERVICE_MARK = {
+  yes: {
+    icon: 'shield-check',
+    tone: 'tone-service',
+    short: 'Checked',
+    long: (n) => `Checked by ${n}`,
+  },
+  pending: { icon: 'clock', tone: 'tone-warn', short: 'Pending', long: (n) => `Waiting on ${n}` },
+  failed: {
+    icon: 'shield-x',
+    tone: 'tone-danger',
+    short: 'Failed',
+    long: (n) => `${n} could not confirm it`,
+  },
+  na: {
+    icon: 'shield-plain',
+    tone: 'tone-quiet',
+    short: '',
+    long: () => 'Not checkable for names',
+  },
+  no: {
+    icon: 'shield-plain',
+    tone: 'tone-dashed',
+    short: 'Not yet',
+    long: () => 'Not checked yet',
+  },
+  elsewhere: {
+    icon: 'shield-plain',
+    tone: 'tone-dashed',
+    short: 'Not here',
+    long: (n) => `Not checked on ${n}`,
+  },
+};
+
+function mark(tone, iconName, label, title) {
+  const m = el('span', `mark ${tone}`);
+  m.appendChild(icon(iconName));
+  if (label) m.appendChild(document.createTextNode(label));
+  if (title) m.title = title;
+  return m;
+}
+
+// The marks at row size.
+function proofSmall(proof, node) {
+  const box = el('span', 'proof');
+  if (proof.broken) {
+    box.appendChild(mark('tone-danger', 'alert', 'Does not verify'));
+    return box;
+  }
+  const s = SERVICE_MARK[proof.service] || SERVICE_MARK.no;
+  const sm = mark(s.tone, s.icon, s.short, s.long(node));
+  if (!s.short) sm.appendChild(el('span', 'sr-only', s.long(node)));
+  box.appendChild(sm);
+  if (proof.people > 0) {
+    const pm = mark('tone-success', 'users', '', `Vouched by ${proof.people}`);
+    const pips = el('span', 'pips');
+    for (let i = 0; i < Math.min(proof.people, 3); i += 1) pips.appendChild(el('span', 'pip'));
+    pm.appendChild(pips);
+    if (proof.people > 3) pm.appendChild(document.createTextNode(`+${proof.people - 3}`));
+    pm.appendChild(el('span', 'sr-only', `${proof.people} vouches`));
+    box.appendChild(pm);
+  } else {
+    box.appendChild(mark('tone-dashed', 'users', '0', 'No vouches yet'));
+  }
+  return box;
+}
+
+// The marks at panel size: two tiles, or the red block.
+function proofLarge(claim, proof, node) {
+  if (proof.broken) {
+    const box = el('div', 'broken');
+    box.setAttribute('role', 'alert');
+    const ic = el('span', 'tile-ic tone-danger');
+    ic.appendChild(icon('alert'));
+    box.appendChild(ic);
+    const body = el('div');
+    body.appendChild(el('div', 'broken-title', 'Does not verify'));
+    body.appendChild(
+      el(
+        'div',
+        'broken-text',
+        `The chain check failed: ${proof.broken}. Anyone you share it with will see it fail. Check it again to replace the record, or remove it and make it again.`
+      )
+    );
+    box.appendChild(body);
+    return box;
+  }
+  const grid = el('div', 'proof-lg');
+  const s = SERVICE_MARK[proof.service] || SERVICE_MARK.no;
+  const svc = el('div', 'tile');
+  const svcIc = el('span', `tile-ic ${s.tone === 'tone-quiet' ? 'tone-muted' : s.tone}`);
+  svcIc.appendChild(icon(s.icon));
+  svc.appendChild(svcIc);
+  const svcBody = el('div', 'tile-body');
+  svcBody.appendChild(el('div', 'tile-label', 'Node check'));
+  svcBody.appendChild(
+    el(
+      'div',
+      `tile-value${proof.service === 'na' ? ' quiet' : ''}`,
+      proof.service === 'na' ? 'Names are vouched for, not checked' : s.long(node)
+    )
+  );
+  svc.appendChild(svcBody);
+  grid.appendChild(svc);
+
+  const ppl = el('div', 'tile');
+  const pplIc = el('span', `tile-ic ${proof.people > 0 ? 'tone-success' : 'tone-dashed'}`);
+  pplIc.appendChild(icon('users'));
+  ppl.appendChild(pplIc);
+  const pplBody = el('div', 'tile-body');
+  pplBody.appendChild(el('div', 'tile-label', 'People who know you'));
+  const value = el(
+    'div',
+    'tile-value',
+    proof.people > 0 ? `Vouched by ${proof.people}` : 'No vouches yet'
+  );
+  if (proof.people > 0) {
+    const pips = el('span', 'pips-lg');
+    const people = validAttestations(claim).filter((a) => a.source !== 'service');
+    people.slice(0, 5).forEach((a, i) => {
+      const pip = el('button', 'pip-lg');
+      pip.type = 'button';
+      pip.title = a.attesterDid ? shortDid(a.attesterDid) : `Vouch ${i + 1}`;
+      pip.setAttribute('aria-label', `Vouch from ${pip.title}`);
+      pip.addEventListener('click', () => openVouchesDialog(claim));
+      pips.appendChild(pip);
+    });
+    value.appendChild(pips);
+    if (proof.people > 5) value.appendChild(el('span', 'meta', `+${proof.people - 5}`));
+  }
+  pplBody.appendChild(value);
+  ppl.appendChild(pplBody);
+  grid.appendChild(ppl);
+  return grid;
 }
 
 function statusLine(state, iconName, text) {
-  const line = el('div', `status-line ${state}`);
+  const line = el('div', `status-line ${state}`.trim());
   line.appendChild(icon(iconName));
   line.appendChild(el('span', null, text));
   return line;
@@ -338,157 +679,529 @@ function techRow(rows, label, value) {
   else rows.appendChild(value);
 }
 
-function claimHead(type, value, subParts, badgeNode) {
-  const head = el('div', 'claim-head');
-  const ic = el('span', 'claim-icon');
-  ic.appendChild(icon(TYPE_ICONS[type] || 'shield'));
-  head.appendChild(ic);
-  const title = el('div', 'claim-title');
-  title.appendChild(el('div', 'claim-value', value));
-  const sub = el('div', 'claim-sub');
-  for (const part of subParts) sub.appendChild(typeof part === 'string' ? el('span', null, part) : part);
-  title.appendChild(sub);
-  head.appendChild(title);
-  if (badgeNode) head.appendChild(badgeNode);
-  return head;
+function techDetails(rows) {
+  const tech = el('details', 'tech');
+  tech.appendChild(el('summary', null, 'Technical details'));
+  tech.appendChild(rows);
+  return tech;
 }
 
-// One attestation: who, a state chip, and their words folded to two lines
-// until clicked. The failure reason or the pending hint is one small line.
-function renderAttestation(a) {
-  const state = a.verification?.isValid ? 'ok' : a.pending ? 'wait' : 'bad';
-  const box = el('div', state === 'ok' ? 'attestation' : state === 'wait' ? 'attestation pending' : 'attestation invalid');
-  const source = el('span', 'source');
-  const service = a.source === 'service';
-  source.appendChild(icon(service ? 'server' : 'user'));
-  source.appendChild(document.createTextNode(service ? 'Service' : 'Peer'));
-  box.appendChild(source);
-  const who = el('span', 'who mono', a.attesterDid ? shortDid(a.attesterDid) : '(unknown attester)');
-  who.title = a.attesterDid || '';
-  box.appendChild(who);
-  box.appendChild(
-    state === 'ok'
-      ? badge('attested', 'check-circle', 'Verified')
-      : state === 'wait'
-        ? badge('pending', 'clock', 'Pending')
-        : badge('invalid', 'x-circle', 'Not verified')
+// ── Me: the rows ─────────────────────────────────────────────────────────
+
+function renderRow(claim) {
+  const row = el('button', 'card row');
+  row.type = 'button';
+  row.dataset.id = claim.id;
+  if (claim.id === selectedClaimId) row.classList.add('selected');
+  const ic = el('span', 'claim-icon');
+  ic.appendChild(icon(TYPE_ICONS[claim.type] || 'shield'));
+  row.appendChild(ic);
+  const body = el('div', 'row-body');
+  body.appendChild(el('div', 'row-value', claimValue(claim)));
+  body.appendChild(
+    el(
+      'div',
+      'row-sub',
+      `${TYPE_LABELS[claim.type] || claim.type} · you signed ${formatDay(claim.signedAt || claim.createdAt)}`
+    )
   );
-  if (a.context) {
-    const words = el('div', 'words', a.context);
-    words.title = 'Show more';
-    words.addEventListener('click', () => {
-      const open = words.classList.toggle('expanded');
-      words.title = open ? 'Show less' : 'Show more';
-    });
-    box.appendChild(words);
+  row.appendChild(body);
+  const proof = el('div', 'row-proof');
+  proof.appendChild(proofSmall(proofOf(claim), nodeName(claim.nodeUrl || serviceUrl)));
+  // The one-word summary, for a reader who skips the marks.
+  const word = statusBadge(claim);
+  word.classList.add('sr-only');
+  proof.appendChild(word);
+  row.appendChild(proof);
+  row.addEventListener('click', () => selectClaim(claim.id, { pane: true }));
+  return row;
+}
+
+// The kinds not yet claimed, each a row with its own Add. Email and phone
+// need the node's code round trip; without it they say so.
+function renderSlots(listed) {
+  const have = new Set(listed.map((c) => c.type));
+  const missing = KIND_ORDER.filter((kind) => !have.has(kind));
+  claimsSlots.replaceChildren();
+  for (const kind of missing) {
+    const row = el('button', 'row slot');
+    row.type = 'button';
+    row.dataset.kind = kind;
+    const ic = el('span', 'claim-icon');
+    ic.appendChild(icon(TYPE_ICONS[kind]));
+    row.appendChild(ic);
+    const offered = !OTP_TYPES.has(kind) || outOfBandVerification;
+    const body = el('div', 'row-body');
+    body.appendChild(el('div', null, KIND_COPY[kind].slot));
+    if (!offered)
+      body.appendChild(
+        el('div', 'row-sub', 'This node does not send codes, so it cannot check it.')
+      );
+    row.appendChild(body);
+    row.appendChild(icon('plus'));
+    row.disabled = addClaimBtn.disabled || !offered;
+    row.addEventListener('click', () => openAddClaim(kind));
+    claimsSlots.appendChild(row);
   }
-  if (state === 'wait') {
-    box.appendChild(el('div', 'state wait', 'Recorded by the service. Freedom fetches it once the attester shares it back; or import it here.'));
-  } else if (state === 'bad') {
-    box.appendChild(el('div', 'state bad', `Not verified: ${a.verification?.status || 'unknown'}`));
+}
+
+function selectClaim(id, { pane = false } = {}) {
+  selectedClaimId = id;
+  for (const row of claimsEl.querySelectorAll('.row'))
+    row.classList.toggle('selected', row.dataset.id === id);
+  const claim = claims.find((c) => c.id === id);
+  if (claim) renderClaimPanel(claim);
+  if (pane) meSplit.classList.add('show-pane');
+}
+
+function showClaimView(name) {
+  for (const [key, node] of Object.entries({
+    empty: claimsEmpty,
+    detail: claimDetail,
+    ask: askView,
+    import: importView,
+  })) {
+    node.classList.toggle('hidden', key !== name);
   }
+}
+
+function backLink(label, onClick) {
+  const link = el('button', 'back-link');
+  link.type = 'button';
+  link.appendChild(icon('arrow-left'));
+  link.appendChild(document.createTextNode(label));
+  link.addEventListener('click', onClick);
+  return link;
+}
+
+// The folded words that fill in when clicked.
+function wordsOf(text) {
+  const words = el('div', 'words', text);
+  words.title = 'Show more';
+  words.addEventListener('click', () => {
+    const open = words.classList.toggle('expanded');
+    words.title = open ? 'Show less' : 'Show more';
+  });
+  return words;
+}
+
+// One event on the timeline: who, what they did, when, and their words.
+function timelineEvent({
+  tone,
+  iconName,
+  who,
+  verb,
+  address,
+  when,
+  words,
+  state,
+  extra,
+  last,
+  className,
+}) {
+  const box = el('div', `event${last ? ' last' : ''}${className ? ` ${className}` : ''}`);
+  const rail = el('div', 'event-rail');
+  const ic = el('span', `event-ic ${tone}`);
+  ic.appendChild(icon(iconName));
+  rail.appendChild(ic);
+  if (!last) rail.appendChild(el('span', 'event-line'));
+  box.appendChild(rail);
+  const body = el('div', 'event-body');
+  const head = el('div', 'event-head');
+  const source = el('span', 'source');
+  source.appendChild(icon(iconName));
+  source.appendChild(document.createTextNode(who));
+  head.appendChild(source);
+  head.appendChild(document.createTextNode(' '));
+  head.appendChild(el('span', 'verb', verb));
+  if (state?.badge) head.appendChild(state.badge);
+  body.appendChild(head);
+  const sub = el('div', 'event-sub');
+  if (address) {
+    const addr = el('span', 'who', address.short);
+    addr.title = address.full || '';
+    sub.appendChild(addr);
+  }
+  if (when) sub.appendChild(el('span', 'when', when));
+  body.appendChild(sub);
+  if (words) body.appendChild(wordsOf(words));
+  if (state?.text) body.appendChild(el('div', `state ${state.kind}`, state.text));
+  if (extra) body.appendChild(extra);
+  box.appendChild(body);
   return box;
 }
 
-function renderClaim(claim) {
-  const card = el('div', 'card');
-  card.dataset.id = claim.id;
+// One attestation as an event: the node, or a person, and how it stands.
+function renderAttestation(a, { last = false, node = '' } = {}) {
+  const state = a.verification?.isValid ? 'ok' : a.pending ? 'wait' : 'bad';
+  const service = a.source === 'service';
+  const when = attestedAt(a);
+  return timelineEvent({
+    className: `attestation${state === 'ok' ? '' : state === 'wait' ? ' pending' : ' invalid'}`,
+    tone:
+      state === 'ok'
+        ? service
+          ? 'tone-service'
+          : 'tone-success'
+        : state === 'wait'
+          ? 'tone-warn'
+          : 'tone-danger',
+    iconName: service ? 'server' : 'user',
+    who: service ? node || 'Identity service' : 'Person',
+    verb:
+      state === 'ok'
+        ? service
+          ? 'checked it'
+          : 'vouched'
+        : state === 'wait'
+          ? 'is on its way'
+          : 'does not verify',
+    address: {
+      short: a.attesterDid ? shortDid(a.attesterDid) : '(unknown)',
+      full: a.attesterDid || '',
+    },
+    when: when ? `${state === 'wait' ? 'recorded' : 'signed'} ${formatTime(when)}` : '',
+    words: a.context,
+    state:
+      state === 'wait'
+        ? {
+            kind: 'wait',
+            text: 'Recorded on the node. It appears here once they share it back, or you can import the file they send you.',
+            badge: badge('pending', 'clock', 'On its way'),
+          }
+        : state === 'bad'
+          ? {
+              kind: 'bad',
+              text: `Does not verify: ${a.verification?.status || 'unknown'}`,
+              badge: badge('invalid', 'x-circle', 'Does not verify'),
+            }
+          : { badge: badge('attested', 'check-circle', 'Verified') },
+    last,
+  });
+}
 
-  card.appendChild(
-    claimHead(claim.type, claimValue(claim), [TYPE_LABELS[claim.type] || claim.type, '·', `signed ${formatTime(claim.signedAt)}`], statusBadge(claim))
-  );
-
-  const body = el('div', 'claim-body');
-  // A claim is held by the service it was made on; after a service change
-  // the current one cannot share, pull or check it.
-  const elsewhere = Boolean(claim.nodeUrl && serviceUrl && normalizeUrl(claim.nodeUrl) !== normalizeUrl(serviceUrl));
+// The one plain line under the marks that says what to do next.
+function nextStep(claim, proof, elsewhere) {
+  if (proof.broken) return null;
+  const node = nodeName(claim.nodeUrl || serviceUrl);
   if (elsewhere) {
-    body.appendChild(
-      statusLine('wait', 'server', `Made on ${claim.nodeUrl}. The service this profile uses now does not hold it; switch back under Settings → Identity to share or check it.`)
+    return el(
+      'p',
+      'panel-copy',
+      `Made on ${claim.nodeUrl}. The node this profile uses now does not hold it; change back under Settings → Identity to share or check it.`
     );
-  }
-  const verification = claim.verification || {};
-  if (verification.isValid) {
-    const status = verification.status && verification.status !== 'OK' ? ` (${verification.status})` : '';
-    body.appendChild(
-      statusLine('ok', 'check-circle', `Chain and signature verified${status} · ${formatTime(verification.checkedAt)}`)
-    );
-  } else {
-    body.appendChild(statusLine('bad', 'x-circle', `Not verified: ${verification.status || 'unknown'}`));
   }
   if (claim.type === 'domain') {
-    const dns = claim.domainVerification || 'pending';
-    const said = claim.dnsCheck?.message ? `DNS check: ${dns} · ${claim.dnsCheck.message}` : `DNS check: ${dns}`;
-    body.appendChild(statusLine(dns === 'verified' ? 'ok' : dns === 'pending' ? 'wait' : 'bad', 'globe', said));
+    if (proof.service === 'yes')
+      return el('p', 'panel-copy', `${node} found the DNS record: you control this domain.`);
+    return null;
   }
+  if (proof.service === 'yes' && proof.people === 0) {
+    return el(
+      'p',
+      'panel-copy',
+      `${node} checked it. People who know you can vouch for it too, which makes it worth more to a site.`
+    );
+  }
+  if (proof.people > 0) return null;
+  if (claim.type === 'name')
+    return el(
+      'p',
+      'panel-copy',
+      'A node cannot check a name, so a name gains weight only from people who know you.'
+    );
+  return el(
+    'p',
+    'panel-copy',
+    'Only your signature backs this so far. Ask someone who knows you to vouch for it.'
+  );
+}
 
-  body.appendChild(el('div', 'att-title', 'Attestations'));
-  const attestations = claim.attestations || [];
-  if (attestations.length === 0) {
-    body.appendChild(statusLine('', 'pen', 'None yet. Only you have signed this claim.'));
+// The DNS record to publish, inline, with the outcome of the last check
+// under it. Both Check buttons run the check here, so the result is read
+// next to the record it is about.
+const dnsResult = el('div', 'dns-result');
+const dnsBody = el('div');
+let dnsCheckBtn = null;
+
+function dnsRow(label, value, { copy: withCopy = true } = {}) {
+  const row = el('div', 'dns-row');
+  row.appendChild(el('span', 'label', label));
+  row.appendChild(el('span', 'mono', value));
+  if (!withCopy) return row;
+  const copy = button('btn small', 'copy', 'Copy');
+  copy.addEventListener('click', async () => {
+    await window.freedomAPI.copyText(value);
+    setLabel(copy, 'check', 'Copied');
+  });
+  row.appendChild(copy);
+  return row;
+}
+
+function renderDnsResult(check) {
+  if (!check || !check.status) {
+    dnsResult.replaceChildren();
+    return;
+  }
+  const state = check.status === 'verified' ? 'ok' : check.status === 'pending' ? 'wait' : 'bad';
+  const text = check.message || `DNS check: ${check.status}`;
+  dnsResult.replaceChildren(
+    statusLine(
+      state,
+      state === 'ok' ? 'check-circle' : state === 'wait' ? 'clock' : 'x-circle',
+      text
+    )
+  );
+  if (check.checkedAt)
+    dnsResult.appendChild(el('div', 'meta', `Checked ${formatTime(check.checkedAt)}`));
+}
+
+function renderDnsSection(claim, elsewhere) {
+  const section = el('div', 'dns-section');
+  const dns = claim.domainVerification || 'pending';
+  const node = nodeName(claim.nodeUrl || serviceUrl);
+  const callout = el('div', `callout ${dns === 'pending' ? 'warn' : 'bad'}`);
+  const title = el('div', 'callout-title');
+  title.appendChild(icon(dns === 'pending' ? 'clock' : 'x-circle'));
+  title.appendChild(
+    document.createTextNode(
+      dns === 'pending' ? 'The record is not visible yet' : `${node} could not confirm the record`
+    )
+  );
+  callout.appendChild(title);
+  callout.appendChild(
+    el(
+      'div',
+      'meta',
+      claim.dnsCheck?.message
+        ? `Last check: ${claim.dnsCheck.message}`
+        : 'Add the TXT record at your DNS provider, then check. DNS changes can take up to an hour to show.'
+    )
+  );
+  section.appendChild(callout);
+  section.appendChild(el('h3', 'section-title', 'Add this record at your DNS provider'));
+  section.appendChild(
+    el(
+      'p',
+      'meta',
+      `Freedom does not look up DNS itself. ${node} checks the record and signs that it found it.`
+    )
+  );
+  dnsBody.replaceChildren(el('p', 'meta', 'Fetching the record…'));
+  section.appendChild(dnsBody);
+  section.appendChild(dnsResult);
+  renderDnsResult(claim.dnsCheck);
+  const actions = el('div', 'actions');
+  dnsCheckBtn = button('btn primary', 'refresh', claim.dnsCheck ? 'Check again' : 'Check DNS');
+  dnsCheckBtn.id = 'dns-check-btn';
+  dnsCheckBtn.disabled = elsewhere;
+  dnsCheckBtn.addEventListener('click', () => verifyDns(claim));
+  actions.appendChild(dnsCheckBtn);
+  const remove = button('btn ghost', 'trash', 'Remove this claim');
+  remove.addEventListener('click', () => openRemoveDialog(claim));
+  actions.appendChild(remove);
+  section.appendChild(actions);
+  loadDnsRecord(claim);
+  return section;
+}
+
+async function loadDnsRecord(claim) {
+  const result = await window.freedomAPI.aquaDnsInstructions(claim.id);
+  if (selectedClaimId !== claim.id) return;
+  if (!result?.success) {
+    dnsBody.replaceChildren(
+      el('div', 'field-error', errorText(result, 'DNS instructions are unavailable.'))
+    );
+    return;
+  }
+  // The identity service answers `txt_name` / `txt_value` (plus `domain`).
+  const name = result.txt_name || result.record_name || result.name || '';
+  const value = result.txt_value || result.record_value || result.value || '';
+  const box = el('div', 'dns-box');
+  box.append(dnsRow('Type', 'TXT'), dnsRow('Name', name), dnsRow('Value', value));
+  dnsBody.replaceChildren(box);
+}
+
+// Ask the node to look the record up now; the outcome goes under the
+// record and onto the row's mark.
+async function verifyDns(claim) {
+  if (dnsCheckBtn) {
+    dnsCheckBtn.disabled = true;
+    setLabel(dnsCheckBtn, 'clock', 'Checking…');
+  }
+  dnsResult.replaceChildren(el('div', 'meta', 'Looking the record up…'));
+  const result = await window.freedomAPI.aquaVerifyDns(claim.id);
+  if (dnsCheckBtn) {
+    dnsCheckBtn.disabled = false;
+    setLabel(dnsCheckBtn, 'refresh', 'Check again');
+  }
+  if (!result?.success) {
+    dnsResult.replaceChildren(
+      statusLine('bad', 'x-circle', errorText(result, 'The DNS check failed.'))
+    );
+    return;
+  }
+  renderDnsResult(
+    result.claim?.dnsCheck || { status: result.claim?.domainVerification || 'pending' }
+  );
+  await loadClaims();
+}
+
+// The selected claim: its marks, what to do next, its evidence newest
+// first, and the technical rows.
+function renderClaimPanel(claim) {
+  current = claim;
+  showClaimView('detail');
+  const proof = proofOf(claim);
+  const elsewhere = madeElsewhere(claim);
+  const node = nodeName(claim.nodeUrl || serviceUrl);
+  const out = [];
+
+  out.push(backLink('All claims', () => meSplit.classList.remove('show-pane')));
+  const meta = el('p', 'panel-meta');
+  meta.appendChild(icon(TYPE_ICONS[claim.type] || 'shield'));
+  meta.appendChild(
+    document.createTextNode(
+      `${TYPE_LABELS[claim.type] || claim.type} · you signed ${formatDay(claim.signedAt || claim.createdAt)}`
+    )
+  );
+  out.push(meta);
+  const title = el('h2', 'panel-value');
+  title.appendChild(el('span', null, claimValue(claim)));
+  title.appendChild(statusBadge(claim));
+  out.push(title);
+  out.push(proofLarge(claim, proof, node));
+
+  if (elsewhere) {
+    const callout = el('div', 'callout info');
+    const t = el('div', 'callout-title');
+    t.appendChild(icon('server'));
+    t.appendChild(document.createTextNode(`Made on ${hostOf(claim.nodeUrl)}`));
+    callout.appendChild(t);
+    callout.appendChild(
+      el(
+        'div',
+        'meta',
+        'The node this profile uses now does not hold it, so it cannot share, check or pull vouches for it. Change back under Settings → Identity to do those.'
+      )
+    );
+    out.push(callout);
   } else {
-    for (const a of attestations) body.appendChild(renderAttestation(a));
+    const line = nextStep(claim, proof, elsewhere);
+    if (line) out.push(line);
   }
 
-  const tech = el('details', 'tech');
-  tech.appendChild(el('summary', null, 'Technical details'));
+  if (proof.broken) {
+    out.push(el('h3', 'section-title', 'What failed'));
+    const list = el('ul', 'check-list');
+    const yours = el('li');
+    yours.appendChild(icon('check-circle'));
+    yours.querySelector('.ico').classList.add('ok');
+    yours.appendChild(el('span', null, 'Your signature on the claim'));
+    list.appendChild(yours);
+    const chain = el('li');
+    chain.appendChild(icon('x-circle'));
+    chain.querySelector('.ico').classList.add('bad');
+    chain.appendChild(
+      el('span', null, `The chain check: ${claim.verification?.status || 'unknown'}`)
+    );
+    list.appendChild(chain);
+    out.push(list);
+  }
+
+  // One primary next step, the second-most-likely action beside it.
+  const actions = el('div', 'actions');
+  const vouched = proof.people > 0;
+  if (proof.broken) {
+    const recheck = button('btn primary', 'refresh', 'Check again');
+    recheck.addEventListener('click', () => refreshClaim(claim));
+    actions.appendChild(recheck);
+    const remove = button('btn danger', 'trash', 'Remove…');
+    remove.addEventListener('click', () => openRemoveDialog(claim));
+    actions.appendChild(remove);
+  } else if (claim.type === 'domain' && proof.service !== 'yes') {
+    out.push(renderDnsSection(claim, elsewhere));
+  } else {
+    const ask = button(`btn${vouched ? '' : ' primary'}`, 'users', 'Ask someone to vouch');
+    ask.disabled = elsewhere;
+    ask.addEventListener('click', () => openShareView(claim));
+    actions.appendChild(ask);
+    const imp = button('btn', 'import', 'Import a vouch');
+    imp.addEventListener('click', () => openImportView(claim));
+    actions.appendChild(imp);
+    const pull = button('btn ghost', 'pull', 'Check for new vouches');
+    pull.disabled = elsewhere;
+    pull.addEventListener('click', () => pullAttestations(claim));
+    actions.appendChild(pull);
+  }
+  if (actions.childNodes.length > 0) out.push(actions);
+  if (elsewhere && !proof.broken && claim.type !== 'domain')
+    out.push(
+      el('p', 'meta actions-note', 'Asking and checking need the node this claim lives on.')
+    );
+
+  // Evidence, newest first, ending with your own signature.
+  const head = el('div', 'evidence-head');
+  head.appendChild(el('h3', null, 'Evidence, newest first'));
+  const all = el('button', 'link-btn', 'All details and removal');
+  all.type = 'button';
+  all.addEventListener('click', () => openVouchesDialog(claim));
+  head.appendChild(all);
+  out.push(head);
+  const timeline = el('div', 'timeline');
+  const list = [...(claim.attestations || [])].sort((x, y) =>
+    String(attestedAt(y)).localeCompare(String(attestedAt(x)))
+  );
+  for (const a of list) timeline.appendChild(renderAttestation(a, { node }));
+  timeline.appendChild(
+    timelineEvent({
+      className: 'signed',
+      tone: 'tone-muted',
+      iconName: 'pen',
+      who: 'You',
+      verb: 'signed the claim',
+      address: { short: shortDid(claim.signerDid), full: claim.signerDid || '' },
+      when: formatTime(claim.signedAt || claim.createdAt),
+      last: true,
+    })
+  );
+  out.push(timeline);
+
   const rows = el('div', 'tech-rows');
+  const verification = claim.verification || {};
   techRow(rows, 'Signer', claim.signerDid || '');
   techRow(rows, 'Revision', claim.tip || '');
   techRow(rows, 'Created', el('span', null, formatTime(claim.createdAt)));
-  tech.appendChild(rows);
-  body.appendChild(tech);
-  card.appendChild(body);
+  techRow(
+    rows,
+    'Verification',
+    el(
+      'span',
+      null,
+      verification.isValid
+        ? `Chain and signature verified${verification.status && verification.status !== 'OK' ? ` (${verification.status})` : ''} · ${formatTime(verification.checkedAt)}`
+        : `Not verified: ${verification.status || 'unknown'}`
+    )
+  );
+  if (claim.nodeUrl) techRow(rows, 'Kept at', claim.nodeUrl);
+  out.push(techDetails(rows));
 
-  const actions = el('div', 'actions');
-  const onlyThere = (btn) => {
-    if (!elsewhere) return btn;
-    btn.disabled = true;
-    btn.title = `Made on ${claim.nodeUrl}`;
-    return btn;
-  };
-  if (claim.type === 'domain') {
-    const dnsBtn = button('btn small', 'globe', 'DNS record');
-    dnsBtn.addEventListener('click', () => openDnsDialog(claim));
-    actions.appendChild(onlyThere(dnsBtn));
-    const checkBtn = button('btn small', 'check', 'Check DNS');
-    checkBtn.addEventListener('click', () => openDnsDialog(claim, { check: true }));
-    actions.appendChild(onlyThere(checkBtn));
-  }
-  const share = button('btn small', 'share', 'Share for attestation');
-  share.addEventListener('click', () => openShareDialog(claim));
-  actions.appendChild(onlyThere(share));
-  const pull = button('btn small', 'pull', 'Pull attestations');
-  pull.addEventListener('click', () => pullAttestations(claim));
-  actions.appendChild(onlyThere(pull));
-  const imp = button('btn small', 'import', 'Import attestation');
-  imp.addEventListener('click', () => openImportDialog(claim));
-  actions.appendChild(imp);
-  actions.appendChild(el('span', 'spacer'));
-  const refresh = button('btn small', 'refresh', 'Re-verify');
-  refresh.addEventListener('click', () => refreshClaim(claim));
-  actions.appendChild(refresh);
-  const remove = button('btn small danger', 'trash', 'Remove');
-  remove.addEventListener('click', () => openRemoveDialog(claim));
-  actions.appendChild(remove);
-  card.appendChild(actions);
-
-  return card;
+  claimDetail.replaceChildren(...out);
 }
 
-// A locked store is already said once, on the locked card: a list that
+// A locked store is already said once, on the checklist: a list that
 // cannot be read stays empty rather than repeating it.
 function isLocked(result) {
   return result?.error?.code === 'VAULT_LOCKED';
 }
 
-// Attestations recorded on the identity service since the claim was last
-// looked at (a peer's, or the service's own): pulled for every claim when
-// the page opens, so they show up without a click. A pull that fails
-// leaves that claim as listed.
-async function pullAll(claims) {
+// Attestations recorded on the node since the claim was last looked at (a
+// peer's, or the node's own): pulled for every claim when the page opens,
+// so they show up without a click. A pull that fails leaves that claim as
+// listed.
+async function pullAll(listed) {
   return Promise.all(
-    claims.map(async (claim) => {
+    listed.map(async (claim) => {
       try {
         const result = await window.freedomAPI.aquaPullAttestations(claim.id);
         return result?.success && result.claim?.id === claim.id ? result.claim : claim;
@@ -499,36 +1212,74 @@ async function pullAll(claims) {
   );
 }
 
+function claimsLineText(n) {
+  const node = nodeName(serviceUrl);
+  if (n === 0) return node ? `No claims on ${node} yet` : 'No claims yet';
+  return `${n} claim${n === 1 ? '' : 's'} on ${node || 'the node'}`;
+}
+
 async function loadClaims({ pull = false } = {}) {
   const result = await window.freedomAPI.aquaListClaims();
   if (!result?.success) {
-    claimsEmpty.classList.add('hidden');
-    claimsCount.textContent = '0';
+    claims = [];
+    showClaimView('detail');
+    setCount(claimsCount, 0);
+    claimsLine.textContent = claimsLineText(0);
     claimsEl.replaceChildren();
-    if (!isLocked(result)) claimsEl.appendChild(el('div', 'meta', errorText(result, 'Claims could not be loaded.')));
+    claimsSlots.replaceChildren();
+    claimDetail.replaceChildren();
+    if (!isLocked(result))
+      claimDetail.appendChild(el('div', 'meta', errorText(result, 'Claims could not be loaded.')));
     return;
   }
   const listed = result.claims || [];
-  claimsCount.textContent = String(listed.length);
+  setCount(claimsCount, listed.length);
+  claimsLine.textContent = claimsLineText(listed.length);
   if (listed.length === 0) {
-    renderEmpty();
+    claims = [];
+    selectedClaimId = null;
+    claimsEl.replaceChildren();
+    claimDetail.replaceChildren();
+    showClaimView('empty');
+    renderSlots([]);
     return;
   }
-  const claims = pull ? await pullAll(listed) : listed;
-  claimsEmpty.classList.add('hidden');
-  const sorted = [...claims].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-  claimsEl.replaceChildren(...sorted.map(renderClaim));
+  const fresh = pull ? await pullAll(listed) : listed;
+  // Grouped by kind in the order the slots use, newest first within a kind,
+  // so the list reads name, email, phone, domain like a form.
+  claims = [...fresh].sort((a, b) => {
+    const ka = KIND_ORDER.indexOf(a.type);
+    const kb = KIND_ORDER.indexOf(b.type);
+    if (ka !== kb) return (ka === -1 ? 99 : ka) - (kb === -1 ? 99 : kb);
+    return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+  });
+  if (!claims.some((c) => c.id === selectedClaimId)) selectedClaimId = claims[0].id;
+  claimsEl.replaceChildren(...claims.map(renderRow));
+  renderSlots(claims);
+  selectClaim(selectedClaimId);
+}
+
+// ── Status, readiness and the node card ──────────────────────────────────
+
+function setNodeState(tone, iconName, text) {
+  nodeState.className = `node-state ${tone}`;
+  nodeStateText.textContent = text;
+  nodeState.replaceChildren(icon(iconName), nodeStateText);
 }
 
 async function loadStatus() {
   const result = await window.freedomAPI.aquaStatus();
   if (!result?.success) {
     showNotice('warn', errorText(result, 'Identity claims are unavailable.'));
-    showLocked(false, false);
+    showReadiness({ missing: false, locked: false, down: false, signedIn: true });
     walletLine.textContent = '';
     statusWallet.textContent = '—';
     statusService.textContent = '—';
+    nodeUrlEl.textContent = '';
+    nodeItemHost.textContent = '—';
+    nodeItemUrl.textContent = '';
     statusCaps.textContent = '';
+    setNodeState('tone-muted', 'alert', 'Unavailable');
     return;
   }
   hideNotice();
@@ -538,55 +1289,147 @@ async function loadStatus() {
   outOfBandVerification = result.service ? result.service.outOfBandVerification !== false : true;
   kindButtons.email.disabled = !outOfBandVerification;
   kindButtons.phone.disabled = !outOfBandVerification;
+  kindsNote.classList.toggle('hidden', outOfBandVerification);
   if (!outOfBandVerification && OTP_TYPES.has(selectedKind)) selectKind('name');
   const parts = [];
   if (result.wallet?.address) parts.push(`Wallet ${result.wallet.address}`);
   parts.push(`Identity service ${result.nodeUrl}`);
-  let caps = '';
   const down = Boolean(result.service && result.service.reachable === false);
-  serviceReachable = !down;
-  showServiceDown(down, result.nodeUrl);
+  signedIn = result.signedIn === true;
+  let caps = '';
   if (down) caps = 'unreachable';
   else if (!outOfBandVerification) caps = 'no email or phone verification on this service';
-  signedIn = result.signedIn === true;
   if (caps) parts.push(caps);
   walletLine.textContent = parts.join(' · ');
   statusWallet.textContent = result.wallet?.address || 'none';
   statusWallet.title = result.wallet?.address || '';
-  statusService.textContent = result.nodeUrl || '';
-  statusCaps.textContent = caps;
+  copyAddressBtn.classList.toggle('hidden', !result.wallet?.address);
+  const host = hostOf(result.nodeUrl);
+  statusService.textContent = nodeName(result.nodeUrl) || host || '—';
+  statusService.title = result.nodeUrl || '';
+  nodeUrlEl.textContent = host;
+  nodeItemHost.textContent = nodeName(result.nodeUrl) || host || '—';
+  nodeItemUrl.textContent = result.nodeUrl || '';
+  composerNode.textContent = nodeName(result.nodeUrl) || 'the node';
+  statusCaps.textContent = down
+    ? 'Not answering'
+    : `${signedIn ? 'Signed in' : 'Not signed in'} · checks ${outOfBandVerification ? 'email, phone, domain' : 'domain only'}`;
   const locked = Boolean(result.hasVault && !result.vaultUnlocked);
-  showLocked(!result.hasVault, locked);
-  showSignIn(Boolean(result.hasVault && result.vaultUnlocked && activeAddress && !down && !signedIn), result.nodeUrl);
+  const missing = !result.hasVault;
+  if (down) setNodeState('tone-accent', 'cloud-off', 'Not answering');
+  else if (missing) setNodeState('tone-muted', 'wallet', 'No wallet yet');
+  else if (locked) setNodeState('tone-muted', 'lock', 'Wallet locked');
+  else if (!signedIn) setNodeState('tone-muted', 'login', 'Not signed in');
+  else setNodeState('tone-success', 'check-circle', 'Reachable');
+  showReadiness({
+    missing,
+    locked,
+    down,
+    signedIn: signedIn || !activeAddress,
+    nodeUrl: result.nodeUrl,
+  });
   watchLock(locked);
   if (result.hasVault && result.vaultUnlocked && result.wallet && result.wallet.canSign === false) {
-    showNotice('warn', 'A multi-owner account cannot sign identity claims. Switch to another wallet.');
+    showNotice(
+      'warn',
+      'A multi-owner account cannot sign identity claims. Switch to another wallet.'
+    );
   }
 }
 
-// The wallet is open but the service holds no session for it yet. The
-// page stays on this card until the sign-in message is signed, so the
-// sidebar's signature screen is never something the page has moved on from.
-function showSignIn(needed, nodeUrl) {
-  signinCard.classList.toggle('hidden', !needed);
-  if (needed) {
-    signinText.textContent = `Your wallet signs a message to sign in to ${nodeUrl || 'the identity service'}. Confirm it in the sidebar; nothing else is sent.`;
-    setError(signinError, '');
+// One checklist: where you are, and the one thing to do next. Each row
+// keeps the id of the gate card it replaced; the blocking row is
+// `current`, the rows behind it `done`.
+function showReadiness({ missing, locked, down, signedIn: session, nodeUrl }) {
+  const node = nodeName(nodeUrl || serviceUrl) || 'the node';
+  const blockedByWallet = missing || locked;
+  const needSignIn = !blockedByWallet && !down && !session;
+  const gated = blockedByWallet || down || needSignIn;
+  ready.classList.toggle('hidden', !gated);
+  contentEl.classList.toggle('gated', gated);
+  statusLock.classList.toggle('hidden', !locked);
+  unlockBtn.classList.toggle('hidden', !locked);
+  addClaimBtn.disabled = gated;
+  requestBtn.disabled = gated;
+
+  if (missing) {
+    lockedTitle.textContent = 'A wallet in this browser';
+    lockedText.textContent =
+      'Everything on this page is signed by your wallet. Create one, or bring an existing one, in the wallet sidebar.';
+  } else if (locked) {
+    lockedTitle.textContent = 'Wallet unlocked';
+    lockedText.textContent =
+      'Your claims are stored encrypted with your wallet. Unlock it to read and sign them.';
+  } else {
+    lockedTitle.textContent = 'A wallet in this browser, unlocked';
   }
-  addClaimBtn.disabled = addClaimBtn.disabled || needed;
-  requestOpenBtn.disabled = requestOpenBtn.disabled || needed;
+  serviceDownText.textContent = `${node} is not answering, so you cannot sign in to it yet. Nothing is lost; try again in a minute, or change the node under Settings → Identity.`;
+  signinText.textContent = `${node} keeps your claims, checks emails, phones and domains, and carries vouches between people. Sign one message to show it this wallet is yours. Nothing goes on chain and nothing is charged.`;
+  if (needSignIn) setError(signinError, '');
+
+  const setStep = (row, markNode, state, number) => {
+    row.classList.toggle('done', state === 'done');
+    row.classList.toggle('current', state === 'current');
+    row.classList.remove('hidden');
+    if (state === 'done') markNode.replaceChildren(icon('check'));
+    else markNode.textContent = String(number);
+    const title = row.querySelector('.step-title');
+    if (!title) return;
+    const tag = title.querySelector('.done-tag');
+    if (state === 'done' && !tag) title.appendChild(el('span', 'done-tag', 'Done'));
+    if (state !== 'done' && tag) tag.remove();
+  };
+  setStep(lockedCard, lockedMark, blockedByWallet ? 'current' : 'done', 1);
+  setStep(serviceDown, serviceMark, blockedByWallet ? 'waiting' : down ? 'current' : 'done', 2);
+  setStep(
+    signinCard,
+    signinMark,
+    blockedByWallet || down ? 'waiting' : needSignIn ? 'current' : 'done',
+    3
+  );
+
+  if (missing) {
+    readyTitle.textContent = 'Start with a wallet';
+    readyLead.textContent =
+      'Your identity is whatever your wallet signs. Three steps, then your claims.';
+    readyAsideTitle.textContent = 'Why a wallet';
+    readyAsideText.textContent =
+      'No account and no password: the wallet is the identity, and every claim is a message it signed.';
+  } else if (locked) {
+    readyTitle.textContent = 'Unlock your wallet';
+    readyLead.textContent = 'Your claims are encrypted with it. Two steps left.';
+    readyAsideTitle.textContent = 'Why it is locked';
+    readyAsideText.textContent =
+      'Claims are read and signed only while the wallet is unlocked, so nothing on this page can be seen or changed without you.';
+  } else if (down) {
+    readyTitle.textContent = `${node} is not answering`;
+    readyLead.textContent = 'Your wallet is ready. Signing in waits for a node.';
+    readyAsideTitle.textContent = 'Nothing is lost';
+    readyAsideText.textContent =
+      'The node keeps your claims and answers once it is back. Try again in a minute, or pick another node under Settings → Identity.';
+  } else {
+    readyTitle.textContent = 'One signature, and you are ready';
+    readyLead.textContent = 'The last step. Your wallet shows the message before you sign it.';
+    readyAsideTitle.textContent = 'What signing in does';
+    readyAsideText.textContent = `Proves to ${node} that this wallet is yours. It does not share any claim, and it costs nothing.`;
+  }
 }
 
-// Everything the page lists needs the vault open and, for the service's
-// side, a session: load only once both are there.
-// `pull` asks the service for new attestations on every claim. Only the
-// page's own open does that: a pull is a mutation and is broadcast as a
-// claims change, so pulling again on that event would never stop.
+// Everything the page lists needs the vault open and, for the node's side,
+// a session: load only once both are there.
+// `pull` asks the node for new attestations on every claim. Only the page's
+// own open does that: a pull is a mutation and is broadcast as a claims
+// change, so pulling again on that event would never stop.
 async function loadAll({ pull = false } = {}) {
   if (!signedIn) {
+    claims = [];
     claimsEl.replaceChildren();
-    claimsEmpty.classList.add('hidden');
+    claimsSlots.replaceChildren();
+    claimDetail.replaceChildren();
+    showClaimView('detail');
     sharedEl.replaceChildren();
+    sharedDetail.replaceChildren();
+    sharedTech.replaceChildren();
     return;
   }
   await Promise.all([loadClaims({ pull }), loadIssued()]);
@@ -611,37 +1454,9 @@ async function signIn() {
   await loadAll();
 }
 
-// The service did not answer: one card, with the setting that changes it.
-function showServiceDown(down, nodeUrl) {
-  serviceDown.classList.toggle('hidden', !down);
-  if (down) {
-    serviceDownText.textContent = `Freedom could not reach ${nodeUrl || 'the identity service'}. Claims cannot be created, verified or shared until it answers. Change the service under Settings → Identity.`;
-  }
-}
-
-// The one place a missing or locked wallet is said. While it is, the lists
-// stay empty and the actions that need the vault are disabled. They start
-// disabled in the markup, so nothing is clickable before the first status
-// answer either.
-function showLocked(missing, locked) {
-  const blocked = missing || locked;
-  lockedCard.classList.toggle('hidden', !blocked);
-  statusLock.classList.toggle('hidden', !locked);
-  unlockBtn.classList.toggle('hidden', !locked);
-  addClaimBtn.disabled = blocked || !serviceReachable;
-  requestOpenBtn.disabled = blocked || !serviceReachable;
-  if (missing) {
-    lockedTitle.textContent = 'No wallet yet';
-    lockedText.textContent = 'Set up your wallet in the sidebar before creating identity claims.';
-  } else if (locked) {
-    lockedTitle.textContent = 'Your wallet is locked';
-    lockedText.textContent = 'Claims are kept encrypted with your wallet seed, so they are readable only while it is unlocked.';
-  }
-}
-
 async function refreshClaim(claim) {
   const result = await window.freedomAPI.aquaRefreshClaim(claim.id);
-  if (!result?.success) showNotice('error', errorText(result, 'Could not re-verify the claim.'));
+  if (!result?.success) showNotice('error', errorText(result, 'Could not re-check the claim.'));
   await loadClaims();
 }
 
@@ -650,6 +1465,28 @@ async function refreshClaim(claim) {
 function openRemoveDialog(claim) {
   current = claim;
   removeSummary.replaceChildren(summaryOf(claim.type, claimValue(claim), claim.signerDid));
+  const node = nodeName(claim.nodeUrl || serviceUrl) || 'the node';
+  const goes = [];
+  const goesClaim = el('li');
+  goesClaim.appendChild(icon('x'));
+  goesClaim.appendChild(
+    el(
+      'span',
+      null,
+      `The ${(TYPE_LABELS[claim.type] || claim.type).toLowerCase()} claim, here and on ${node}`
+    )
+  );
+  goes.push(goesClaim);
+  const n = (claim.attestations || []).length;
+  if (n > 0) {
+    const goesVouches = el('li');
+    goesVouches.appendChild(icon('x'));
+    goesVouches.appendChild(
+      el('span', null, n === 1 ? 'The one vouch on it' : `All ${n} vouches on it`)
+    );
+    goes.push(goesVouches);
+  }
+  removeGoes.replaceChildren(...goes);
   setError(removeError, '');
   openDialog(removeDialog, $('remove-cancel'));
 }
@@ -665,91 +1502,111 @@ async function removeClaim() {
     return;
   }
   closeDialog(removeDialog);
+  if (vouchesDialog.open) closeDialog(vouchesDialog);
   await loadClaims();
 }
 
-// ── DNS ──────────────────────────────────────────────────────────────────
+// ── All details: every vouch in full ─────────────────────────────────────
 
-function dnsRow(label, value) {
-  const row = el('div', 'dns-row');
-  row.appendChild(el('span', 'label', label));
-  row.appendChild(el('span', 'mono', value));
-  const copy = button('btn small', 'copy', 'Copy');
-  copy.addEventListener('click', async () => {
-    await window.freedomAPI.copyText(value);
-    setLabel(copy, 'check', 'Copied');
-  });
-  row.appendChild(copy);
-  return row;
-}
-
-// The DNS dialog: the record to publish, and under it the outcome of the
-// last check. Both Check DNS buttons run the check here, so the result is
-// read next to the record it is about; the dialog stays open.
-const dnsResult = el('div', 'dns-result');
-
-function renderDnsResult(check) {
-  if (!check || !check.status) {
-    dnsResult.replaceChildren();
-    return;
-  }
-  const ok = check.status === 'verified';
-  const text = check.message || `DNS check: ${check.status}`;
-  dnsResult.replaceChildren(statusLine(ok ? 'ok' : 'bad', ok ? 'check-circle' : 'x-circle', text));
-  if (check.checkedAt) dnsResult.appendChild(el('div', 'meta', `Checked ${formatTime(check.checkedAt)}`));
-}
-
-async function openDnsDialog(claim, { check = false } = {}) {
-  current = claim;
-  dnsSummary.replaceChildren(summaryOf(claim.type, claimValue(claim), claim.signerDid));
-  dnsBody.replaceChildren(el('p', 'meta', 'Fetching the record…'));
-  dnsCheckBtn.disabled = false;
-  setLabel(dnsCheckBtn, 'check', claim.dnsCheck ? 'Check again' : 'Check DNS');
-  openDialog(dnsDialog, $('dns-cancel'));
-  const result = await window.freedomAPI.aquaDnsInstructions(claim.id);
-  if (current !== claim) return;
-  if (!result?.success) {
-    dnsBody.replaceChildren(el('div', 'field-error', errorText(result, 'DNS instructions are unavailable.')));
-    return;
-  }
-  // The identity service answers `txt_name` / `txt_value` (plus `domain`).
-  const name = result.txt_name || result.record_name || result.name || '';
-  const value = result.txt_value || result.record_value || result.value || '';
-  renderDnsResult(claim.dnsCheck);
-  dnsBody.replaceChildren(
-    el('p', 'meta', 'Add this TXT record at your DNS provider, then press Check DNS.'),
-    dnsRow('Name', name),
-    dnsRow('Value', value),
-    dnsResult
+// One vouch in the dialog: who signed it, the whole wallet address, when,
+// the attestation hash, and their words unfolded.
+function renderVouch(a) {
+  const state = a.verification?.isValid ? 'ok' : a.pending ? 'wait' : 'bad';
+  const box = el(
+    'div',
+    state === 'ok' ? 'vouch' : state === 'wait' ? 'vouch pending' : 'vouch invalid'
   );
-  if (check) await verifyDns(claim);
-}
-
-// Ask the service to look the record up now; the outcome goes under the
-// record in the dialog and onto the claim card.
-async function verifyDns(claim) {
-  dnsCheckBtn.disabled = true;
-  setLabel(dnsCheckBtn, 'clock', 'Checking…');
-  dnsResult.replaceChildren(el('div', 'meta', 'Looking the record up…'));
-  const result = await window.freedomAPI.aquaVerifyDns(claim.id);
-  dnsCheckBtn.disabled = false;
-  setLabel(dnsCheckBtn, 'check', 'Check again');
-  if (!result?.success) {
-    dnsResult.replaceChildren(statusLine('bad', 'x-circle', errorText(result, 'The DNS check failed.')));
-    return;
+  const head = el('div', 'vouch-head');
+  const source = el('span', 'source');
+  const service = a.source === 'service';
+  source.appendChild(icon(service ? 'server' : 'user'));
+  source.appendChild(
+    document.createTextNode(
+      service ? nodeName(current?.nodeUrl || serviceUrl) || 'Identity service' : 'Person'
+    )
+  );
+  head.appendChild(source);
+  head.appendChild(el('span', 'spacer'));
+  head.appendChild(
+    state === 'ok'
+      ? badge('attested', 'check-circle', 'Verified')
+      : state === 'wait'
+        ? badge('pending', 'clock', 'On its way')
+        : badge('invalid', 'x-circle', 'Does not verify')
+  );
+  box.appendChild(head);
+  const address = addressOf(a.attesterDid);
+  box.appendChild(
+    address ? dnsRow('Wallet', address) : dnsRow('Wallet', '(unknown)', { copy: false })
+  );
+  const when = attestedAt(a);
+  box.appendChild(
+    dnsRow(state === 'wait' ? 'Recorded' : 'Signed', when ? formatTime(when) : '(unknown)', {
+      copy: false,
+    })
+  );
+  if (a.tip) box.appendChild(dnsRow('Hash', a.tip));
+  if (a.context) box.appendChild(el('div', 'words', a.context));
+  if (state === 'wait') {
+    box.appendChild(
+      el(
+        'div',
+        'state wait',
+        'Recorded on the node. It appears here once they share it back, or you can import the file they send you.'
+      )
+    );
+  } else if (state === 'bad') {
+    box.appendChild(
+      el('div', 'state bad', `Does not verify: ${a.verification?.status || 'unknown'}`)
+    );
   }
-  renderDnsResult(result.claim?.dnsCheck || { status: result.claim?.domainVerification || 'pending' });
-  await loadClaims();
+  return box;
 }
 
-// ── Attestation: owner side ──────────────────────────────────────────────
-
-function openShareDialog(claim) {
+// Every vouch on a claim, newest first, then your own signature.
+function openVouchesDialog(claim) {
   current = claim;
+  vouchesSummary.replaceChildren(summaryOf(claim.type, claimValue(claim)));
+  const list = [...(claim.attestations || [])].sort((x, y) =>
+    String(attestedAt(y)).localeCompare(String(attestedAt(x)))
+  );
+  const nodes = list.map(renderVouch);
+  const yours = el('div', 'vouch');
+  const head = el('div', 'vouch-head');
+  const source = el('span', 'source');
+  source.appendChild(icon('pen'));
+  source.appendChild(document.createTextNode('You signed the claim'));
+  head.appendChild(source);
+  yours.appendChild(head);
+  yours.appendChild(
+    dnsRow('Wallet', addressOf(claim.signerDid) || '(unknown)', {
+      copy: Boolean(addressOf(claim.signerDid)),
+    })
+  );
+  yours.appendChild(
+    dnsRow('Signed', formatTime(claim.signedAt || claim.createdAt) || '(unknown)', { copy: false })
+  );
+  if (claim.tip) yours.appendChild(dnsRow('Hash', claim.tip));
+  if (claim.nodeUrl) yours.appendChild(dnsRow('Kept at', claim.nodeUrl, { copy: false }));
+  nodes.push(yours);
+  vouchesList.replaceChildren(...nodes);
+  openDialog(vouchesDialog, $('vouches-done'));
+}
+
+// ── Vouching: owner side ─────────────────────────────────────────────────
+
+function openShareView(claim) {
+  current = claim;
+  askTitle.textContent = `Ask someone to vouch for your ${(TYPE_LABELS[claim.type] || claim.type).toLowerCase()}`;
   shareSummary.replaceChildren(summaryOf(claim.type, claimValue(claim), claim.signerDid));
   shareAddress.value = '';
   setError(shareError, '');
-  openDialog(shareDialog, shareAddress);
+  showClaimView('ask');
+  focusOn(shareAddress);
+}
+
+function backToClaim() {
+  showClaimView('detail');
 }
 
 async function shareClaim() {
@@ -757,7 +1614,7 @@ async function shareClaim() {
   const claim = current;
   const address = shareAddress.value.trim();
   if (!address) {
-    setError(shareError, "Enter the attester's wallet address.");
+    setError(shareError, 'Enter their wallet address.');
     return;
   }
   shareBtn.disabled = true;
@@ -767,25 +1624,29 @@ async function shareClaim() {
     setError(shareError, errorText(result, 'The claim could not be shared.'));
     return;
   }
-  closeDialog(shareDialog);
-  showNotice('', 'Shared. Ask the attester to open freedom://identity#attest, attest it there, and send you the attestation.');
+  backToClaim();
+  showNotice(
+    '',
+    'Shared. It is waiting for them under Vouches I give on their Identity page. Once they sign, it shows up here on its own.'
+  );
   await loadClaims();
 }
 
 async function pullAttestations(claim) {
   const result = await window.freedomAPI.aquaPullAttestations(claim.id);
-  if (!result?.success) showNotice('error', errorText(result, 'Attestations could not be fetched.'));
+  if (!result?.success) showNotice('error', errorText(result, 'Could not check for new vouches.'));
   else hideNotice();
   await loadClaims();
 }
 
-function openImportDialog(claim) {
+function openImportView(claim) {
   current = claim;
   importSummary.replaceChildren(summaryOf(claim.type, claimValue(claim), claim.signerDid));
   importText.value = '';
   importFile.value = '';
   setError(importError, '');
-  openDialog(importDialog, importText);
+  showClaimView('import');
+  focusOn(importText);
 }
 
 importFile.addEventListener('change', () => {
@@ -813,12 +1674,12 @@ async function importAttestation() {
     setError(importError, errorText(result, 'The attestation could not be imported.'));
     return;
   }
-  closeDialog(importDialog);
+  backToClaim();
   hideNotice();
   await loadClaims();
 }
 
-// ── Attestation: attester side ───────────────────────────────────────────
+// ── Vouches I give ───────────────────────────────────────────────────────
 
 function sharedValue(entry) {
   const p = entry.payload || {};
@@ -833,92 +1694,288 @@ function sharedValue(entry) {
   );
 }
 
-// When the owner shared the claim, as the service recorded it. Left out
-// when the service did not say, rather than shown as an empty row.
+// When the owner shared the claim, as the node recorded it. Left out when
+// the node did not say, rather than shown as an empty row.
 function sharedOnRow(rows, entry) {
   if (!entry.sharedAt) return;
   techRow(rows, 'Shared on', el('span', null, formatTime(entry.sharedAt)));
 }
 
-// A share the service lists but cannot show: said on its own card, with
-// the reason, instead of vanishing from the list.
-function renderUnreadableShare(entry) {
-  const card = el('div', 'card');
-  card.dataset.contract = entry.contractHash || '';
-  card.appendChild(claimHead('shared', entry.fileName || 'Shared claim', ['Shared with you', '·', 'could not be read']));
-  const body = el('div', 'claim-body');
-  body.appendChild(statusLine('bad', 'x-circle', entry.reason || 'The service could not show this share.'));
-  const tech = el('div', 'tech-rows');
-  techRow(tech, 'Shared by', entry.sender || '');
-  sharedOnRow(tech, entry);
-  techRow(tech, 'Share', entry.contractHash || '');
-  body.appendChild(tech);
-  card.appendChild(body);
-  return card;
+function sharedKey(entry) {
+  if (entry.kind === 'issued') return `issued:${entry.id}`;
+  return entry.tip ? `tip:${entry.tip}` : `contract:${entry.contractHash || entry.fileName || ''}`;
 }
 
-function renderShared(entry) {
-  if (entry.unavailable) return renderUnreadableShare(entry);
-  const card = el('div', 'card');
-  card.dataset.tip = entry.tip;
+function sharedChip(entry) {
+  if (entry.kind === 'issued')
+    return badge(
+      entry.verification?.isValid ? 'attested' : '',
+      entry.verification?.isValid ? 'check-circle' : 'x-circle',
+      entry.verification?.isValid ? 'Vouched by you' : 'Does not verify'
+    );
+  if (entry.unavailable) return badge('invalid', 'x-circle', 'Could not be read');
+  const mine = issuedByClaimTip.get(entry.tip) || [];
+  return mine.length > 0
+    ? badge('attested', 'check-circle', 'Vouched by you')
+    : badge('pending', 'clock', 'Waiting for you');
+}
+
+function renderSharedRow(entry) {
+  const key = sharedKey(entry);
+  const row = el('button', 'card row');
+  row.type = 'button';
+  if (entry.kind === 'issued') row.dataset.id = entry.id;
+  else {
+    row.dataset.tip = entry.tip || '';
+    row.dataset.contract = entry.contractHash || '';
+  }
+  row.dataset.key = key;
+  if (key === selectedSharedKey) row.classList.add('selected');
+  const type =
+    entry.kind === 'issued'
+      ? sharedType(entry.templateName, entry.subjectPayload)
+      : entry.unavailable
+        ? 'shared'
+        : sharedType(entry.templateName, entry.payload);
+  const ic = el('span', 'claim-icon');
+  ic.appendChild(icon(TYPE_ICONS[type] || 'shield'));
+  row.appendChild(ic);
+  const body = el('div', 'row-body');
+  const value =
+    entry.kind === 'issued'
+      ? sharedValue({ payload: entry.subjectPayload || {}, fileName: '' }) ||
+        shortHash(entry.claimTip)
+      : entry.unavailable
+        ? entry.fileName || 'Shared claim'
+        : sharedValue(entry);
+  body.appendChild(el('div', 'row-value', value));
+  const who =
+    entry.kind === 'issued' ? shortDid(entry.subjectDid || '') : shortDid(entry.sender || '');
+  const when =
+    entry.kind === 'issued'
+      ? `vouched ${formatDay(entry.createdAt)}`
+      : entry.sharedAt
+        ? `asked ${formatDay(entry.sharedAt)}`
+        : 'asked you to vouch';
+  body.appendChild(
+    el('div', 'row-sub', `${TYPE_LABELS[type] || 'Shared with you'} · ${who} · ${when}`)
+  );
+  row.appendChild(body);
+  const proof = el('div', 'row-proof');
+  proof.appendChild(sharedChip(entry));
+  row.appendChild(proof);
+  row.addEventListener('click', () => selectShared(key, { pane: true }));
+  return row;
+}
+
+function selectShared(key, { pane = false } = {}) {
+  selectedSharedKey = key;
+  for (const row of sharedEl.querySelectorAll('.row'))
+    row.classList.toggle('selected', row.dataset.key === key);
+  const entry = sharedEntries.find((e) => sharedKey(e) === key);
+  if (entry) renderSharedPanel(entry);
+  if (pane) giveSplit.classList.add('show-pane');
+}
+
+// Copy an issued attestation's tree as text, for an owner on another client.
+function copyIssuedButton(entry) {
+  const copyBtn = button('btn small', 'copy', 'Copy as file');
+  copyBtn.addEventListener('click', async () => {
+    const result = await window.freedomAPI.aquaExportIssued(entry.id);
+    if (!result?.success) {
+      showNotice('error', errorText(result, 'The attestation could not be exported.'));
+      return;
+    }
+    await window.freedomAPI.copyText(result.json);
+    showNotice(
+      '',
+      'Copied. They can import it on their claim, if their Freedom has not picked it up.'
+    );
+  });
+  return copyBtn;
+}
+
+// One attestation this wallet issued: your words, its state, when, the
+// attestation hash, and Copy as file.
+function renderIssuedBlock(entry, { last = false } = {}) {
+  const valid = Boolean(entry.verification?.isValid);
+  const tech = el('div', 'tech-rows');
+  techRow(tech, 'Attestation', entry.tip || '');
+  const actions = el('div', 'actions');
+  actions.appendChild(copyIssuedButton(entry));
+  const extra = el('div');
+  extra.append(tech, actions);
+  return timelineEvent({
+    className: valid ? 'attestation' : 'attestation invalid',
+    tone: valid ? 'tone-accent' : 'tone-danger',
+    iconName: 'pen',
+    who: 'You',
+    verb: 'vouched',
+    when: formatTime(entry.createdAt),
+    words: entry.context,
+    state: valid
+      ? { badge: badge('attested', 'check-circle', 'Signed') }
+      : { kind: 'bad', text: 'Does not verify', badge: badge('', 'x-circle', 'Does not verify') },
+    extra,
+    last,
+  });
+}
+
+function renderSharedPanel(entry) {
+  current = entry;
+  const out = [];
+  out.push(backLink('Asked of you', () => giveSplit.classList.remove('show-pane')));
+  attestView.classList.add('hidden');
+
+  if (entry.kind === 'issued') {
+    const p = entry.subjectPayload || {};
+    const type = sharedType(entry.templateName, p);
+    const valid = Boolean(entry.verification?.isValid);
+    out.push(
+      el(
+        'p',
+        'panel-meta',
+        `${shortDid(entry.subjectDid || '')} · vouched ${formatDay(entry.createdAt)} · no longer shared with you`
+      )
+    );
+    const title = el('h2', 'panel-value');
+    title.appendChild(
+      el('span', null, sharedValue({ payload: p, fileName: '' }) || shortHash(entry.claimTip))
+    );
+    title.appendChild(
+      valid
+        ? badge('attested', 'check-circle', 'Vouched by you')
+        : badge('', 'x-circle', 'Does not verify')
+    );
+    out.push(title);
+    out.push(
+      el(
+        'p',
+        'panel-copy',
+        `A ${(TYPE_LABELS[type] || type).toLowerCase()} claim you vouched for. The owner no longer shares it with this wallet, but your vouch is still your record.`
+      )
+    );
+    out.push(el('h3', 'section-title', 'What you signed'));
+    const timeline = el('div', 'timeline');
+    timeline.appendChild(renderIssuedBlock(entry, { last: true }));
+    out.push(timeline);
+    const rows = el('div', 'tech-rows');
+    techRow(rows, 'Subject', entry.subjectDid || '');
+    techRow(rows, 'Attestation', entry.tip || '');
+    sharedTech.replaceChildren(techDetails(rows));
+    sharedDetail.replaceChildren(...out);
+    return;
+  }
+
+  if (entry.unavailable) {
+    out.push(el('p', 'panel-meta', `${shortDid(entry.sender || '')} · shared with you`));
+    const title = el('h2', 'panel-value');
+    title.appendChild(el('span', null, entry.fileName || 'Shared claim'));
+    title.appendChild(badge('invalid', 'x-circle', 'Could not be read'));
+    out.push(title);
+    out.push(statusLine('bad', 'x-circle', entry.reason || 'The node could not show this share.'));
+    const rows = el('div', 'tech-rows');
+    techRow(rows, 'Shared by', entry.sender || '');
+    sharedOnRow(rows, entry);
+    techRow(rows, 'Share', entry.contractHash || '');
+    sharedTech.replaceChildren(techDetails(rows));
+    sharedDetail.replaceChildren(...out);
+    return;
+  }
+
   const type = sharedType(entry.templateName, entry.payload);
   const mine = issuedByClaimTip.get(entry.tip) || [];
-  card.appendChild(
-    claimHead(type, sharedValue(entry), [TYPE_LABELS[type], '·', 'shared with you'], mine.length > 0 ? badge('attested', 'check-circle', 'Attested by you') : null)
+  const who = shortDid(entry.sender || '');
+  out.push(
+    el(
+      'p',
+      'panel-meta',
+      `${who} · ${entry.sharedAt ? `asked ${formatTime(entry.sharedAt)}` : 'asked you to vouch'}`
+    )
   );
-  const body = el('div', 'claim-body');
+  const title = el('h2', 'panel-value');
+  title.appendChild(el('span', null, sharedValue(entry)));
+  title.appendChild(
+    mine.length > 0
+      ? badge('attested', 'check-circle', 'Vouched by you')
+      : badge('pending', 'clock', 'Waiting for you')
+  );
+  out.push(title);
+  const box = el('div', 'preview');
+  box.appendChild(el('p', 'meta', 'Their claim'));
+  box.appendChild(
+    el('div', 'preview-value', `${TYPE_LABELS[type] || type}: ${sharedValue(entry)}`)
+  );
+  box.appendChild(
+    el('p', 'meta', `Signed by ${entry.payload?.signer_did || entry.sender || '(unknown)'}`)
+  );
+  out.push(box);
   if (mine.length > 0) {
-    body.appendChild(
-      statusLine('ok', 'check-circle', `You attested this ${formatTime(mine[mine.length - 1].createdAt)}. The owner's Freedom picks it up from the identity service.`)
+    out.push(
+      statusLine(
+        'ok',
+        'check-circle',
+        `You vouched for this on ${formatDay(mine[mine.length - 1].createdAt)}. Their Freedom picks it up from the node.`
+      )
     );
-    body.appendChild(el('div', 'att-title', mine.length === 1 ? 'Your attestation' : 'Your attestations'));
-    for (const issued of mine) body.appendChild(renderIssuedBlock(issued));
+    out.push(
+      el(
+        'h3',
+        'section-title',
+        mine.length === 1 ? 'What you signed' : 'What you signed, each time'
+      )
+    );
+    const timeline = el('div', 'timeline');
+    mine.forEach((issued, i) =>
+      timeline.appendChild(renderIssuedBlock(issued, { last: i === mine.length - 1 }))
+    );
+    out.push(timeline);
+  } else {
+    out.push(
+      statusLine(
+        'quiet',
+        'users',
+        `${who} shared this with your wallet so you can confirm it is true. Vouch only for what you know.`
+      )
+    );
+    attestWords.value = '';
+    setError(attestError, '');
+    attestView.classList.remove('hidden');
   }
-  const tech = el('div', 'tech-rows');
-  techRow(tech, 'Subject', (entry.payload && entry.payload.signer_did) || '');
-  techRow(tech, 'Shared by', entry.sender || '');
-  sharedOnRow(tech, entry);
-  techRow(tech, 'Revision', entry.tip || '');
-  body.appendChild(tech);
-  card.appendChild(body);
-  if (mine.length > 0) return card;
-  const actions = el('div', 'actions');
-  actions.appendChild(el('span', 'spacer'));
-  const attest = button('btn small primary', 'shield', 'Attest');
-  attest.addEventListener('click', () => openAttestDialog(entry));
-  actions.appendChild(attest);
-  card.appendChild(actions);
-  return card;
-}
-
-function openAttestDialog(entry) {
-  current = entry;
-  const type = sharedType(entry.templateName, entry.payload);
-  attestSummary.replaceChildren(summaryOf(type, sharedValue(entry), (entry.payload && entry.payload.signer_did) || entry.sender || ''));
-  attestWords.value = '';
-  setError(attestError, '');
-  openDialog(attestDialog, attestWords);
+  const rows = el('div', 'tech-rows');
+  techRow(rows, 'Subject', (entry.payload && entry.payload.signer_did) || '');
+  techRow(rows, 'Shared by', entry.sender || '');
+  sharedOnRow(rows, entry);
+  techRow(rows, 'Revision', entry.tip || '');
+  sharedTech.replaceChildren(techDetails(rows));
+  sharedDetail.replaceChildren(...out);
 }
 
 async function attestShared() {
-  if (!current) return;
+  if (!current || current.kind === 'issued' || current.unavailable) return;
   const entry = current;
   const context = attestWords.value.trim();
   if (!context) {
-    setError(attestError, 'Say in your own words what you are vouching for.');
+    setError(attestError, 'Say in your own words how you know this is true.');
     return;
   }
   attestBtn.disabled = true;
   setLabel(attestBtn, 'clock', 'Waiting for your signature…');
-  const result = await window.freedomAPI.aquaAttestShared({ contractHash: entry.contractHash, tip: entry.tip, context });
+  const result = await window.freedomAPI.aquaAttestShared({
+    contractHash: entry.contractHash,
+    tip: entry.tip,
+    context,
+  });
   attestBtn.disabled = false;
-  setLabel(attestBtn, 'pen', 'Attest with my wallet');
+  setLabel(attestBtn, 'pen', 'Sign and vouch');
   if (!result?.success) {
-    setError(attestError, errorText(result, 'The attestation could not be made.'));
+    setError(attestError, errorText(result, 'The vouch could not be made.'));
     return;
   }
-  closeDialog(attestDialog);
-  showNotice('', "Attested. The owner's Freedom picks it up from the identity service; copy it as JSON below if they need it another way.");
+  showNotice(
+    '',
+    'Done. Their Freedom picks it up from the node; if they need it another way, copy it as a file from here.'
+  );
   await loadIssued();
   await loadShared();
 }
@@ -926,16 +1983,25 @@ async function attestShared() {
 async function loadShared() {
   if (!activeAddress) {
     sharedEl.replaceChildren();
+    sharedDetail.replaceChildren();
+    sharedTech.replaceChildren();
     return;
   }
   const result = await window.freedomAPI.aquaListShared();
   if (!result?.success) {
+    sharedEntries = [];
     sharedEl.replaceChildren();
-    if (!isLocked(result)) sharedEl.appendChild(el('div', 'meta', errorText(result, 'Shared claims could not be loaded.')));
+    sharedDetail.replaceChildren();
+    sharedTech.replaceChildren();
+    attestView.classList.add('hidden');
+    if (!isLocked(result))
+      sharedDetail.appendChild(
+        el('div', 'meta', errorText(result, 'Shared claims could not be loaded.'))
+      );
     return;
   }
-  // One card per claim: the same revision shared twice is one thing to
-  // attest, shown with its latest share. Unreadable shares stay as they are.
+  // One row per claim: the same revision shared twice is one thing to
+  // vouch for, shown with its latest share. Unreadable shares stay as they are.
   const byTip = new Map();
   const entries = [];
   for (const entry of result.shared || []) {
@@ -952,101 +2018,52 @@ async function loadShared() {
       byTip.set(entry.tip, entry);
     }
   }
-  const cards = entries.map(renderShared);
+  // The ones still waiting for you first.
+  entries.sort((a, b) => {
+    const wa = !a.unavailable && a.tip && !issuedByClaimTip.has(a.tip) ? 0 : 1;
+    const wb = !b.unavailable && b.tip && !issuedByClaimTip.has(b.tip) ? 0 : 1;
+    return wa - wb;
+  });
   // An attestation issued for a claim no longer shared with this wallet is
-  // still this wallet's record: its own card, after the shares.
-  for (const issued of issuedAll) if (!issued.claimTip || !byTip.has(issued.claimTip)) cards.push(renderIssued(issued));
-  sharedCount.textContent = String(cards.length);
-  if (cards.length === 0) {
-    sharedEl.replaceChildren(emptyState('inbox', 'Nothing has been shared with this wallet'));
+  // still this wallet's record: its own row, after the shares.
+  for (const issued of issuedAll)
+    if (!issued.claimTip || !byTip.has(issued.claimTip))
+      entries.push({ ...issued, kind: 'issued' });
+  sharedEntries = entries;
+  const waiting = entries.filter(
+    (e) => e.kind !== 'issued' && !e.unavailable && e.tip && !issuedByClaimTip.has(e.tip)
+  ).length;
+  setCount(sharedCount, waiting);
+  sharedLine.textContent =
+    entries.length === 0 ? 'Nothing waiting' : `${waiting} waiting · newest first`;
+  if (entries.length === 0) {
+    sharedEl.replaceChildren();
+    attestView.classList.add('hidden');
+    sharedTech.replaceChildren();
+    sharedDetail.replaceChildren(
+      emptyState(
+        'inbox',
+        'Nobody has asked you to vouch yet',
+        'When someone shares a claim with your wallet address, it appears here with a Vouch button.'
+      )
+    );
     return;
   }
-  sharedEl.replaceChildren(...cards);
+  if (!entries.some((e) => sharedKey(e) === selectedSharedKey))
+    selectedSharedKey = sharedKey(entries[0]);
+  sharedEl.replaceChildren(...entries.map(renderSharedRow));
+  selectShared(selectedSharedKey);
 }
 
-// Copy an issued attestation's tree as text, for an owner on another client.
-function copyIssuedButton(entry) {
-  const copyBtn = button('btn small', 'copy', 'Copy JSON');
-  copyBtn.addEventListener('click', async () => {
-    const result = await window.freedomAPI.aquaExportIssued(entry.id);
-    if (!result?.success) {
-      showNotice('error', errorText(result, 'The attestation could not be exported.'));
-      return;
-    }
-    await window.freedomAPI.copyText(result.json);
-    showNotice('', "Copied. The owner can import it under the claim if their Freedom has not picked it up.");
-  });
-  return copyBtn;
-}
-
-// One attestation this wallet issued, on the shared claim's card: the words,
-// its state, when, the attestation hash, and Copy JSON.
-function renderIssuedBlock(entry) {
-  const valid = Boolean(entry.verification?.isValid);
-  const box = el('div', valid ? 'attestation' : 'attestation invalid');
-  const source = el('span', 'source');
-  source.appendChild(icon('pen'));
-  source.appendChild(document.createTextNode('You'));
-  box.appendChild(source);
-  box.appendChild(el('span', 'who', formatTime(entry.createdAt)));
-  box.appendChild(valid ? badge('attested', 'check-circle', 'Signed') : badge('', 'x-circle', 'Not verified'));
-  if (entry.context) {
-    const words = el('div', 'words', entry.context);
-    words.title = 'Show more';
-    words.addEventListener('click', () => {
-      const open = words.classList.toggle('expanded');
-      words.title = open ? 'Show less' : 'Show more';
-    });
-    box.appendChild(words);
-  }
-  const tech = el('div', 'tech-rows');
-  techRow(tech, 'Attestation', entry.tip || '');
-  box.appendChild(tech);
-  const actions = el('div', 'actions');
-  actions.appendChild(el('span', 'spacer'));
-  actions.appendChild(copyIssuedButton(entry));
-  box.appendChild(actions);
-  return box;
-}
-
-// An attestation this wallet issued for a claim that is no longer shared
-// with it: still this wallet's record, on a card of its own.
-function renderIssued(entry) {
-  const card = el('div', 'card');
-  card.dataset.id = entry.id;
-  const p = entry.subjectPayload || {};
-  const type = sharedType(entry.templateName, p);
-  const valid = Boolean(entry.verification?.isValid);
-  card.appendChild(
-    claimHead(
-      type,
-      sharedValue({ payload: p, fileName: '' }) || shortHash(entry.claimTip),
-      [TYPE_LABELS[type], '·', `attested ${formatTime(entry.createdAt)}`, '·', 'no longer shared with you'],
-      valid ? badge('attested', 'check-circle', 'Attested by you') : badge('', 'x-circle', 'Not verified')
-    )
-  );
-  const body = el('div', 'claim-body');
-  if (entry.context) body.appendChild(statusLine('', 'pen', entry.context));
-  const tech = el('div', 'tech-rows');
-  techRow(tech, 'Subject', entry.subjectDid || '');
-  techRow(tech, 'Attestation', entry.tip || '');
-  body.appendChild(tech);
-  card.appendChild(body);
-  const actions = el('div', 'actions');
-  actions.appendChild(el('span', 'spacer'));
-  actions.appendChild(copyIssuedButton(entry));
-  card.appendChild(actions);
-  return card;
-}
-
-// The attestations this wallet issued, kept for the shared cards to show;
+// The attestations this wallet issued, kept for the shared rows to show;
 // loadShared draws them.
 async function loadIssued() {
   const result = await window.freedomAPI.aquaListIssued();
   issuedByClaimTip = new Map();
   issuedAll = [];
   if (!result?.success) {
-    if (!isLocked(result)) showNotice('error', errorText(result, 'Issued attestations could not be loaded.'));
+    if (!isLocked(result))
+      showNotice('error', errorText(result, 'Issued attestations could not be loaded.'));
     return;
   }
   issuedAll = result.issued || [];
@@ -1057,22 +2074,15 @@ async function loadIssued() {
   }
 }
 
-// ── Disclosure: a request pasted by the user ─────────────────────────────
+// ── Requests: what they ask, and exactly what leaves ─────────────────────
 
-function resetRequestDialog() {
+function resetRequest() {
   requestInput.value = '';
   requestStatus.textContent = '';
   responseOutput.value = '';
   responseBox.classList.add('hidden');
-  responseCopy.classList.add('hidden');
-  $('request-box').classList.remove('hidden');
-  requestBtn.classList.remove('hidden');
-  requestCancel.textContent = 'Cancel';
-}
-
-function openRequestDialog() {
-  resetRequestDialog();
-  openDialog(requestDialog, requestInput);
+  requestAside.classList.remove('hidden');
+  requestInput.disabled = false;
 }
 
 async function reviewRequest() {
@@ -1082,7 +2092,7 @@ async function reviewRequest() {
     return;
   }
   requestBtn.disabled = true;
-  requestStatus.textContent = 'Decide in the sidebar…';
+  requestStatus.textContent = 'Decide in the sidebar what to release…';
   responseBox.classList.add('hidden');
   try {
     const result = await window.freedomAPI.aquaRespondToRequest(text);
@@ -1091,22 +2101,22 @@ async function reviewRequest() {
       return;
     }
     responseOutput.value = JSON.stringify(result.response, null, 2);
-    $('request-box').classList.add('hidden');
     responseBox.classList.remove('hidden');
-    responseCopy.classList.remove('hidden');
-    requestBtn.classList.add('hidden');
-    requestCancel.textContent = 'Close';
+    requestAside.classList.add('hidden');
     const count = (result.response.claims || []).length;
-    requestStatus.textContent = count === 0 ? 'No claims shared' : `${count} claim${count === 1 ? '' : 's'} shared. Send the response to whoever asked.`;
+    requestStatus.textContent =
+      count === 0
+        ? 'Signed. No claims are released.'
+        : `Signed. ${count} claim${count === 1 ? '' : 's'} released. Send the answer to whoever asked.`;
   } finally {
     requestBtn.disabled = false;
   }
 }
 
-// ── Left nav: one panel at a time, addressed by hash (freedom://identity#attest) ──
+// ── Tabs: one panel at a time, addressed by hash (freedom://identity#attest) ──
 
 const NAV_TARGETS = ['claims', 'attest', 'requests'];
-// The Issued list used to be its own panel; its links land on Attest others.
+// The Issued list used to be its own panel; its links land on Vouches I give.
 const PANEL_ALIASES = { issued: 'attest' };
 
 // The hash names a panel, never an element: no element carries one of
@@ -1125,7 +2135,8 @@ function showPanel(target) {
 }
 
 function routeFromHash() {
-  const hash = typeof window.location?.hash === 'string' ? window.location.hash.replace(/^#/, '') : '';
+  const hash =
+    typeof window.location?.hash === 'string' ? window.location.hash.replace(/^#/, '') : '';
   showPanel(hash);
 }
 
@@ -1135,7 +2146,8 @@ for (const t of NAV_TARGETS) {
     if (window.location && typeof window.location.hash === 'string') window.location.hash = t;
   });
 }
-if (typeof window.addEventListener === 'function') window.addEventListener('hashchange', routeFromHash);
+if (typeof window.addEventListener === 'function')
+  window.addEventListener('hashchange', routeFromHash);
 routeFromHash();
 
 async function unlockWallet() {
@@ -1150,7 +2162,7 @@ async function unlockWallet() {
   await loadStatus();
   // The unlock came from this page, so the sign-in message follows at once:
   // password, then signature, and only then the claims.
-  if (!signedIn && !signinCard.classList.contains('hidden')) {
+  if (!signedIn && signinCard.classList.contains('current')) {
     await signIn();
     return;
   }
@@ -1166,8 +2178,18 @@ serviceRetryBtn.addEventListener('click', () => {
       serviceRetryBtn.disabled = false;
     });
 });
-serviceSettingsBtn.addEventListener('click', () => {
+const openSettings = () => {
+  if (nodeMenu) nodeMenu.open = false;
   window.freedomAPI.openInNewTab?.(SETTINGS_IDENTITY_URL);
+};
+serviceSettingsBtn.addEventListener('click', openSettings);
+nodeSettingsBtn.addEventListener('click', openSettings);
+copyAddressBtn.addEventListener('click', async () => {
+  const address = statusWallet.title || statusWallet.textContent;
+  if (!address || address === 'none') return;
+  await window.freedomAPI.copyText(address);
+  setLabel(copyAddressBtn, 'check', '');
+  setTimeout(() => setLabel(copyAddressBtn, 'copy', ''), 1500);
 });
 
 // An unlock made elsewhere (the sidebar's own prompts, a signing flow) is
@@ -1191,7 +2213,7 @@ function watchLock(locked) {
   }
 }
 
-// ── Add a claim ──────────────────────────────────────────────────────────
+// ── Add a claim: the composer in place of the list ───────────────────────
 
 function selectedType() {
   return selectedKind;
@@ -1200,8 +2222,66 @@ function selectedType() {
 function selectKind(kind) {
   if (!fieldGroups[kind] || kindButtons[kind].disabled) return;
   selectedKind = kind;
-  for (const [key, btn] of Object.entries(kindButtons)) btn.setAttribute('aria-pressed', key === kind ? 'true' : 'false');
+  for (const [key, btn] of Object.entries(kindButtons))
+    btn.setAttribute('aria-pressed', key === kind ? 'true' : 'false');
   syncTypeFields();
+}
+
+function previewText() {
+  switch (selectedType()) {
+    case 'name':
+      return [inputs.givenName.value, inputs.middleName.value, inputs.familyName.value]
+        .map((v) => String(v || '').trim())
+        .filter(Boolean)
+        .join(' ');
+    case 'email':
+      return String(inputs.email.value || '').trim();
+    case 'phone':
+      return String(inputs.phone.value || '').trim();
+    case 'domain':
+      return String(inputs.domain.value || '').trim();
+    default:
+      return '';
+  }
+}
+
+// How it will look to a site: the value as typed, and an empty meter.
+function syncPreview() {
+  const type = selectedType();
+  previewValue.textContent = previewText() || '—';
+  const service =
+    type === 'name' ? 'na' : type === 'domain' ? 'pending' : verification.token ? 'yes' : 'no';
+  previewProof.replaceChildren(
+    ...proofSmall({ service, people: 0, broken: null }, nodeName(serviceUrl)).childNodes
+  );
+}
+
+// The three steps of the one-time code: send, enter, sign.
+function syncOtpSteps() {
+  const sent = Boolean(verification.target);
+  const verified = Boolean(verification.token);
+  const set = (row, state, note, noteNode) => {
+    row.classList.toggle('done', state === 'done');
+    row.classList.toggle('current', state === 'current');
+    const markNode = row.querySelector('.step-mark');
+    if (markNode && state === 'done') markNode.replaceChildren(icon('check'));
+    else if (markNode)
+      markNode.textContent = row === otpStepSend ? '1' : row === otpStepEnter ? '2' : '3';
+    if (noteNode) noteNode.textContent = note || '';
+  };
+  set(
+    otpStepSend,
+    sent ? 'done' : 'current',
+    sent ? `Sent to ${verification.target}` : '',
+    otpSendNote
+  );
+  set(
+    otpStepEnter,
+    verified ? 'done' : sent ? 'current' : 'waiting',
+    verified ? `${nodeName(serviceUrl) || 'The node'} checked it` : '',
+    otpEnterNote
+  );
+  set(otpStepSign, verified ? 'current' : 'waiting');
 }
 
 function syncTypeFields() {
@@ -1210,6 +2290,10 @@ function syncTypeFields() {
     group.classList.toggle('hidden', key !== type);
   }
   codeSection.classList.toggle('hidden', !OTP_TYPES.has(type));
+  addClaimTitle.textContent = KIND_COPY[type].title;
+  kindHelp.textContent = KIND_COPY[type].help;
+  if (KIND_COPY[type].sendHelp) codeHelp.textContent = KIND_COPY[type].sendHelp;
+  setLabel(createBtn, 'pen', type === 'domain' ? 'Sign and show the DNS record' : 'Sign and add');
   resetVerification();
   setFormError('');
 }
@@ -1219,6 +2303,8 @@ function resetVerification() {
   inputs.code.value = '';
   codeStatus.textContent = '';
   verifyCodeBtn.disabled = true;
+  syncOtpSteps();
+  syncPreview();
 }
 
 function otpTarget() {
@@ -1230,7 +2316,9 @@ async function sendCode() {
   const type = selectedType();
   const target = otpTarget();
   if (!target) {
-    setFormError(type === 'email' ? 'Enter the email address first.' : 'Enter the phone number first.');
+    setFormError(
+      type === 'email' ? 'Enter the email address first.' : 'Enter the phone number first.'
+    );
     return;
   }
   setFormError('');
@@ -1242,7 +2330,9 @@ async function sendCode() {
       return;
     }
     verification = { target: result.target || target, token: null };
-    codeStatus.textContent = `Code sent to ${verification.target}. Enter it and press Verify code.`;
+    codeStatus.textContent = `Code sent to ${verification.target}. Type it here and press Verify code.`;
+    syncOtpSteps();
+    focusOn(inputs.code);
   } finally {
     setBusy(false);
   }
@@ -1264,7 +2354,9 @@ async function verifyCode() {
       return;
     }
     verification.token = result.verificationToken;
-    codeStatus.textContent = `${verification.target} verified. Press Create and sign.`;
+    codeStatus.textContent = `${verification.target} verified. Press Sign and add to finish.`;
+    syncOtpSteps();
+    syncPreview();
   } finally {
     setBusy(false);
   }
@@ -1280,9 +2372,15 @@ function collectFields() {
         nickname: inputs.nickname.value,
       };
     case 'email':
-      return { email: verification.target || inputs.email.value, verification_token: verification.token };
+      return {
+        email: verification.target || inputs.email.value,
+        verification_token: verification.token,
+      };
     case 'phone':
-      return { phone_number: verification.target || inputs.phone.value, verification_token: verification.token };
+      return {
+        phone_number: verification.target || inputs.phone.value,
+        verification_token: verification.token,
+      };
     case 'domain':
       return { domain: inputs.domain.value };
     default:
@@ -1295,11 +2393,13 @@ async function createClaim() {
   const type = selectedType();
   if (OTP_TYPES.has(type)) {
     if (!verification.token) {
-      setFormError('Verify the code the service sent before creating this claim.');
+      setFormError('Verify the code the node sent before saving this claim.');
       return;
     }
     if (otpTarget() !== verification.target) {
-      setFormError(`The code was verified for ${verification.target}. Send a new code for the changed value.`);
+      setFormError(
+        `The code was verified for ${verification.target}. Send a new code for the changed value.`
+      );
       return;
     }
   }
@@ -1312,11 +2412,12 @@ async function createClaim() {
       setFormError(errorText(result, 'The claim could not be created.'));
       return;
     }
-    closeDialog(addClaimDialog);
+    if (result.claim?.id) selectedClaimId = result.claim.id;
+    closeComposer();
     hideNotice();
     await loadClaims();
   } finally {
-    setLabel(createBtn, 'pen', 'Create and sign');
+    setLabel(createBtn, 'pen', type === 'domain' ? 'Sign and show the DNS record' : 'Sign and add');
     setBusy(false);
   }
 }
@@ -1326,10 +2427,19 @@ function resetForm() {
   syncTypeFields();
 }
 
-function openAddClaim() {
+// Open the composer on a kind: the slot's own, or the last one used.
+function openAddClaim(kind) {
   resetForm();
-  selectKind(selectedKind);
-  openDialog(addClaimDialog, inputs[selectedKind === 'name' ? 'givenName' : selectedKind]);
+  selectKind(typeof kind === 'string' && fieldGroups[kind] ? kind : selectedKind);
+  composer.classList.remove('hidden');
+  meSplit.classList.add('hidden');
+  focusOn(inputs[selectedKind === 'name' ? 'givenName' : selectedKind]);
+}
+
+function closeComposer() {
+  composer.classList.add('hidden');
+  meSplit.classList.remove('hidden');
+  resetForm();
 }
 
 // Enter in a field submits the form; the work hangs off the button so the
@@ -1339,35 +2449,40 @@ function onSubmit(event) {
   createClaim();
 }
 
-for (const [kind, btn] of Object.entries(kindButtons)) btn.addEventListener('click', () => selectKind(kind));
+for (const [kind, btn] of Object.entries(kindButtons))
+  btn.addEventListener('click', () => selectKind(kind));
 inputs.email.addEventListener('input', resetVerification);
 inputs.phone.addEventListener('input', resetVerification);
+for (const key of ['givenName', 'familyName', 'middleName', 'domain'])
+  inputs[key].addEventListener('input', syncPreview);
 sendCodeBtn.addEventListener('click', sendCode);
 verifyCodeBtn.addEventListener('click', verifyCode);
 form.addEventListener('submit', onSubmit);
 createBtn.addEventListener('click', createClaim);
-addClaimBtn.addEventListener('click', openAddClaim);
+addClaimBtn.addEventListener('click', () => openAddClaim());
+startNameBtn.addEventListener('click', () => openAddClaim('name'));
+cancelBtn.addEventListener('click', closeComposer);
+cancelComposeBtn.addEventListener('click', closeComposer);
 
-wireDialog(addClaimDialog, ['cancel-btn', 'add-claim-close'], resetForm);
-wireDialog(shareDialog, ['share-cancel', 'share-close']);
-wireDialog(importDialog, ['import-cancel', 'import-close']);
-wireDialog(attestDialog, ['attest-cancel', 'attest-close']);
-wireDialog(dnsDialog, ['dns-cancel', 'dns-close']);
 wireDialog(removeDialog, ['remove-cancel', 'remove-close']);
-wireDialog(requestDialog, ['request-cancel', 'request-close'], resetRequestDialog);
+wireDialog(vouchesDialog, ['vouches-done', 'vouches-close']);
+vouchesRemoveBtn.addEventListener('click', () => {
+  if (current) openRemoveDialog(current);
+});
 
 shareBtn.addEventListener('click', shareClaim);
+$('share-cancel').addEventListener('click', backToClaim);
+$('share-cancel-btn').addEventListener('click', backToClaim);
 importBtn.addEventListener('click', importAttestation);
+$('import-cancel').addEventListener('click', backToClaim);
+$('import-cancel-btn').addEventListener('click', backToClaim);
 attestBtn.addEventListener('click', attestShared);
 removeBtn.addEventListener('click', removeClaim);
-dnsCheckBtn.addEventListener('click', () => {
-  if (current && current.type === 'domain') verifyDns(current);
-});
-requestOpenBtn.addEventListener('click', openRequestDialog);
 requestBtn.addEventListener('click', reviewRequest);
+requestCancel.addEventListener('click', resetRequest);
 responseCopy.addEventListener('click', async () => {
   await window.freedomAPI.copyText(responseOutput.value);
-  requestStatus.textContent = 'Response copied.';
+  requestStatus.textContent = 'Answer copied.';
 });
 
 if (typeof window.freedomAPI.onAquaClaimsChanged === 'function') {
@@ -1376,5 +2491,8 @@ if (typeof window.freedomAPI.onAquaClaimsChanged === 'function') {
   });
 }
 
-syncTypeFields();
+// The views start closed whatever the markup says, so the script is the
+// one place that decides what shows.
+closeComposer();
+resetRequest();
 loadStatus().then(() => loadAll({ pull: true }));

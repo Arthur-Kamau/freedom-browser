@@ -1,0 +1,24 @@
+<fbx-frame tab="me" node="local" address="0x254b0d7b91c2a4f3e81d0c6b7a5e9f2d318a8a1f">
+  <div class="mb-6 flex flex-col gap-3 rounded-lg border border-border bg-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+    <div class="flex gap-3">
+      <aq-icon name="server" class="mt-0.5 size-5 text-muted-foreground"></aq-icon>
+      <div>
+        <p class="text-sm font-medium text-foreground">You switched to Local node <span class="font-mono text-xs font-normal text-muted-foreground">localhost:3100</span></p>
+        <p class="text-sm text-muted-foreground">These are the claims kept on this node. Your 3 claims on dev.aquafire are still there; switch back any time. This node can check domains only.</p>
+      </div>
+    </div>
+    <fbx-btn size="sm" label="Copy claims here" icon="copy" href="/fbx-node-copy"></fbx-btn>
+  </div>
+  <fbx-me-split selected="name" set="local">
+    <fbx-claim-head kind="name" value="Alice Mwangi" signed="1 Nov 2026" service="na" node="Local node" people="0" back="/fbx-me-list"></fbx-claim-head>
+    <p class="mt-4 max-w-prose text-sm leading-relaxed text-muted-foreground">The vouches from Kenn and Bob are on your dev.aquafire copy of this name, not on this one. Copy the claim over to bring them, or ask again here.</p>
+    <div class="mt-5 flex flex-wrap gap-2">
+      <fbx-btn variant="primary" label="Copy from dev.aquafire" icon="copy" href="/fbx-node-copy"></fbx-btn>
+      <fbx-btn label="Ask someone to vouch" icon="users" href="/fbx-ask"></fbx-btn>
+    </div>
+    <div class="mt-8 border-t border-border pt-5">
+      <h3 class="text-sm font-semibold text-foreground">Evidence, newest first</h3>
+      <div class="mt-4"><fbx-event tone="signed" who="You" address="0x254b…8a1f" when="1 Nov 2026, 09:10" last></fbx-event></div>
+    </div>
+  </fbx-me-split>
+</fbx-frame>

@@ -11,6 +11,8 @@ module.exports = [
       'node_modules/**',
       'src/renderer/vendor/**',
       'src/main/aqua/vendor/**',
+      // Design-surface exports kept as reference, not shipped code.
+      'docs/design/**',
       'ant-bin/**',
       'ipfs-bin/**',
       'ant-data/**',
