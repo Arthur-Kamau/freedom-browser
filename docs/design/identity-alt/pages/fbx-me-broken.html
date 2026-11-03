@@ -1,0 +1,23 @@
+<fbx-frame tab="me" give="1" address="0x254b0d7b91c2a4f3e81d0c6b7a5e9f2d318a8a1f">
+  <fbx-me-split selected="email" set="broken">
+    <fbx-claim-head kind="email" value="alice@inblock.io" signed="29 Oct 2026" broken="dev.aquafire’s check was signed for a different version of this claim, so anyone you share it with will see it fail. Nothing was shared since it broke." back="/fbx-me-list"></fbx-claim-head>
+    <h3 class="mt-6 text-sm font-semibold text-foreground">What failed</h3>
+    <ul class="mt-2 grid gap-1.5 text-sm">
+      <li class="flex gap-2"><aq-icon name="circle-check" class="mt-0.5 size-4 text-success"></aq-icon>Your signature on the claim</li>
+      <li class="flex gap-2"><aq-icon name="circle-x" class="mt-0.5 size-4 text-destructive"></aq-icon>The node’s check: signed for claim <span class="font-mono text-xs">0x3b7e…e8a9</span>, this claim is <span class="font-mono text-xs">0x41d0…9c2f</span></li>
+    </ul>
+    <p class="mt-4 max-w-prose text-sm leading-relaxed text-muted-foreground">Checking the address again replaces the broken check. If you didn’t change this claim, remove it and tell the node’s operator.</p>
+    <div class="mt-5 flex flex-wrap gap-2">
+      <fbx-btn variant="primary" label="Check the address again" icon="refresh" href="/fbx-add-email"></fbx-btn>
+      <fbx-btn variant="danger-outline" label="Remove…" icon="trash" href="/fbx-remove"></fbx-btn>
+    </div>
+    <div class="mt-8 border-t border-border pt-5">
+      <h3 class="text-sm font-semibold text-foreground">Evidence, newest first</h3>
+      <div class="mt-4">
+        <fbx-event tone="failed" who="dev.aquafire’s check" when="found 3 Nov 2026, 09:55"></fbx-event>
+        <fbx-event tone="service" who="dev.aquafire" address="dev.aquafire.inblock.io" when="29 Oct 2026, 09:41" words="The inbox answered the one-time code."></fbx-event>
+        <fbx-event tone="signed" who="You" address="0x254b…8a1f" when="29 Oct 2026, 09:38" last></fbx-event>
+      </div>
+    </div>
+  </fbx-me-split>
+</fbx-frame>

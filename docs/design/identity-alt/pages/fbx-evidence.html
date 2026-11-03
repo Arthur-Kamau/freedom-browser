@@ -1,0 +1,35 @@
+<fbx-frame tab="me" give="1" address="0x254b0d7b91c2a4f3e81d0c6b7a5e9f2d318a8a1f">
+  <div class="mx-auto max-w-3xl">
+    <a href="/fbx-me" class="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><aq-icon name="arrow-left" class="size-3.5"></aq-icon>All claims</a>
+    <div class="mt-4">
+      <fbx-claim-head kind="name" value="Alice Mwangi" signed="28 Oct 2026" service="na" people="2"></fbx-claim-head>
+    </div>
+
+    <h3 class="mt-10 text-sm font-semibold text-foreground">Every piece of evidence, newest first</h3>
+    <p class="mt-1 text-sm text-muted-foreground">Each one is signed by the wallet shown. Anyone you share this claim with can check every signature themselves.</p>
+    <div class="mt-5">
+      <fbx-event tone="person" who="Kenn Wafula" address="0x71c04f9a2e8b6d3c5a1f7e9d0b4c8a2e6f3d1b5c" when="2 Nov 2026, 18:05" words="Met in person, Nairobi." hash="Vouch 0xa71e3c95f2d0b48e6c1a9f7d3b5e0c2a8f4d6b1e9c3a7f5d0b2e4c6a8f1d3b5e"></fbx-event>
+      <fbx-event tone="person" who="Bob Otieno" address="0x9a3fe2c1b7d4a8f0c6e5d2b1a9c8f7e6d5c4b3a2" when="1 Nov 2026, 10:12" words="I have known Alice by this name since 2019. We worked together at inblock." hash="Vouch 0x5c0e8a2f6d4b1e9c7a3f5d0b2e8c6a4f1d9b7e3c5a0f2d8b6e4c1a9f7d3b5e0c"></fbx-event>
+      <fbx-event tone="signed" who="You" address="0x254b0d7b91c2a4f3e81d0c6b7a5e9f2d318a8a1f" when="28 Oct 2026, 14:02" hash="Claim 0x8f2c4e91d7a3b06c5f2e18d9a4c7b3e6f1d0a9c8b7e6f5d4c3b2a1908f7e6d5c" last></fbx-event>
+    </div>
+
+    <div class="mt-8 rounded-lg border border-border">
+      <ui-accordion title="Technical details">
+        <dl class="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+          <dt class="text-muted-foreground">Signer</dt><dd class="break-all font-mono text-xs">did:pkh:eip155:1:0x254b0d7b91c2a4f3e81d0c6b7a5e9f2d318a8a1f</dd>
+          <dt class="text-muted-foreground">Claim hash</dt><dd class="break-all font-mono text-xs">0x8f2c4e91d7a3b06c5f2e18d9a4c7b3e6f1d0a9c8b7e6f5d4c3b2a1908f7e6d5c</dd>
+          <dt class="text-muted-foreground">Kept at</dt><dd class="font-mono text-xs">dev.aquafire.inblock.io</dd>
+          <dt class="text-muted-foreground">Checks</dt><dd class="text-xs">7 of 7 signatures and links verify</dd>
+        </dl>
+      </ui-accordion>
+    </div>
+
+    <div class="mt-10 flex flex-col gap-3 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <p class="text-sm font-semibold text-foreground">Remove this claim</p>
+        <p class="text-sm text-muted-foreground">The claim and both vouches go. Vouches do not come back if you add it again.</p>
+      </div>
+      <fbx-btn variant="danger-outline" label="Remove…" icon="trash" href="/fbx-remove"></fbx-btn>
+    </div>
+  </div>
+</fbx-frame>

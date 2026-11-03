@@ -95,8 +95,8 @@ function renderEntry(entry) {
     box.checked = entry.required;
     body.appendChild(el('div', 'aqua-disclose-value', valueOf(entry.summary)));
     const status = entry.summary.attested > 0
-      ? `Attested by ${entry.summary.attested}`
-      : 'Self-signed, not attested';
+      ? `Verified by ${entry.summary.attested}`
+      : 'Not yet verified: only your signature';
     body.appendChild(el('div', 'aqua-disclose-meta', status));
     if (entry.fields && entry.fields.length > 1) {
       const fields = el('div', 'aqua-disclose-fields');

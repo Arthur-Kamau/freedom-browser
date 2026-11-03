@@ -1,0 +1,13 @@
+<fbx-frame tab="me" node="local" address="0x254b0d7b91c2a4f3e81d0c6b7a5e9f2d318a8a1f">
+  <fbx-composer kind="domain" node="Local node" disabled="email,phone" back="/fbx-node-local">
+    <h3 class="text-base font-semibold text-foreground">Claim a domain</h3>
+    <p class="mt-1 max-w-prose text-sm leading-relaxed text-muted-foreground">You sign the claim now. Then you add a DNS record, and Local node signs once it can see it.</p>
+    <div class="mt-5 grid gap-5">
+      <fbx-field label="Domain" value="mwangi.family" placeholder="example.com" help="Without https:// or www."></fbx-field>
+      <div class="flex flex-wrap gap-2 border-t border-border pt-5">
+        <fbx-btn variant="primary" label="Sign and show the DNS record" icon="pen" href="/fbx-node-local"></fbx-btn>
+        <fbx-btn variant="ghost" label="Cancel" href="/fbx-node-local"></fbx-btn>
+      </div>
+    </div>
+  </fbx-composer>
+</fbx-frame>

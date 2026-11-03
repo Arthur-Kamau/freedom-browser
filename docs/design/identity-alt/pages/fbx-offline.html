@@ -1,0 +1,31 @@
+<fbx-frame tab="me" give="1" state="offline" address="0x254b0d7b91c2a4f3e81d0c6b7a5e9f2d318a8a1f">
+  <div class="mb-6 flex flex-col gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+    <div class="flex gap-3">
+      <aq-icon name="cloud-off" class="mt-0.5 size-5 text-primary"></aq-icon>
+      <div>
+        <p class="text-sm font-medium text-foreground">dev.aquafire is not answering, so this is read-only</p>
+        <p class="text-sm text-muted-foreground">This browser’s copy of your claims is shown below, and you can still share them. Checks, vouch requests and new claims wait for the node. Last answer 4 minutes ago.</p>
+      </div>
+    </div>
+    <div class="flex shrink-0 flex-wrap gap-2">
+      <fbx-btn size="sm" label="Try again" icon="refresh" href="/fbx-me"></fbx-btn>
+      <fbx-btn size="sm" variant="primary" label="Switch node" icon="server" href="/fbx-node-switch"></fbx-btn>
+    </div>
+  </div>
+  <fbx-me-split selected="name">
+    <fbx-claim-head kind="name" value="Alice Mwangi" signed="28 Oct 2026" service="na" people="2" who="Kenn Wafula,Bob Otieno" back="/fbx-me-list"></fbx-claim-head>
+    <div class="mt-5 flex flex-wrap gap-2">
+      <fbx-btn label="Ask someone to vouch" icon="users" disabled></fbx-btn>
+      <fbx-btn label="Import a vouch" icon="import" disabled></fbx-btn>
+    </div>
+    <p class="mt-2 text-xs text-muted-foreground">Both need the node.</p>
+    <div class="mt-8 border-t border-border pt-5">
+      <h3 class="text-sm font-semibold text-foreground">Evidence, newest first</h3>
+      <div class="mt-4">
+        <fbx-event tone="person" who="Kenn Wafula" address="0x71c0…e4d9" when="2 Nov 2026, 18:05" words="Met in person, Nairobi."></fbx-event>
+        <fbx-event tone="person" who="Bob Otieno" address="0x9a3f…b3a2" when="1 Nov 2026, 10:12" words="I have known Alice by this name since 2019. We worked together at inblock."></fbx-event>
+        <fbx-event tone="signed" who="You" address="0x254b…8a1f" when="28 Oct 2026, 14:02" last></fbx-event>
+      </div>
+    </div>
+  </fbx-me-split>
+</fbx-frame>

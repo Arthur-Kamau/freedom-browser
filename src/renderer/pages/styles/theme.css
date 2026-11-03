@@ -50,6 +50,14 @@ html {
   --danger-bg: #f8514915;
   --success: #3fb950;
   --warn: #d29922;
+
+  /* Identity page (freedom://identity): the node's check is its own hue so it
+     never reads as the accent, and each status has a muted fill for marks. */
+  --service: #56d4c8;
+  --service-muted: rgba(86, 212, 200, 0.16);
+  --success-muted: rgba(63, 185, 80, 0.16);
+  --warn-muted: rgba(210, 153, 34, 0.16);
+  --danger-muted: rgba(248, 81, 73, 0.16);
   --select-chevron: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%236e7681" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>');
   --toggle-knob-on: #ffffff;
 
@@ -214,6 +222,13 @@ html[data-theme='light'] {
   --danger-bg: #ffebe9;
   --success: #1a7f37;
   --warn: #9a6700;
+
+  /* Identity page (freedom://identity). */
+  --service: #0f766e;
+  --service-muted: rgba(15, 118, 110, 0.12);
+  --success-muted: rgba(26, 127, 55, 0.12);
+  --warn-muted: rgba(154, 103, 0, 0.12);
+  --danger-muted: rgba(207, 34, 46, 0.12);
   --select-chevron: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%2357606a" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>');
 
   /* Link-test page badges and callouts (freedom://links). */
