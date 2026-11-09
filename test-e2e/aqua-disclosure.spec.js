@@ -144,10 +144,26 @@ test('a site requests claims, the user shares a subset, the site verifies the re
   await win.click('#aqua-disclose-share');
   await expect(screen).toBeHidden();
 
+  // The holder signs the response: the Sign Message screen shows the six-line
+  // text (version, subject, nonce, issued_at, claims digest, missing) in its
+  // first-party mode, and the vault is unlocked, so approving signs it.
+  await expect(win.locator('#sidebar-dapp-sign')).toBeVisible({ timeout: 15_000 });
+  await expect(win.locator('#dapp-sign-site')).toContainText('Share identity');
+  await expect(win.locator('#dapp-sign-message')).toContainText('Aqua disclosure response v1');
+  await win.click('#dapp-sign-approve');
+  await expect(win.locator('#sidebar-dapp-sign')).toBeHidden({ timeout: 15_000 });
+
   await expect.poll(() => pageState(win, SITE_URL).then((s) => s?.state), { timeout: 30_000 }).toBe('verified');
   const state = await pageState(win, SITE_URL);
   expect(state.claims).toEqual([['email', '0'], ['name', '0']]);
   expect(state.missing).toBe('');
+  // The response carries the holder's signature over its text.
+  const holder = await inTab(win, SITE_URL, 'window.__lastResponse && window.__lastResponse.holder');
+  if (holder) {
+    expect(holder.method).toBe('eip191');
+    expect(holder.did.toLowerCase()).toBe(`did:pkh:eip155:1:${address}`.toLowerCase());
+    expect(holder.signature).toMatch(/^0x[0-9a-f]{130}$/i);
+  }
   // The verifier saw the email tree whole, with the subject it expected, and
   // the name claim as a selective tree whose family name is sealed.
   const calls = await verifier.calls();

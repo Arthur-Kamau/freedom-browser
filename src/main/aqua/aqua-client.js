@@ -87,6 +87,38 @@ function errorMessageFrom(body, status) {
  * @param {typeof fetch} [options.fetchImpl]
  * @param {() => Date} [options.now]
  */
+/**
+ * The attester DIDs a service vouches with, from its node identity and its
+ * `/.well-known/aqua-identity`, and the claim type each is listed for.
+ * Deduplicated case-insensitively, order kept; the node DID comes first.
+ */
+function attestersOf(serviceDid, wellKnown) {
+  const attesters = [];
+  const seen = new Set();
+  const add = (did) => {
+    if (typeof did !== 'string' || !did.startsWith('did:')) return;
+    const key = did.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    attesters.push(did);
+  };
+  add(serviceDid);
+  const claimTypes = {};
+  if (wellKnown && typeof wellKnown === 'object') {
+    for (const field of ['attester_did', 'server_did', 'service_did']) add(wellKnown[field]);
+    const types = wellKnown.claim_types;
+    if (types && typeof types === 'object' && !Array.isArray(types)) {
+      for (const [type, did] of Object.entries(types)) {
+        if (typeof type === 'string' && typeof did === 'string' && did.startsWith('did:')) {
+          claimTypes[type] = did;
+          add(did);
+        }
+      }
+    }
+  }
+  return { attesters, claimTypes };
+}
+
 function createAquaClient({ baseUrl = DEFAULT_NODE_URL, signMessage, fetchImpl, now } = {}) {
   if (typeof signMessage !== 'function') throw new Error('signMessage is required');
   const base = normalizeBaseUrl(baseUrl);
@@ -251,6 +283,17 @@ function createAquaClient({ baseUrl = DEFAULT_NODE_URL, signMessage, fetchImpl, 
       } catch {
         identity = null;
       }
+      // Discovery: `/.well-known/aqua-identity` names the attester DIDs and
+      // the claim type each vouches for. aquafier-rs publishes `server_did`
+      // and `supported_claims`; the identity service publishes `attester_did`
+      // and `claim_types`. Absent on a bare node.
+      let wellKnown;
+      try {
+        wellKnown = await request('GET', '/.well-known/aqua-identity');
+      } catch {
+        wellKnown = null;
+      }
+      const { attesters, claimTypes } = attestersOf(identity?.did || null, wellKnown);
       // The status route is unauthenticated on aquafier; a bare node answers
       // 404 and an unreachable service answers nothing. Either way: absent.
       let outOfBand;
@@ -260,7 +303,7 @@ function createAquaClient({ baseUrl = DEFAULT_NODE_URL, signMessage, fetchImpl, 
       } catch {
         outOfBand = false;
       }
-      return { reachable: identity !== null, serviceDid: identity?.did || null, outOfBandVerification: outOfBand };
+      return { reachable: identity !== null, serviceDid: identity?.did || null, attesters, claimTypes, outOfBandVerification: outOfBand };
     },
 
     // ── Trees ──────────────────────────────────────────────────────────
@@ -281,6 +324,7 @@ function createAquaClient({ baseUrl = DEFAULT_NODE_URL, signMessage, fetchImpl, 
 
 module.exports = {
   createAquaClient,
+  attestersOf,
   buildSiweMessage,
   normalizeBaseUrl,
   hexOf,

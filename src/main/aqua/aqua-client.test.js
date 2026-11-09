@@ -1,4 +1,4 @@
-const { createAquaClient, buildSiweMessage, normalizeBaseUrl, AquaServiceError } = require('./aqua-client');
+const { createAquaClient, buildSiweMessage, normalizeBaseUrl, AquaServiceError, attestersOf } = require('./aqua-client');
 
 const ADDRESS = '0x12BECb263eB324b9638Ef75cE9BA1ae5DB8b1AF8';
 
@@ -234,11 +234,32 @@ describe('createAquaClient attestation calls', () => {
 
   test('capabilities reports a bare node as reachable without out-of-band verification', async () => {
     const full = makeClient({ 'GET /node/identity': { did: 'did:pkh:eip155:1:0xnode' }, 'GET /api/claims/twilio-status': { enabled: true } });
-    expect(await full.client.capabilities()).toEqual({ reachable: true, serviceDid: 'did:pkh:eip155:1:0xnode', outOfBandVerification: true });
+    expect(await full.client.capabilities()).toEqual({ reachable: true, serviceDid: 'did:pkh:eip155:1:0xnode', attesters: ['did:pkh:eip155:1:0xnode'], claimTypes: {}, outOfBandVerification: true });
     const bare = makeClient({ 'GET /node/identity': { did: 'did:pkh:eip155:1:0xnode' } });
-    expect(await bare.client.capabilities()).toEqual({ reachable: true, serviceDid: 'did:pkh:eip155:1:0xnode', outOfBandVerification: false });
+    expect(await bare.client.capabilities()).toEqual({ reachable: true, serviceDid: 'did:pkh:eip155:1:0xnode', attesters: ['did:pkh:eip155:1:0xnode'], claimTypes: {}, outOfBandVerification: false });
     const down = createAquaClient({ baseUrl: 'https://aqua.test', fetchImpl: async () => { throw new Error('down'); }, signMessage: async () => '0x' });
-    expect(await down.capabilities()).toEqual({ reachable: false, serviceDid: null, outOfBandVerification: false });
+    expect(await down.capabilities()).toEqual({ reachable: false, serviceDid: null, attesters: [], claimTypes: {}, outOfBandVerification: false });
     expect(full.signMessage).not.toHaveBeenCalled();
+  });
+
+  test('capabilities discovers the attesters from /.well-known/aqua-identity, in both shapes', async () => {
+    // The identity service: attester_did and claim_types.
+    const service = makeClient({
+      'GET /node/identity': { did: 'did:pkh:eip155:1:0xnode' },
+      'GET /.well-known/aqua-identity': {
+        service_did: 'did:key:z6MkSvc', attester_did: 'did:key:z6MkSvc',
+        claim_types: { github_claim: 'did:key:z6MkSvc', email_claim: 'did:key:z6MkMail', bogus: 42 },
+      },
+    });
+    const caps = await service.client.capabilities();
+    expect(caps.attesters).toEqual(['did:pkh:eip155:1:0xnode', 'did:key:z6MkSvc', 'did:key:z6MkMail']);
+    expect(caps.claimTypes).toEqual({ github_claim: 'did:key:z6MkSvc', email_claim: 'did:key:z6MkMail' });
+    // aquafier-rs: server_did and supported_claims, same DID as the node.
+    const aquafier = makeClient({
+      'GET /node/identity': { did: 'did:pkh:eip155:1:0xNODE' },
+      'GET /.well-known/aqua-identity': { server_did: 'did:pkh:eip155:1:0xnode', supported_claims: ['email_claim'] },
+    });
+    expect((await aquafier.client.capabilities()).attesters).toEqual(['did:pkh:eip155:1:0xNODE']);
+    expect(attestersOf(null, { attester_did: 'nope', claim_types: ['x'] })).toEqual({ attesters: [], claimTypes: {} });
   });
 });

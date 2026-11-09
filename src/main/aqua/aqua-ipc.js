@@ -142,13 +142,20 @@ function createAquaDeps({
   async function buildDisclosure({ request, selections, address }) {
     const parsed = disclosure.parseDisclosureRequest(request);
     const claims = await service.listClaims();
-    return disclosure.buildResponse({
+    const response = await disclosure.buildResponse({
       request: parsed,
       selections,
       claims,
       subjectAddress: address,
       applyDisclosure: (tree, policy) => wasm.applyDisclosure(tree, policy),
     });
+    // The holder signs what leaves the browser: nonce, subject and a digest of
+    // the released claims (docs/aqua-disclosure.md, "Holder signature"). The
+    // wallet shows the text on the Sign Message screen; a refusal cancels the
+    // disclosure, nothing unsigned is handed out.
+    const message = disclosure.responseMessage(response);
+    const signature = await requestSignature({ address, purpose: 'disclosure', message, display: message });
+    return { ...response, holder: { did: response.subject, method: 'eip191', message, signature } };
   }
 
   async function manualDisclosure(requestText) {

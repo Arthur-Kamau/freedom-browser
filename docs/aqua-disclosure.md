@@ -70,7 +70,13 @@ back to you.
       "attestations": [ { "revisions": { … }, "file_index": { … } } ]
     }
   ],
-  "missing": ["domain"]
+  "missing": ["domain"],
+  "holder": {
+    "did": "did:pkh:eip155:1:0x12BE…1AF8",
+    "method": "eip191",
+    "message": "Aqua disclosure response v1\nsubject: did:pkh:eip155:1:0x12BE…1AF8\nnonce: a2f9c0…\nissued_at: 2026-10-22T12:00:00.000Z\nclaims_sha256: 9f86d0…\nmissing: domain",
+    "signature": "0x…"
+  }
 }
 ```
 
@@ -84,6 +90,25 @@ back to you.
   user imported.
 - `missing` lists required types the user did not release. A required type
   the user has no claim for is listed too.
+- `holder` is the holder's signature over the response (EIP-191 personal
+  message, signed by the wallet after the Share Identity consent). The text
+  is six lines: a version line, `subject`, `nonce`, `issued_at`,
+  `claims_sha256` (SHA-256 of `claims` as JSON with object keys sorted at
+  every level) and `missing` (comma-separated). A refused signature cancels
+  the disclosure; no unsigned response leaves the browser.
+
+## Holder signature
+
+Rebuild the six-line text from the response you received (`subject`,
+`nonce`, `issuedAt`, the sorted-key JSON digest of `claims`, `missing`) and
+compare it with `holder.message`; recover the EIP-191 signer of
+`holder.signature` over that text and compare the address with the one in
+`subject`. That proves the wallet named in every claim's `signer_did`
+released exactly these claims for exactly this nonce, which a copied
+response from somewhere else cannot show. This is the browser-side
+precursor of the Aqua `presentation` template proposed in
+[aqua-rs-sdk#352](https://github.com/inblockio/aqua-rs-sdk/issues/352);
+once that exists, the signed object revision replaces the message.
 
 ## Verifying a response
 

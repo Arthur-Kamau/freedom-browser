@@ -186,7 +186,7 @@ describe('registerAquaIpc attestation channels', () => {
         capabilities: async () =>
           baseUrl === 'https://node.test'
             ? { reachable: true, serviceDid: 'did:pkh:eip155:1:0xnode', outOfBandVerification: false }
-            : { reachable: false, serviceDid: null, outOfBandVerification: false },
+            : { reachable: false, serviceDid: null, attesters: [], claimTypes: {}, outOfBandVerification: false },
       };
     });
     registerAquaIpc({ createDeps: () => deps, createProbeClient, log: { error: () => {} } });
@@ -204,7 +204,7 @@ describe('registerAquaIpc attestation channels', () => {
   test('the default probe builds a real client that needs no signer and reports a dead host as unreachable', async () => {
     // Nothing listens on port 1; the connection is refused at once.
     expect(await probeService('http://127.0.0.1:1')).toEqual({
-      url: 'http://127.0.0.1:1', reachable: false, serviceDid: null, outOfBandVerification: false, compatible: false,
+      url: 'http://127.0.0.1:1', reachable: false, serviceDid: null, attesters: [], claimTypes: {}, outOfBandVerification: false, compatible: false,
     });
   });
 
@@ -266,9 +266,26 @@ describe('disclosure channels', () => {
     deps.service.listClaims = jest.fn(async () => [CLAIM]);
     const prepared = await deps.prepareDisclosure({ request: { aqua: 1, need: ['name'], optional: ['email'] }, address: ADDRESS });
     expect(prepared.entries.map((e) => [e.type, e.claimId])).toEqual([['name', 'c1'], ['email', null]]);
-    const response = await deps.buildDisclosure({ request: { aqua: 1, need: ['name'], nonce: 'n' }, selections: [{ type: 'name', claimId: 'c1' }], address: ADDRESS });
+    const building = deps.buildDisclosure({ request: { aqua: 1, need: ['name'], nonce: 'n' }, selections: [{ type: 'name', claimId: 'c1' }], address: ADDRESS });
+    // The holder signs the response text on the Sign Message screen.
+    await new Promise((r) => setTimeout(r, 50));
+    const signRequest = sent.find((m) => m.c === IPC.AQUA_SIGN_REQUEST);
+    expect(signRequest.p).toMatchObject({ address: ADDRESS, purpose: 'disclosure' });
+    expect(signRequest.p.message.split('\n')[0]).toBe('Aqua disclosure response v1');
+    expect(signRequest.p.message).toContain('nonce: n');
+    deps.settleSignature({ requestId: signRequest.p.requestId, signature: '0x' + 'ab'.repeat(65) });
+    const response = await building;
     expect(response.nonce).toBe('n');
     expect(response.claims[0].claim.revisions[OBJ].disclosure).toBe('Full');
+    expect(response.holder).toEqual({ did: `did:pkh:eip155:1:${ADDRESS}`, method: 'eip191', message: signRequest.p.message, signature: '0x' + 'ab'.repeat(65) });
+    expect(require('./disclosure').responseMessage(response)).toBe(signRequest.p.message);
+
+    // A refused signature cancels the disclosure: nothing unsigned goes out.
+    const refused = deps.buildDisclosure({ request: { aqua: 1, need: ['name'], nonce: 'n2' }, selections: [{ type: 'name', claimId: 'c1' }], address: ADDRESS });
+    await new Promise((r) => setTimeout(r, 50));
+    const second = sent.filter((m) => m.c === IPC.AQUA_SIGN_REQUEST).pop();
+    deps.settleSignature({ requestId: second.p.requestId, error: { message: 'User rejected the request' } });
+    await expect(refused).rejects.toThrow('User rejected');
     await require('./aqua-wasm').shutdown();
   });
 
