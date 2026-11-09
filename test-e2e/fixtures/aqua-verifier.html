@@ -80,10 +80,46 @@
         return null;
       }
 
+      /** JSON with object keys sorted at every level, as the browser digests it. */
+      function canonicalJson(value) {
+        if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+        if (value && typeof value === 'object') {
+          return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${canonicalJson(value[k])}`).join(',')}}`;
+        }
+        return JSON.stringify(value);
+      }
+
+      /**
+       * The six-line text the holder signed (docs/aqua-disclosure.md, "Holder
+       * signature"), rebuilt from the response as received. A verifier with
+       * an Ethereum library then recovers the EIP-191 signer of
+       * `holder.signature` over this text and compares it with the subject's
+       * address; this page has no such library and stops at the text and the
+       * signature's shape.
+       */
+      async function holderMessage(response) {
+        const bytes = new TextEncoder().encode(canonicalJson(response.claims || []));
+        const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))).map((b) => b.toString(16).padStart(2, '0')).join('');
+        return [
+          'Aqua disclosure response v1',
+          `subject: ${response.subject}`,
+          `nonce: ${response.nonce || ''}`,
+          `issued_at: ${response.issuedAt}`,
+          `claims_sha256: ${digest}`,
+          `missing: ${(response.missing || []).join(',')}`,
+        ].join('\n');
+      }
+
       async function verifyResponse(response) {
         if (response.nonce !== NONCE) throw new Error('nonce does not match the request');
         const expected = `did:pkh:eip155:1:${account}`.toLowerCase();
         if (String(response.subject).toLowerCase() !== expected) throw new Error('subject is not the connected wallet');
+        if (response.holder) {
+          if (response.holder.method !== 'eip191') throw new Error('holder signature: unknown method');
+          if (String(response.holder.did).toLowerCase() !== expected) throw new Error('holder signature: another DID');
+          if (response.holder.message !== await holderMessage(response)) throw new Error('holder signature: the signed text is not this response');
+          if (!/^0x[0-9a-f]{130}$/i.test(String(response.holder.signature))) throw new Error('holder signature: not a 65-byte signature');
+        }
         const results = [];
         for (const released of response.claims) {
           const subject = subjectOf(released.claim);
@@ -120,6 +156,7 @@
         out.hidden = true;
         try {
           const response = await window.ethereum.request({ method: 'aqua_requestDisclosure', params: [REQUEST] });
+          window.__lastResponse = response;
           out.textContent = JSON.stringify(response, null, 2);
           out.hidden = false;
           const results = await verifyResponse(response);
@@ -131,7 +168,8 @@
             list.appendChild(li);
           }
           status.dataset.missing = (response.missing || []).join(',');
-          setStatus('verified', `Verified ${results.length} claim(s); missing: ${(response.missing || []).join(', ') || 'none'}`);
+          status.dataset.holder = response.holder ? 'signed' : 'unsigned';
+          setStatus('verified', `Verified ${results.length} claim(s); missing: ${(response.missing || []).join(', ') || 'none'}; holder signature ${response.holder ? 'present' : 'absent'}`);
         } catch (err) {
           status.dataset.code = String(err?.code ?? '');
           setStatus('failed', `Failed: ${err?.message || err}`);

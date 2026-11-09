@@ -228,7 +228,39 @@ async function buildResponse({ request, selections, claims, subjectAddress, appl
   };
 }
 
+/** JSON with object keys sorted at every level: the same value, one text. */
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${canonicalJson(value[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+const RESPONSE_MESSAGE_VERSION = 1;
+
+/**
+ * The text the holder signs over a response (EIP-191 personal message): the
+ * nonce and subject bind it to one request, the digest binds every released
+ * claim and attestation. A verifier rebuilds this text from the response it
+ * received and recovers the signer, which must be the subject's address.
+ */
+function responseMessage(response) {
+  const digest = require('crypto').createHash('sha256').update(canonicalJson(response.claims || [])).digest('hex');
+  return [
+    `Aqua disclosure response v${RESPONSE_MESSAGE_VERSION}`,
+    `subject: ${response.subject}`,
+    `nonce: ${response.nonce || ''}`,
+    `issued_at: ${response.issuedAt}`,
+    `claims_sha256: ${digest}`,
+    `missing: ${(response.missing || []).join(',')}`,
+  ].join('\n');
+}
+
 module.exports = {
+  canonicalJson,
+  responseMessage,
+  RESPONSE_MESSAGE_VERSION,
   parseDisclosureRequest,
   matchClaims,
   claimSummary,

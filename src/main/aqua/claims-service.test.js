@@ -246,7 +246,7 @@ describe('codes, refresh, removal, domains', () => {
     client.hasSession = jest.fn(() => false);
     expect(await service.status()).toEqual({
       nodeUrl: 'https://aqua.test',
-      service: { reachable: false, serviceDid: null, outOfBandVerification: false },
+      service: { reachable: false, serviceDid: null, attesters: [], claimTypes: {}, outOfBandVerification: false },
       wallet: { address: ADDRESS, index: 3, type: 'ledger', canSign: true },
       signedIn: false,
     });
@@ -269,6 +269,7 @@ describe('attestation: owner side', () => {
   const PEER_TIP = Object.entries(PEER.revisions).find(([, r]) => r.payloads)[0];
   const PEER_DID = 'did:pkh:eip155:1:0xc412d3047affd97dc51c5c52e2588ae4238cbf88';
   const SERVICE_DID = 'did:pkh:eip155:1:0x7c52cdefe1c9b99e16d2baa52a18e894382738a0';
+  const MAIL_ATTESTER_DID = 'did:key:z6MkmailAttesterForTests000000000000000000000';
 
   function withSharedClaim(extra = {}) {
     const ctx = setup(extra);
@@ -281,7 +282,7 @@ describe('attestation: owner side', () => {
     ctx.client.sharedData = jest.fn(async () => ({ success: true, trees: [] }));
     ctx.client.importShared = jest.fn(async () => ({ success: true, imported: [] }));
     ctx.client.listAttestations = jest.fn(async () => ({ success: true, attestations: [], total: 0 }));
-    ctx.client.capabilities = jest.fn(async () => ({ reachable: true, serviceDid: SERVICE_DID, outOfBandVerification: true }));
+    ctx.client.capabilities = jest.fn(async () => ({ reachable: true, serviceDid: SERVICE_DID, attesters: [SERVICE_DID, MAIL_ATTESTER_DID], claimTypes: { email_claim: MAIL_ATTESTER_DID }, outOfBandVerification: true }));
     return ctx;
   }
   // The shared-claim fixture belongs to another throwaway wallet; make the
@@ -305,6 +306,17 @@ describe('attestation: owner side', () => {
     expect(shared.shares).toHaveLength(1);
     await expect(service.shareForAttestation(record.id, record.address)).rejects.toThrow('own wallet');
     await expect(service.shareForAttestation(record.id, 'bob')).rejects.toThrow('wallet address');
+  });
+
+  test('pullAttestations reads an attester named by the well-known document as the service, not a peer', async () => {
+    const { service, client } = ownerSetup();
+    const record = await service.createClaim({ type: 'name', fields: { given_name: 'A', family_name: 'B' } });
+    client.listAttestations.mockResolvedValueOnce({ success: true, attestations: [
+      { tip: PEER_TIP, attester_did: MAIL_ATTESTER_DID, context: 'mail words', created_at: '2026-10-22T12:10:34+00:00' },
+    ] });
+    client.downloadTree.mockImplementation(async () => { throw new Error('404'); });
+    const pulled = await service.pullAttestations(record.id);
+    expect(pulled.attestations[0]).toMatchObject({ tip: PEER_TIP, source: 'service', pending: true });
   });
 
   test('pullAttestations records a peer attestation as pending when its tree is not downloadable, and a service one in full', async () => {

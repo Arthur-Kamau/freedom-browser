@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { OPS } = require('./aqua-worker');
 const {
-  parseDisclosureRequest, matchClaims, buildPolicy, buildResponse, DisclosureRequestError,
+  parseDisclosureRequest, matchClaims, buildPolicy, buildResponse, DisclosureRequestError, canonicalJson, responseMessage,
 } = require('./disclosure');
 
 const FIXTURE = JSON.parse(fs.readFileSync(path.join(__dirname, '__fixtures__', 'name-claim.aqua.json'), 'utf8'));
@@ -127,5 +127,30 @@ describe('buildPolicy and buildResponse with the real SDK', () => {
     scalar.revisions[OBJ_HASH].method = 'scalar';
     expect(() => buildPolicy(scalar, ['given_name'])).toThrow('tree-method');
     expect(buildPolicy(FIXTURE, null)).toEqual({ revisions: {} });
+  });
+});
+
+describe('responseMessage', () => {
+  test('canonical JSON sorts keys at every level and keeps arrays in order', () => {
+    expect(canonicalJson({ b: 1, a: [{ d: null, c: 'x' }], e: true })).toBe('{"a":[{"c":"x","d":null}],"b":1,"e":true}');
+    expect(canonicalJson({ a: 1, b: 2 })).toBe(canonicalJson({ b: 2, a: 1 }));
+  });
+
+  test('the holder message binds nonce, subject, issue time and a digest of the released claims', () => {
+    const response = { aqua: 1, nonce: 'n1', subject: `did:pkh:eip155:1:${ADDRESS}`, issuedAt: '2026-10-22T12:00:00.000Z', claims: [{ type: 'name', fields: null, claim: { a: 1 }, attestations: [] }], missing: ['domain'] };
+    const message = responseMessage(response);
+    const lines = message.split('\n');
+    expect(lines[0]).toBe('Aqua disclosure response v1');
+    expect(lines[1]).toBe(`subject: did:pkh:eip155:1:${ADDRESS}`);
+    expect(lines[2]).toBe('nonce: n1');
+    expect(lines[3]).toBe('issued_at: 2026-10-22T12:00:00.000Z');
+    expect(lines[4]).toMatch(/^claims_sha256: [0-9a-f]{64}$/);
+    expect(lines[5]).toBe('missing: domain');
+    // Same claims in another key order: same message. A changed claim: another digest.
+    const reordered = { ...response, claims: [{ attestations: [], claim: { a: 1 }, fields: null, type: 'name' }] };
+    expect(responseMessage(reordered)).toBe(message);
+    const changed = { ...response, claims: [{ ...response.claims[0], claim: { a: 2 } }] };
+    expect(responseMessage(changed)).not.toBe(message);
+    expect(responseMessage({ ...response, nonce: undefined, missing: undefined }).split('\n')[2]).toBe('nonce: ');
   });
 });

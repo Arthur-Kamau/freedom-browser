@@ -16,6 +16,7 @@ const PURPOSE_COPY = {
   login: { action: 'asks you to sign in', labelPrefix: 'Identity service' },
   claim: { action: 'asks you to sign this claim', labelPrefix: 'Identity claim' },
   attestation: { action: 'asks you to vouch for this claim', labelPrefix: 'Vouch' },
+  disclosure: { action: 'asks you to sign what you are about to share', labelPrefix: 'Share identity' },
 };
 
 function labelFor(request) {

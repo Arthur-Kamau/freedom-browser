@@ -287,9 +287,16 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
     return capabilities;
   }
 
-  function sourceOf(attesterDid, serviceDid) {
-    if (!attesterDid || !serviceDid) return 'peer';
-    return attesterDid.toLowerCase() === serviceDid.toLowerCase() ? 'service' : 'peer';
+  /**
+   * `service` when the attester is one the service vouches with: its node DID
+   * or any attester its `/.well-known/aqua-identity` names (read once per
+   * session, see `capabilities()`); otherwise a `peer`.
+   */
+  function sourceOf(attesterDid, caps) {
+    if (!attesterDid || !caps) return 'peer';
+    const wanted = attesterDid.toLowerCase();
+    const known = [caps.serviceDid, ...(caps.attesters || [])].filter(Boolean);
+    return known.some((did) => did.toLowerCase() === wanted) ? 'service' : 'peer';
   }
 
   async function verifyLinked(tree, claimTree) {
@@ -341,7 +348,7 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
     /** Everything the page needs to render, no secrets. */
     async status() {
       const wallet = await getActiveWallet().catch(() => null);
-      const caps = await serviceCapabilities().catch(() => ({ reachable: false, serviceDid: null, outOfBandVerification: false }));
+      const caps = await serviceCapabilities().catch(() => ({ reachable: false, serviceDid: null, attesters: [], claimTypes: {}, outOfBandVerification: false }));
       return {
         nodeUrl: client.baseUrl,
         service: caps,
@@ -501,7 +508,7 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
       // Pulled for every claim on open, so one made elsewhere is left as it
       // is rather than reported each time.
       if (madeElsewhere(record)) return record;
-      const { serviceDid } = await serviceCapabilities();
+      const caps = await serviceCapabilities();
       const listed = (await client.listAttestations(record.address, record.tip))?.attestations || [];
       for (const info of listed) {
         if (!info?.tip) continue;
@@ -514,7 +521,7 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
           tree: null,
           attesterDid: info.attester_did || null,
           context: typeof info.context === 'string' ? info.context : '',
-          source: sourceOf(info.attester_did, serviceDid),
+          source: sourceOf(info.attester_did, caps),
           issuedAt: info.created_at || now().toISOString(),
           pending: true,
           verification: { isValid: false, status: 'Recorded by the service; waiting for the attester to share the tree', backend: 'service', checkedAt: now().toISOString() },
@@ -556,13 +563,13 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
       if (attesterDid && attesterDid.toLowerCase() === record.signerDid.toLowerCase()) {
         throw new ClaimInputError('A claim cannot be attested by its own subject', 'tree');
       }
-      const { serviceDid } = await serviceCapabilities();
+      const caps = await serviceCapabilities();
       const entry = {
         tip,
         tree,
         attesterDid,
         context: payload.context,
-        source: sourceOf(attesterDid, serviceDid),
+        source: sourceOf(attesterDid, caps),
         issuedAt: now().toISOString(),
         pending: false,
         verification: await verifyLinked(tree, record.tree),
