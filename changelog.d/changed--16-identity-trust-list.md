@@ -1,0 +1,6 @@
+- Identity claims: a claim reads Verified only when a signer you trust has signed it, and a vouch from anyone else is counted as "Vouched by N" ([#16](https://github.com/Arthur-Kamau/freedom-browser/issues/16))
+  - Before, any valid vouch made a claim Verified, so two throwaway wallets could verify each other and one stranger's signature was enough
+  - Each profile keeps a trust list in its vault: the identity service you chose is on it, and a person is added when you accept them in All details. Reject takes a signer off again and Accept again undoes that; a rejected signer's vouches stay on the claim, labelled "Rejected by you", and do not count
+  - The line under the badge names who stands behind it ("Verified: dev.inblock checked it", or "Vouched by 0x12…ab, not trusted by you. Accept them to count it"), and every vouch in the evidence and in All details says whether it counts
+  - The Share Identity screen uses the same words. What a site receives is unchanged: every vouch as signed, with no trust judgement attached, because whom to trust is the site's decision
+  - The trust list is a yes or a no per signer, stored encrypted with the claims and never sent to the identity service

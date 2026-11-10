@@ -411,6 +411,82 @@ describe('attestation: owner side', () => {
     await expect(service.importAttestation(record.id, { revisions: {} })).rejects.toThrow('not an attestation');
     expect((await store.get(record.id)).attestations).toEqual([]);
   });
+  // ── The trust list (issue #16) ───────────────────────────────────────
+  async function claimWithPeerVouch(ctx) {
+    const record = await ctx.service.createClaim({ type: 'name', fields: { given_name: 'A', family_name: 'B' } });
+    const named = JSON.parse(JSON.stringify(PEER));
+    named.revisions[PEER_TIP].payloads.context = `X: I know this person (attests claim ${record.tip})`;
+    await ctx.service.importAttestation(record.id, JSON.stringify(named));
+    return record;
+  }
+
+  test('a peer vouch is not trusted until the user accepts its signer, and a rejection can be taken back', async () => {
+    const ctx = ownerSetup();
+    const record = await claimWithPeerVouch(ctx);
+    const trustOfVouch = async () => (await ctx.service.withTrust(await ctx.service.listClaims()))[0].attestations[0].trust;
+    expect(await trustOfVouch()).toBe('unknown');
+    await ctx.service.setTrust({ did: PEER_DID, state: 'trusted' });
+    expect(await trustOfVouch()).toBe('trusted');
+    await ctx.service.setTrust({ did: PEER_DID.toUpperCase().replace('DID:PKH:EIP155', 'did:pkh:eip155').replace('0X', '0x'), state: 'rejected' });
+    expect(await trustOfVouch()).toBe('rejected');
+    await ctx.service.setTrust({ did: PEER_DID, state: 'trusted' });
+    expect(await trustOfVouch()).toBe('trusted');
+    // One record at a time is judged the same way.
+    expect((await ctx.service.withTrust(await ctx.store.get(record.id))).attestations[0].trust).toBe('trusted');
+    // No transition asked the node for anything.
+    expect(ctx.client.listAttestations).not.toHaveBeenCalled();
+  });
+
+  test('the judgement never reaches the store, the export or what a disclosure reads', async () => {
+    const ctx = ownerSetup();
+    const record = await claimWithPeerVouch(ctx);
+    const before = JSON.stringify(await ctx.store.get(record.id));
+    await ctx.service.setTrust({ did: PEER_DID, state: 'rejected' });
+    await ctx.service.withTrust(await ctx.service.listClaims());
+    expect(JSON.stringify(await ctx.store.get(record.id))).toBe(before);
+    // A rejected voucher's attestation is still there, tree and all.
+    const [listed] = await ctx.service.listClaims();
+    expect(listed.attestations).toHaveLength(1);
+    expect(listed.attestations[0].tree).toBeTruthy();
+    expect(listed.attestations[0]).not.toHaveProperty('trust');
+    expect(await ctx.service.exportAll()).not.toContain('"trust"');
+  });
+
+  test("the chosen service's DIDs are on the list as trusted once seen, and stay rejected if the user said so", async () => {
+    const ctx = ownerSetup();
+    expect(await ctx.service.listTrust()).toEqual([
+      { did: SERVICE_DID, kind: 'service', state: 'trusted', updatedAt: '2026-10-22T12:00:00.000Z' },
+      { did: MAIL_ATTESTER_DID, kind: 'service', state: 'trusted', updatedAt: '2026-10-22T12:00:00.000Z' },
+    ]);
+    const entry = await ctx.service.setTrust({ did: MAIL_ATTESTER_DID, state: 'rejected' });
+    expect(entry).toMatchObject({ kind: 'service', state: 'rejected' });
+    expect((await ctx.service.listTrust()).map((e) => e.state)).toEqual(['trusted', 'rejected']);
+    // A did:key in another case is another key: not the service's.
+    const annotated = await ctx.service.withTrust({ attestations: [
+      { attesterDid: SERVICE_DID.toUpperCase().replace('DID:PKH:EIP155', 'did:pkh:eip155') },
+      { attesterDid: MAIL_ATTESTER_DID },
+      { attesterDid: MAIL_ATTESTER_DID.replace('z6Mk', 'z6MK') },
+      { attesterDid: null },
+    ] });
+    expect(annotated.attestations.map((a) => a.trust)).toEqual(['trusted', 'rejected', 'unknown', 'unknown']);
+  });
+
+  test('a service that does not answer adds nothing, and the stored list still applies', async () => {
+    const ctx = ownerSetup();
+    await ctx.store.setTrust(PEER_DID, 'trusted');
+    ctx.client.capabilities = jest.fn(async () => { throw new Error('down'); });
+    expect((await ctx.service.listTrust()).map((e) => e.did)).toEqual([PEER_DID]);
+    ctx.client.capabilities = jest.fn(async () => ({ reachable: false, serviceDid: null, attesters: [] }));
+    expect(await ctx.service.listTrust()).toHaveLength(1);
+  });
+
+  test('setTrust refuses a non-DID, an unknown state and the wallet\'s own DID', async () => {
+    const { service } = ownerSetup();
+    await expect(service.setTrust({ did: '0xabc', state: 'trusted' })).rejects.toThrow(ClaimInputError);
+    await expect(service.setTrust({ did: PEER_DID, state: 'maybe' })).rejects.toThrow(ClaimInputError);
+    await expect(service.setTrust({ did: OWN.toUpperCase().replace('DID:PKH:EIP155', 'did:pkh:eip155'), state: 'trusted' })).rejects.toThrow('own wallet');
+    await expect(service.setTrust()).rejects.toThrow(ClaimInputError);
+  });
 });
 
 describe('attestation: attester side', () => {

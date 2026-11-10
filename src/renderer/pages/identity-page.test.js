@@ -214,6 +214,7 @@ function api(overrides = {}) {
     aquaAttestShared: jest.fn(async () => ({ success: true, issued: { id: 'a1' } })),
     aquaListIssued: jest.fn(async () => ({ success: true, issued: [] })),
     aquaExportIssued: jest.fn(async () => ({ success: true, json: '{"revisions":{}}' })),
+    aquaSetTrust: jest.fn(async () => ({ success: true, entry: {} })),
     copyText: jest.fn(async () => true),
     aquaUnlock: jest.fn(async () => ({ success: true, unlocked: true })),
     openInNewTab: jest.fn(),
@@ -522,12 +523,14 @@ describe('freedom://identity', () => {
           tip: '0x1',
           attesterDid: 'did:pkh:eip155:1:0xserver',
           source: 'service',
+          trust: 'trusted',
           verification: { isValid: true },
         },
         {
           tip: '0x2',
           attesterDid: 'did:pkh:eip155:1:0xpeer',
           source: 'peer',
+          trust: 'trusted',
           verification: { isValid: true },
         },
         {
@@ -547,20 +550,24 @@ describe('freedom://identity', () => {
     expect(nameMarks[0].classList.contains('tone-quiet')).toBe(true);
     expect(nameMarks[0].querySelector('.ico-shield-plain')).not.toBeNull();
     expect(nameMarks[1].classList.contains('tone-dashed')).toBe(true);
-    // An email the node checked, with two people: a teal shield and two green pips.
+    // An email the node checked, with two people, one of them trusted: a teal
+    // shield and two pips, green because a trusted person vouches.
     const emailMarks = rows[1].querySelectorAll('.mark');
     expect(emailMarks[0].classList.contains('tone-service')).toBe(true);
     expect(emailMarks[0].querySelector('.ico-shield-check')).not.toBeNull();
     expect(emailMarks[0].textContent).toContain('Checked');
     expect(emailMarks[1].classList.contains('tone-success')).toBe(true);
     expect(emailMarks[1].querySelectorAll('.pip')).toHaveLength(2);
-    expect(rows[1].querySelector('.badge').textContent).toBe('Verified by 3');
+    expect(rows[1].querySelector('.badge').textContent).toBe('Verified');
     // The panel says the same in two tiles, with one pip per person.
     await rows[1].fire('click');
     const tiles = panel(page).querySelectorAll('.tile');
     expect(tiles[0].querySelector('.tile-value').textContent).toBe('Checked by aqua.test');
-    expect(tiles[1].querySelector('.tile-value').textContent).toContain('Vouched by 2');
+    expect(tiles[1].querySelector('.tile-value').textContent).toContain(
+      'Vouched by 2, 1 you trust'
+    );
     expect(tiles[1].querySelectorAll('.pip-lg')).toHaveLength(2);
+    expect(tiles[1].querySelectorAll('.untrusted')).toHaveLength(1);
   });
 
   test('an attested claim lists the attester and their words, as text, with the source icon', async () => {
@@ -571,6 +578,7 @@ describe('freedom://identity', () => {
           attesterDid: 'did:pkh:eip155:1:0xserver',
           context: HOSTILE,
           source: 'service',
+          trust: 'trusted',
           verification: { isValid: true },
         },
       ],
@@ -585,7 +593,10 @@ describe('freedom://identity', () => {
     // The attester is shortened to its address, with the whole DID on hover.
     expect(box.querySelector('.who').textContent).toBe('0xserver');
     expect(box.querySelector('.who').title).toBe('did:pkh:eip155:1:0xserver');
-    expect(box.querySelector('.badge').textContent).toBe('Verified');
+    expect(box.querySelector('.badge').textContent).toBe('Trusted by you');
+    expect(panel(page).querySelector('.trust-line').textContent).toBe(
+      'Verified: aqua.test checked it.'
+    );
     expect(box.querySelector('.words').textContent).toBe(HOSTILE);
     // The words fold to two lines and open on click.
     await box.querySelector('.words').fire('click');
@@ -705,7 +716,7 @@ describe('freedom://identity', () => {
     expect(box.querySelector('.state').textContent).toBe('Does not verify: FAILED');
   });
 
-  test('two valid attestations are counted on the badge', async () => {
+  test('valid vouches from signers not on the trust list are counted, and never read Verified', async () => {
     const two = claim({
       attestations: [
         { tip: '0x1', attesterDid: 'a', verification: { isValid: true } },
@@ -714,7 +725,9 @@ describe('freedom://identity', () => {
       ],
     });
     const page = await run(api({ aquaListClaims: async () => ({ success: true, claims: [two] }) }));
-    expect(page.elements['claims-list'].querySelector('.badge').textContent).toBe('Verified by 2');
+    const badge = page.elements['claims-list'].querySelector('.badge');
+    expect(badge.textContent).toBe('Vouched by 2');
+    expect(badge.classList.contains('attested')).toBe(false);
   });
 
   test('a failed verification is one red mark on the row, and the panel says what failed', async () => {
@@ -1331,6 +1344,170 @@ describe('freedom://identity attestation', () => {
   });
 });
 
+describe('freedom://identity trust list', () => {
+  const ALICE = 'did:pkh:eip155:1:0xA11cA11cA11cA11cA11cA11cA11cA11cA11cA11c';
+  const MALLORY = 'did:pkh:eip155:1:0x3a1103a1103a1103a1103a1103a1103a1103a110';
+  const SERVICE = 'did:key:z6MkiTBz1ymuepAQ4HEHYSF1H8quG5GLVVQR3djdX3mDooWp';
+  const vouch = (tip, attesterDid, trust, extra = {}) => ({
+    tip,
+    attesterDid,
+    source: 'peer',
+    context: 'I know them',
+    issuedAt: '2026-11-01T10:00:00Z',
+    trust,
+    verification: { isValid: true },
+    ...extra,
+  });
+  const badgeOf = (page, id) =>
+    page.elements['claims-list']
+      .querySelectorAll('.card')
+      .find((c) => c.dataset.id === id)
+      .querySelector('.badge').textContent;
+
+  test('the four badges: trusted signer, untrusted or rejected vouchers, own signature only, broken chain', async () => {
+    const claims = [
+      claim({ id: 'trusted', attestations: [vouch('0x1', ALICE, 'trusted')] }),
+      claim({
+        id: 'vouched',
+        tip: '0x2',
+        attestations: [vouch('0x2', MALLORY, 'unknown'), vouch('0x3', ALICE, 'rejected')],
+      }),
+      claim({ id: 'own', tip: '0x3' }),
+      claim({
+        id: 'broken',
+        tip: '0x4',
+        verification: { isValid: false, status: 'FAILED' },
+        attestations: [vouch('0x4', ALICE, 'trusted')],
+      }),
+    ];
+    const page = await run(api({ aquaListClaims: async () => ({ success: true, claims }) }));
+    expect(badgeOf(page, 'trusted')).toBe('Verified');
+    expect(badgeOf(page, 'vouched')).toBe('Vouched by 2');
+    expect(badgeOf(page, 'own')).toBe('Not yet verified');
+    expect(badgeOf(page, 'broken')).toBe('Does not verify');
+  });
+
+  test('a vouch without a trust state from main is treated as not trusted', async () => {
+    const stranger = claim({
+      attestations: [{ tip: '0x1', attesterDid: MALLORY, verification: { isValid: true } }],
+    });
+    const page = await run(
+      api({ aquaListClaims: async () => ({ success: true, claims: [stranger] }) })
+    );
+    expect(badgeOf(page, 'c1')).toBe('Vouched by 1');
+  });
+
+  test("the identity service's attestation reads Verified and the line names the node", async () => {
+    const email = claim({
+      type: 'email',
+      payload: { email: 'a@b.c' },
+      attestations: [vouch('0x1', SERVICE, 'trusted', { source: 'service' })],
+    });
+    const page = await run(
+      api({ aquaListClaims: async () => ({ success: true, claims: [email] }) })
+    );
+    expect(badgeOf(page, 'c1')).toBe('Verified');
+    expect(panel(page).querySelector('.trust-line').textContent).toBe(
+      'Verified: aqua.test checked it.'
+    );
+  });
+
+  test('accepting a voucher turns the card Verified and rejecting turns it back, without asking the node', async () => {
+    const trust = {};
+    const listed = () => [
+      claim({ attestations: [vouch('0x1', MALLORY, trust[MALLORY] || 'unknown')] }),
+    ];
+    const fx = api({
+      aquaListClaims: jest.fn(async () => ({ success: true, claims: listed() })),
+      aquaPullAttestations: jest.fn(async () => ({ success: true, claim: listed()[0] })),
+      aquaSetTrust: jest.fn(async (did, state) => {
+        trust[did] = state;
+        return { success: true, entry: { did, state } };
+      }),
+    });
+    const page = await run(fx);
+    expect(badgeOf(page, 'c1')).toBe('Vouched by 1');
+    const line = panel(page).querySelector('.trust-line');
+    expect(line.textContent).toContain(
+      'Vouched by 0x3a11…a110, not trusted by you. Accept them to count it.'
+    );
+    const pulls = fx.aquaPullAttestations.mock.calls.length;
+
+    // The line opens the dialog: who, when, their words, and the choice.
+    await line.querySelector('.link-btn').fire('click');
+    const dialog = page.elements['vouches-dialog'];
+    expect(isOpen(dialog)).toBe(true);
+    let first = page.elements['vouches-list'].querySelectorAll('.vouch')[0];
+    expect(first.querySelector('.badge').textContent).toBe('Not trusted by you');
+    expect(first.querySelector('.words').textContent).toBe('I know them');
+    expect(first.querySelector('.trust-text').textContent).toContain('not on your trust list');
+
+    await buttonNamed(first, 'Accept').fire('click');
+    expect(fx.aquaSetTrust).toHaveBeenLastCalledWith(MALLORY, 'trusted');
+    expect(badgeOf(page, 'c1')).toBe('Verified');
+    expect(panel(page).querySelector('.trust-line').textContent).toBe(
+      'Verified: 0x3a11…a110 vouches for it, and you trust them.'
+    );
+    // The dialog stays open on the same claim, now offering the way back.
+    expect(isOpen(dialog)).toBe(true);
+    first = page.elements['vouches-list'].querySelectorAll('.vouch')[0];
+    expect(first.querySelector('.badge').textContent).toBe('Trusted by you');
+    expect(buttonNamed(first, 'Accept')).toBeUndefined();
+
+    await buttonNamed(first, 'Reject').fire('click');
+    expect(fx.aquaSetTrust).toHaveBeenLastCalledWith(MALLORY, 'rejected');
+    expect(badgeOf(page, 'c1')).toBe('Vouched by 1');
+    expect(panel(page).querySelector('.trust-line').textContent).toContain(
+      'Vouched by 0x3a11…a110, rejected by you.'
+    );
+    first = page.elements['vouches-list'].querySelectorAll('.vouch')[0];
+    expect(first.querySelector('.badge').textContent).toBe('Rejected by you');
+    // The vouch stays visible, with its words, and can be accepted again.
+    expect(first.querySelector('.words').textContent).toBe('I know them');
+    await buttonNamed(first, 'Accept again').fire('click');
+    expect(badgeOf(page, 'c1')).toBe('Verified');
+
+    // Neither transition needed the node: no pull, no refresh, no new vouch.
+    expect(fx.aquaPullAttestations.mock.calls.length).toBe(pulls);
+    expect(fx.aquaRefreshClaim).not.toHaveBeenCalled();
+    expect(fx.aquaImportAttestation).not.toHaveBeenCalled();
+    expect(page.document.htmlWrites).toHaveLength(0);
+  });
+
+  test('a refused trust change is said as text and the badge stays', async () => {
+    const fx = api({
+      aquaListClaims: async () => ({
+        success: true,
+        claims: [claim({ attestations: [vouch('0x1', MALLORY, 'unknown')] })],
+      }),
+      aquaSetTrust: jest.fn(async () => ({ success: false, error: { message: HOSTILE } })),
+    });
+    const page = await run(fx);
+    await panel(page).querySelector('.trust-line').querySelector('.link-btn').fire('click');
+    const first = page.elements['vouches-list'].querySelectorAll('.vouch')[0];
+    await buttonNamed(first, 'Accept').fire('click');
+    expect(page.elements['status-notice'].textContent).toContain(HOSTILE);
+    expect(badgeOf(page, 'c1')).toBe('Vouched by 1');
+    expect(page.document.htmlWrites).toHaveLength(0);
+  });
+
+  test('a vouch that does not verify or is still on its way offers no trust choice', async () => {
+    const mixed = claim({
+      attestations: [
+        vouch('0x1', MALLORY, 'unknown', { verification: { isValid: false, status: 'FAILED' } }),
+        vouch('0x2', ALICE, 'unknown', { pending: true, verification: { isValid: false } }),
+      ],
+    });
+    const page = await run(
+      api({ aquaListClaims: async () => ({ success: true, claims: [mixed] }) })
+    );
+    expect(badgeOf(page, 'c1')).toBe('Not yet verified');
+    expect(panel(page).querySelector('.trust-line')).toBeNull();
+    await panel(page).querySelector('.link-btn').fire('click');
+    expect(page.elements['vouches-list'].querySelectorAll('.trust-row')).toHaveLength(0);
+  });
+});
+
 describe('freedom://identity disclosure', () => {
   test('a pasted request goes to main and the response comes back as text to copy', async () => {
     const freedomAPI = api({
@@ -1422,7 +1599,7 @@ describe('freedom://identity tabs', () => {
     const rows = page.elements['claims-list'].querySelectorAll('.card');
     expect(rows).toHaveLength(2);
     const first = rows.find((c) => c.dataset.id === 'c1');
-    expect(first.querySelector('.badge').textContent).toBe('Verified');
+    expect(first.querySelector('.badge').textContent).toBe('Vouched by 1');
     expect(first.textContent).toContain(HOSTILE);
     expect(rows.find((c) => c.dataset.id === 'c2').querySelector('.badge').textContent).toBe(
       'Not yet verified'

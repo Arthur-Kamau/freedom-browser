@@ -63,8 +63,15 @@ describe('matchClaims', () => {
     const foreign = claim({ id: 'foreign', address: '0x0000000000000000000000000000000000000001' });
     const matched = matchClaims(request, [older, claim(), attested, foreign], ADDRESS.toLowerCase());
     expect(matched.map((m) => [m.type, m.required, m.claimId])).toEqual([['name', true, 'att'], ['email', false, null]]);
-    expect(matched[0].summary).toMatchObject({ attested: 1, attesters: ['did:x'], verified: true, payload: expect.objectContaining({ given_name: 'Probe' }) });
+    expect(matched[0].summary).toMatchObject({ attested: 1, trusted: 0, attesters: ['did:x'], verified: true, payload: expect.objectContaining({ given_name: 'Probe' }) });
     expect(matched[0].summary.payload.signer_did).toBeUndefined();
+    // With trust states on the record, the summary counts the trusted signers.
+    const judged = claim({ id: 'j', attestations: [
+      { tree: PEER, verification: { isValid: true }, attesterDid: 'did:x', trust: 'trusted' },
+      { tree: PEER, verification: { isValid: true }, attesterDid: 'did:y', trust: 'rejected' },
+      { tree: PEER, verification: { isValid: false }, attesterDid: 'did:z', trust: 'trusted' },
+    ] });
+    expect(matchClaims(request, [judged], ADDRESS.toLowerCase())[0].summary).toMatchObject({ attested: 2, trusted: 1 });
   });
 
   test('a field selection narrows the summary to those fields', () => {

@@ -1136,6 +1136,10 @@ contextBridge.exposeInMainWorld('freedomAPI', {
   aquaExportIssued: guardInternal('aquaExportIssued', (id) =>
     ipcRenderer.invoke('aqua:issued:export', id)
   ),
+  aquaListTrust: guardInternal('aquaListTrust', () => ipcRenderer.invoke('aqua:trust:list')),
+  aquaSetTrust: guardInternal('aquaSetTrust', (did, state) =>
+    ipcRenderer.invoke('aqua:trust:set', { did, state })
+  ),
   // A disclosure request the user pasted; main shows the consent screen in
   // the sidebar and resolves with the response once the user decides.
   aquaRespondToRequest: guardInternal('aquaRespondToRequest', (requestText) =>

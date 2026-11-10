@@ -143,6 +143,9 @@ function claimSummary(claim, fields) {
     signerDid: claim.signerDid,
     payload: shown,
     attested: attestedCount(claim),
+    // How many of those are by a signer on the user's trust list. Only the
+    // consent screen reads it; a record without trust states counts none.
+    trusted: (claim.attestations || []).filter((a) => a.tree && a.verification?.isValid && a.trust === 'trusted').length,
     attesters: (claim.attestations || []).filter((a) => a.tree && a.verification?.isValid).map((a) => a.attesterDid),
     verified: claim.verification?.isValid === true,
   };

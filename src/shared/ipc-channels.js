@@ -451,6 +451,9 @@ module.exports = {
   AQUA_SHARED_ATTEST: 'aqua:shared:attest',
   AQUA_ISSUED_LIST: 'aqua:issued:list',
   AQUA_ISSUED_EXPORT: 'aqua:issued:export',
+  // The trust list: whose signature on a claim counts for this user.
+  AQUA_TRUST_LIST: 'aqua:trust:list',
+  AQUA_TRUST_SET: 'aqua:trust:set',
   AQUA_CLAIMS_CHANGED: 'aqua:claims-changed',
   // Disclosure: the chrome's consent screen prepares and builds a response
   // for a site's `aqua_requestDisclosure`; freedom://identity hands a pasted
