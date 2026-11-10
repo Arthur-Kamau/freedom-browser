@@ -68,8 +68,21 @@ function open(key, envelope) {
   return plaintext.toString('utf8');
 }
 
+const TRUST_STATES = Object.freeze(['trusted', 'rejected']);
+
 function emptyState() {
-  return { version: STORE_VERSION, claims: [], issued: [] };
+  return { version: STORE_VERSION, claims: [], issued: [], trust: [] };
+}
+
+/**
+ * The form two DIDs are compared in. A `did:pkh` Ethereum address is hex, so
+ * its case carries nothing (EIP-55 is display only); every other method is
+ * compared exactly, because a `did:key` body is base58 and two case variants
+ * are two keys.
+ */
+function didKey(did) {
+  const trimmed = typeof did === 'string' ? did.trim() : '';
+  return trimmed.startsWith('did:pkh:') ? trimmed.toLowerCase() : trimmed;
 }
 
 function canonicalDid(did) {
@@ -103,6 +116,7 @@ function createClaimsStore({ dataDir, getSeed, isOwnDid }) {
     const state = JSON.parse(open(key, envelope));
     if (!state || !Array.isArray(state.claims)) throw new Error('Corrupt claims store');
     if (!Array.isArray(state.issued)) state.issued = [];
+    if (!Array.isArray(state.trust)) state.trust = [];
     return state;
   }
 
@@ -197,6 +211,58 @@ function createClaimsStore({ dataDir, getSeed, isOwnDid }) {
       return record;
     },
 
+    // ── The trust list (the key ring) ───────────────────────────────────
+    // Whose signature on a claim counts for this user: a yes or a no per
+    // DID. It is the user's own judgement, so it lives with the vault and
+    // is never sent anywhere. A DID that is not listed is neither.
+    async listTrust() {
+      return (await load()).trust;
+    },
+
+    /** Trust or reject a DID. `kind` (`service` or `person`) is kept from the first entry. */
+    async setTrust(did, trustState, { kind = 'person', at = new Date().toISOString() } = {}) {
+      const key = didKey(did);
+      if (!key.startsWith('did:')) throw new Error('A trust entry needs a DID');
+      if (!TRUST_STATES.includes(trustState)) throw new Error(`Unknown trust state: ${trustState}`);
+      const state = await load();
+      const known = state.trust.find((entry) => didKey(entry.did) === key);
+      const entry = known || { did: did.trim(), kind: kind === 'service' ? 'service' : 'person' };
+      entry.state = trustState;
+      entry.updatedAt = at;
+      if (!known) state.trust.push(entry);
+      await save(state);
+      return entry;
+    },
+
+    /**
+     * Put DIDs on the list as trusted unless the list already says something
+     * about them, so a rejection by the user is never overwritten. Returns
+     * how many were added; nothing is written when none were.
+     */
+    async addTrusted(dids, { kind = 'person', at = new Date().toISOString() } = {}) {
+      const wanted = [...new Set((dids || []).map(didKey).filter((key) => key.startsWith('did:')))];
+      if (wanted.length === 0) return 0;
+      const state = await load();
+      const listed = new Set(state.trust.map((entry) => didKey(entry.did)));
+      const fresh = wanted.filter((key) => !listed.has(key));
+      if (fresh.length === 0) return 0;
+      // Stored as first given, so an EIP-55 address keeps its display form.
+      const original = new Map();
+      for (const did of dids || []) {
+        if (!original.has(didKey(did))) original.set(didKey(did), String(did).trim());
+      }
+      for (const key of fresh) {
+        state.trust.push({
+          did: original.get(key),
+          kind: kind === 'service' ? 'service' : 'person',
+          state: 'trusted',
+          updatedAt: at,
+        });
+      }
+      await save(state);
+      return fresh.length;
+    },
+
     async removeIssued(id) {
       const state = await load();
       const before = state.issued.length;
@@ -208,4 +274,12 @@ function createClaimsStore({ dataDir, getSeed, isOwnDid }) {
   };
 }
 
-module.exports = { createClaimsStore, ClaimsStoreLocked, STORE_FILE, CLAIM_TYPES, canonicalDid };
+module.exports = {
+  createClaimsStore,
+  ClaimsStoreLocked,
+  STORE_FILE,
+  CLAIM_TYPES,
+  TRUST_STATES,
+  canonicalDid,
+  didKey,
+};

@@ -112,6 +112,7 @@ describe('registerAquaIpc', () => {
       dnsInstructions: jest.fn(async () => ({ record_name: 'x' })),
       verifyDns: jest.fn(async () => ({ id: 'c3' })),
       signIn: jest.fn(async () => ({ signedIn: true, did: 'did:pkh:eip155:1:0xabc' })),
+      withTrust: jest.fn(async (records) => records),
       ...overrides,
     };
     const settle = jest.fn();
@@ -230,6 +231,29 @@ describe('registerAquaIpc attestation channels', () => {
     expect(broadcastToAllWebContents).toHaveBeenCalledWith(IPC.AQUA_CLAIMS_CHANGED, {});
   });
 
+  test('claims reach the page with their trust state; the trust channels list and set, and a change is broadcast', async () => {
+    const annotate = (r) => ({ ...r, attestations: [{ trust: 'unknown' }] });
+    const service = {
+      listClaims: jest.fn(async () => [{ id: 'c1' }]),
+      pullAttestations: jest.fn(async () => ({ id: 'c1' })),
+      withTrust: jest.fn(async (records) => (Array.isArray(records) ? records.map(annotate) : annotate(records))),
+      listTrust: jest.fn(async () => [{ did: 'did:pkh:eip155:1:0xabc', kind: 'person', state: 'trusted' }]),
+      setTrust: jest.fn(async ({ did, state }) => ({ did, state, kind: 'person' })),
+    };
+    registerAquaIpc({ createDeps: () => ({ nodeUrl: 'https://aqua.test', service, settleSignature: jest.fn() }), log: { error: () => {} } });
+    const { invoke } = handlers();
+    expect(await invoke(IPC.AQUA_CLAIMS_LIST)).toEqual({ success: true, claims: [{ id: 'c1', attestations: [{ trust: 'unknown' }] }] });
+    expect(await invoke(IPC.AQUA_CLAIMS_PULL_ATTESTATIONS, 'c1')).toEqual({ success: true, claim: { id: 'c1', attestations: [{ trust: 'unknown' }] } });
+    broadcastToAllWebContents.mockClear();
+    expect(await invoke(IPC.AQUA_TRUST_LIST)).toEqual({ success: true, trust: [{ did: 'did:pkh:eip155:1:0xabc', kind: 'person', state: 'trusted' }] });
+    expect(broadcastToAllWebContents).not.toHaveBeenCalled();
+    expect(await invoke(IPC.AQUA_TRUST_SET, { did: 'did:pkh:eip155:1:0xdef', state: 'rejected' })).toEqual({
+      success: true, entry: { did: 'did:pkh:eip155:1:0xdef', state: 'rejected', kind: 'person' },
+    });
+    expect(service.setTrust).toHaveBeenCalledWith({ did: 'did:pkh:eip155:1:0xdef', state: 'rejected' });
+    expect(broadcastToAllWebContents).toHaveBeenCalledWith(IPC.AQUA_CLAIMS_CHANGED, {});
+  });
+
   test('owner and attester channels are registered and broadcast on mutation', async () => {
     const service = {
       shareForAttestation: jest.fn(async () => ({ id: 'c1', shares: [{}] })),
@@ -239,6 +263,7 @@ describe('registerAquaIpc attestation channels', () => {
       attestSharedClaim: jest.fn(async () => ({ id: 'a1' })),
       listIssued: jest.fn(async () => []),
       exportIssued: jest.fn(async () => '{"revisions":{}}'),
+      withTrust: jest.fn(async (records) => records),
     };
     registerAquaIpc({ createDeps: () => ({ nodeUrl: 'https://aqua.test', service, settleSignature: jest.fn() }), log: { error: () => {} } });
     const { invoke } = handlers();
@@ -264,7 +289,10 @@ describe('disclosure channels', () => {
     const sent = [];
     const deps = createAquaDeps({ nodeUrl: 'https://aqua.test', sendToChrome: (c, p) => sent.push({ c, p }) });
     deps.service.listClaims = jest.fn(async () => [CLAIM]);
+    deps.service.withTrust = jest.fn(async (records) => records);
     const prepared = await deps.prepareDisclosure({ request: { aqua: 1, need: ['name'], optional: ['email'] }, address: ADDRESS });
+    // The consent screen is worded from the trust list; the release is not.
+    expect(deps.service.withTrust).toHaveBeenCalledTimes(1);
     expect(prepared.entries.map((e) => [e.type, e.claimId])).toEqual([['name', 'c1'], ['email', null]]);
     const building = deps.buildDisclosure({ request: { aqua: 1, need: ['name'], nonce: 'n' }, selections: [{ type: 'name', claimId: 'c1' }], address: ADDRESS });
     // The holder signs the response text on the Sign Message screen.
@@ -275,6 +303,7 @@ describe('disclosure channels', () => {
     expect(signRequest.p.message).toContain('nonce: n');
     deps.settleSignature({ requestId: signRequest.p.requestId, signature: '0x' + 'ab'.repeat(65) });
     const response = await building;
+    expect(deps.service.withTrust).toHaveBeenCalledTimes(1);
     expect(response.nonce).toBe('n');
     expect(response.claims[0].claim.revisions[OBJ].disclosure).toBe('Full');
     expect(response.holder).toEqual({ did: `did:pkh:eip155:1:${ADDRESS}`, method: 'eip191', message: signRequest.p.message, signature: '0x' + 'ab'.repeat(65) });

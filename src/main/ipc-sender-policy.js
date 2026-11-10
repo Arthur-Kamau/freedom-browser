@@ -103,6 +103,8 @@ const INTERNAL_CHANNELS = [
   'aqua:shared:attest',
   'aqua:shared:list',
   'aqua:status',
+  'aqua:trust:list',
+  'aqua:trust:set',
   'aqua:unlock',
   'bookmarks:get',
   'clipboard:copy-text',

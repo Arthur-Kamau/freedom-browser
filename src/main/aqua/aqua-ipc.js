@@ -135,7 +135,10 @@ function createAquaDeps({
 
   async function prepareDisclosure({ request, address }) {
     const parsed = disclosure.parseDisclosureRequest(request);
-    const claims = await service.listClaims();
+    // The consent screen words each claim as the identity page does, so the
+    // records are judged against the trust list here. `buildDisclosure`
+    // reads the plain records: what is released never carries the judgement.
+    const claims = await service.withTrust(await service.listClaims());
     return { request: parsed, entries: disclosure.matchClaims(parsed, claims, address) };
   }
 
@@ -334,8 +337,12 @@ function registerAquaIpc({ createDeps = createAquaDeps, createProbeClient, log =
   }));
   handle(IPC.AQUA_SERVICE_PROBE, (d, url) => probeService(url, createProbeClient));
   handle(IPC.AQUA_SERVICE_SIGN_IN, (d) => d.service.signIn());
-  handle(IPC.AQUA_CLAIMS_LIST, async (d) => ({ claims: await d.service.listClaims() }));
-  handle(IPC.AQUA_CLAIMS_CREATE, async (d, request) => ({ claim: await d.service.createClaim(request || {}) }), { mutates: true });
+  // Every claim the page receives says, per attestation, whether its signer
+  // is on the user's trust list (`withTrust`); the store and a disclosure
+  // never carry that judgement.
+  const shown = async (d, record) => d.service.withTrust(await record);
+  handle(IPC.AQUA_CLAIMS_LIST, async (d) => ({ claims: await shown(d, d.service.listClaims()) }));
+  handle(IPC.AQUA_CLAIMS_CREATE, async (d, request) => ({ claim: await shown(d, d.service.createClaim(request || {})) }), { mutates: true });
   handle(IPC.AQUA_CLAIMS_REMOVE, async (d, id) => ({ removed: await d.service.removeClaim(id) }), { mutates: true });
   // The user picks where the file goes; nothing is written on cancel. The
   // JSON is built before the dialog so a locked store refuses first.
@@ -351,22 +358,26 @@ function registerAquaIpc({ createDeps = createAquaDeps, createProbeClient, log =
     return { saved: true, path: result.filePath, count };
   });
   handle(IPC.AQUA_CLAIMS_REMOVE_ALL, async (d) => ({ removed: await d.service.removeAllClaims() }), { mutates: true });
-  handle(IPC.AQUA_CLAIMS_REFRESH, async (d, id) => ({ claim: await d.service.refreshClaim(id) }), { mutates: true });
+  handle(IPC.AQUA_CLAIMS_REFRESH, async (d, id) => ({ claim: await shown(d, d.service.refreshClaim(id)) }), { mutates: true });
   handle(IPC.AQUA_CLAIMS_SEND_CODE, (d, request) => d.service.sendCode(request || {}));
   handle(IPC.AQUA_CLAIMS_VERIFY_CODE, (d, request) => d.service.verifyCode(request || {}));
   handle(IPC.AQUA_CLAIMS_DNS_INSTRUCTIONS, (d, id) => d.service.dnsInstructions(id));
-  handle(IPC.AQUA_CLAIMS_VERIFY_DNS, async (d, id) => ({ claim: await d.service.verifyDns(id) }), { mutates: true });
+  handle(IPC.AQUA_CLAIMS_VERIFY_DNS, async (d, id) => ({ claim: await shown(d, d.service.verifyDns(id)) }), { mutates: true });
   // Attestation, owner side: share a claim, pull what the service recorded,
   // import the tree an attester handed over.
-  handle(IPC.AQUA_CLAIMS_SHARE, async (d, id, recipient) => ({ claim: await d.service.shareForAttestation(id, recipient) }), { mutates: true });
-  handle(IPC.AQUA_CLAIMS_PULL_ATTESTATIONS, async (d, id) => ({ claim: await d.service.pullAttestations(id) }), { mutates: true });
-  handle(IPC.AQUA_CLAIMS_IMPORT_ATTESTATION, async (d, id, tree) => ({ claim: await d.service.importAttestation(id, tree) }), { mutates: true });
+  handle(IPC.AQUA_CLAIMS_SHARE, async (d, id, recipient) => ({ claim: await shown(d, d.service.shareForAttestation(id, recipient)) }), { mutates: true });
+  handle(IPC.AQUA_CLAIMS_PULL_ATTESTATIONS, async (d, id) => ({ claim: await shown(d, d.service.pullAttestations(id)) }), { mutates: true });
+  handle(IPC.AQUA_CLAIMS_IMPORT_ATTESTATION, async (d, id, tree) => ({ claim: await shown(d, d.service.importAttestation(id, tree)) }), { mutates: true });
   // Attestation, attester side: what was shared with this wallet, attest it,
   // and hand the result back.
   handle(IPC.AQUA_SHARED_LIST, async (d) => ({ shared: await d.service.listSharedClaims() }));
   handle(IPC.AQUA_SHARED_ATTEST, async (d, request) => ({ issued: await d.service.attestSharedClaim(request || {}) }), { mutates: true });
   handle(IPC.AQUA_ISSUED_LIST, async (d) => ({ issued: await d.service.listIssued() }));
   handle(IPC.AQUA_ISSUED_EXPORT, async (d, id) => ({ json: await d.service.exportIssued(id) }));
+  // The trust list: accepting or rejecting a signer changes how claims
+  // read, so it is broadcast like any other change.
+  handle(IPC.AQUA_TRUST_LIST, async (d) => ({ trust: await d.service.listTrust() }));
+  handle(IPC.AQUA_TRUST_SET, async (d, request) => ({ entry: await d.service.setTrust(request || {}) }), { mutates: true });
 
   // Disclosure. prepare and build are chrome-only (not tiered for webviews);
   // manual is the page's pasted request, answered by the chrome below.

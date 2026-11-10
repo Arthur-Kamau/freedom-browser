@@ -133,13 +133,26 @@ Alice's side. She does nothing."
 
 **Do**: switch to Alice's profile. Reload `freedom://identity`.
 
-**See**: the Name row's people mark now shows one green pip and the panel says
-Verified, People who know you "Vouched by 1". Under Evidence: Person vouched,
-Bob's address, his words and a Verified chip, above "You signed the claim".
+**See**: the Name row's people mark now shows one grey pip and the badge says
+Vouched by 1, not Verified. People who know you reads "Vouched by 1, none you
+trust yet", and the line under it "Vouched by <Bob's address>, not trusted by
+you. Accept them to count it." Under Evidence: Person vouched, Bob's address,
+his words and a "Not trusted by you" chip, above "You signed the claim".
 
 **Say**: "No button on Alice's side. An attestation can only be downloaded
 by the wallet that made it, so Bob's Freedom shared it back to Alice on the
-service, and hers imported and verified it when the page opened."
+service, and hers imported and verified it when the page opened. But anybody
+can sign a vouch, so a signature alone says nothing. It counts once Alice
+says she trusts the signer."
+
+**Do**: click Who and when. In the dialog, on Bob's vouch, click Accept.
+
+**See**: the chip turns to "Trusted by you", the badge behind the dialog to
+Verified, and the pip green. Nothing was signed and nothing was sent: Bob's
+address went on Alice's trust list, which is kept in her vault. Reject puts
+it back to Vouched by 1, and Accept again undoes that. The e-mail claim from
+scene 3 was Verified from the start, because choosing an identity service
+puts that service on the list.
 
 If you have time: switch to Bob, click Copy as file, switch to Alice, select
 the Name row, click Import a vouch, paste, Add to evidence. Say: "The same thing by
@@ -176,7 +189,10 @@ why. The nonce comes back so the shop can match the answer."
 
 **See**: the sidebar opens the Share Identity screen. The site name at the
 top, the purpose in quotes, then three rows: Name ticked and showing the
-values with Verified by 1, Email ticked and Verified by 1, Domain unticked.
+values with Verified (Bob is on the trust list), Email ticked and Verified,
+Domain unticked. A claim vouched for only by signers Alice has not accepted
+would say Vouched by N here too. The site still receives every vouch as
+signed: whom to trust is the site's own decision.
 
 **Do**: under Name untick Family name.
 

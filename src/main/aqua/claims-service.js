@@ -19,7 +19,7 @@
  */
 const crypto = require('crypto');
 const { readAquaChains } = require('./zip-reader');
-const { CLAIM_TYPES } = require('./claims-store');
+const { CLAIM_TYPES, TRUST_STATES, didKey } = require('./claims-store');
 
 // Matches the SDK's phone_claim template pattern (E.164).
 const E164 = /^\+[1-9]\d{1,14}$/;
@@ -294,9 +294,44 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
    */
   function sourceOf(attesterDid, caps) {
     if (!attesterDid || !caps) return 'peer';
-    const wanted = attesterDid.toLowerCase();
-    const known = [caps.serviceDid, ...(caps.attesters || [])].filter(Boolean);
-    return known.some((did) => did.toLowerCase() === wanted) ? 'service' : 'peer';
+    const wanted = didKey(attesterDid);
+    return serviceDids(caps).some((did) => didKey(did) === wanted) ? 'service' : 'peer';
+  }
+
+  /** The DIDs the chosen identity service signs with: its node DID and its named attesters. */
+  function serviceDids(caps) {
+    return [caps?.serviceDid, ...(caps?.attesters || [])].filter(Boolean);
+  }
+
+  // ── The trust list ───────────────────────────────────────────────────
+  // The chosen service's DIDs go on the list as trusted the first time they
+  // are seen with the vault open, which is what choosing a service means. A
+  // DID the user rejected stays rejected. A service that does not answer
+  // adds nothing; the list as stored still applies.
+  async function trustList() {
+    const caps = await serviceCapabilities().catch(() => null);
+    if (caps && caps.reachable !== false) {
+      await store.addTrusted(serviceDids(caps), { kind: 'service', at: now().toISOString() });
+    }
+    return store.listTrust();
+  }
+
+  /** `trusted`, `rejected`, or `unknown` for a DID that is not on the list. */
+  function trustOf(did, list) {
+    const key = didKey(did);
+    if (!key) return 'unknown';
+    return list.find((entry) => didKey(entry.did) === key)?.state || 'unknown';
+  }
+
+  // A copy of a claim record with each attestation's trust state for the
+  // page. Copies only: the stored record and what a disclosure releases
+  // never carry the user's judgement.
+  function annotate(record, list) {
+    if (!record || !Array.isArray(record.attestations)) return record;
+    return {
+      ...record,
+      attestations: record.attestations.map((a) => ({ ...a, trust: trustOf(a.attesterDid, list) })),
+    };
   }
 
   async function verifyLinked(tree, claimTree) {
@@ -369,6 +404,33 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
     },
 
     listClaims: () => store.list(),
+
+    /**
+     * Claim records as the identity page shows them: each attestation says
+     * whether its signer is on the user's trust list. Takes one record or a
+     * list, and never touches what is stored.
+     */
+    async withTrust(records) {
+      const list = await trustList();
+      return Array.isArray(records) ? records.map((r) => annotate(r, list)) : annotate(records, list);
+    },
+
+    /** The trust list, the chosen service's DIDs included. */
+    listTrust: () => trustList(),
+
+    /** Accept (`trusted`) or reject (`rejected`) a DID; either can be reversed with the other. */
+    async setTrust({ did, state } = {}) {
+      if (typeof did !== 'string' || !didKey(did).startsWith('did:')) {
+        throw new ClaimInputError('Name the DID to trust or reject', 'did');
+      }
+      if (!TRUST_STATES.includes(state)) throw new ClaimInputError('Choose trusted or rejected', 'state');
+      const wallet = await getActiveWallet().catch(() => null);
+      if (wallet?.address && didKey(did) === didKey(`did:pkh:eip155:1:${wallet.address}`)) {
+        throw new ClaimInputError('Your own wallet cannot vouch for your own claims', 'did');
+      }
+      const caps = await serviceCapabilities().catch(() => null);
+      return store.setTrust(did, state, { kind: sourceOf(did, caps) === 'service' ? 'service' : 'person', at: now().toISOString() });
+    },
 
     /**
      * Every claim record as one JSON document: the trees, the attestations

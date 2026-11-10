@@ -2,7 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { createClaimsStore, ClaimsStoreLocked, STORE_FILE } = require('./claims-store');
+const { createClaimsStore, ClaimsStoreLocked, STORE_FILE, didKey } = require('./claims-store');
 
 const SEED = crypto.createHash('sha512').update('test seed').digest();
 const OWN_DID = 'did:pkh:eip155:1:0x12BECb263eB324b9638Ef75cE9BA1ae5DB8b1AF8';
@@ -127,5 +127,68 @@ describe('issued attestations', () => {
     await store.upsert(record());
     expect(await store.listIssued()).toEqual([]);
     await expect(store.addIssued({ id: 'x' })).rejects.toThrow('Aqua tree');
+  });
+});
+
+describe('trust list', () => {
+  const PEER = 'did:pkh:eip155:1:0xC412D3047AFFD97DC51C5C52E2588AE4238CBF88';
+  const KEY = 'did:key:z6MkiTBz1ymuepAQ4HEHYSF1H8quG5GLVVQR3djdX3mDooWp';
+
+  test('a DID is trusted or rejected, either undoes the other, and the choice survives a reopen', async () => {
+    const { store, dataDir, state } = makeStore();
+    expect(await store.listTrust()).toEqual([]);
+    await store.setTrust(PEER, 'trusted', { at: '2026-11-10T10:00:00Z' });
+    expect(await store.listTrust()).toEqual([
+      { did: PEER, kind: 'person', state: 'trusted', updatedAt: '2026-11-10T10:00:00Z' },
+    ]);
+    // The same wallet in another letter case is the same entry.
+    await store.setTrust(PEER.toLowerCase(), 'rejected', { at: '2026-11-10T11:00:00Z' });
+    expect(await store.listTrust()).toEqual([
+      { did: PEER, kind: 'person', state: 'rejected', updatedAt: '2026-11-10T11:00:00Z' },
+    ]);
+    await store.setTrust(PEER, 'trusted', { at: '2026-11-10T12:00:00Z' });
+    const reopened = createClaimsStore({ dataDir, getSeed: async () => state.seed, isOwnDid: async () => true });
+    expect((await reopened.listTrust())[0]).toMatchObject({ did: PEER, state: 'trusted' });
+    // Sealed with the vault: the DID is not readable in the file.
+    expect(fs.readFileSync(path.join(dataDir, STORE_FILE), 'utf8')).not.toContain('C412D3047AFF');
+  });
+
+  test('a did:key is compared exactly: a case variant is another key', async () => {
+    const { store } = makeStore();
+    await store.setTrust(KEY, 'trusted');
+    await store.setTrust(KEY.replace('z6Mk', 'z6MK'), 'rejected');
+    expect((await store.listTrust()).map((e) => e.state)).toEqual(['trusted', 'rejected']);
+    expect(didKey(KEY)).toBe(KEY);
+    expect(didKey(` ${PEER} `)).toBe(PEER.toLowerCase());
+  });
+
+  test('addTrusted adds only what the list does not know, so a rejection is never overwritten', async () => {
+    const { store } = makeStore();
+    await store.setTrust(KEY, 'rejected', { kind: 'service' });
+    expect(await store.addTrusted([KEY, PEER, PEER.toLowerCase(), null, 'not a did'], { kind: 'service', at: 't' })).toBe(1);
+    expect(await store.listTrust()).toEqual([
+      expect.objectContaining({ did: KEY, kind: 'service', state: 'rejected' }),
+      { did: PEER, kind: 'service', state: 'trusted', updatedAt: 't' },
+    ]);
+    expect(await store.addTrusted([KEY, PEER])).toBe(0);
+  });
+
+  test('refuses what is not a DID or not a state, needs the vault open, and outlives removeAll', async () => {
+    const { store, state } = makeStore();
+    await expect(store.setTrust('0xabc', 'trusted')).rejects.toThrow('needs a DID');
+    await expect(store.setTrust(PEER, 'maybe')).rejects.toThrow('Unknown trust state');
+    await store.setTrust(PEER, 'trusted');
+    await store.upsert(record());
+    await store.removeAll();
+    expect(await store.listTrust()).toHaveLength(1);
+    state.seed = null;
+    await expect(store.listTrust()).rejects.toBeInstanceOf(ClaimsStoreLocked);
+    await expect(store.setTrust(PEER, 'rejected')).rejects.toBeInstanceOf(ClaimsStoreLocked);
+  });
+
+  test('a store written before the trust list existed still opens', async () => {
+    const { store } = makeStore();
+    await store.upsert(record());
+    expect(await store.listTrust()).toEqual([]);
   });
 });

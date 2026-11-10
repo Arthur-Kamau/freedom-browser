@@ -471,9 +471,21 @@ function validAttestations(claim) {
   return (claim.attestations || []).filter((a) => a.verification?.isValid === true);
 }
 
+// Whether a vouch counts for this user: `trusted` when its signer is on
+// their trust list, `rejected` when they said no, `unknown` for a signer the
+// list says nothing about. Main decides; anything else reads as unknown.
+function trustOf(a) {
+  return a?.trust === 'trusted' || a?.trust === 'rejected' ? a.trust : 'unknown';
+}
+
+function trustedAttestations(claim) {
+  return validAttestations(claim).filter((a) => trustOf(a) === 'trusted');
+}
+
 // One word a verifier and a newcomer both read the same way: it does not
-// verify, it is verified (the node or at least one person signed it too),
-// or only you have signed it so far.
+// verify, it is verified (a signer you trust signed it too), others vouch
+// for it but none you trust, or only you have signed it so far. Anybody
+// can sign a vouch, so a vouch alone never reads as Verified.
 function statusBadge(claim) {
   if (claim.verification && claim.verification.isValid === false) {
     return badge('invalid', 'x-circle', 'Does not verify');
@@ -481,14 +493,11 @@ function statusBadge(claim) {
   if (claim.type === 'domain' && claim.domainVerification === 'verified') {
     return badge('attested', 'check-circle', 'Verified');
   }
-  const valid = validAttestations(claim);
-  if (valid.length > 0) {
-    return badge(
-      'attested',
-      'check-circle',
-      valid.length === 1 ? 'Verified' : `Verified by ${valid.length}`
-    );
+  if (trustedAttestations(claim).length > 0) {
+    return badge('attested', 'check-circle', 'Verified');
   }
+  const valid = validAttestations(claim);
+  if (valid.length > 0) return badge('vouched', 'users', `Vouched by ${valid.length}`);
   return badge('', 'pen', 'Not yet verified');
 }
 
@@ -504,13 +513,15 @@ function madeElsewhere(claim) {
 // vouch. `broken` is set when the claim itself does not verify, and then
 // one red mark replaces both.
 function proofOf(claim) {
-  const valid = validAttestations(claim);
-  const people = valid.filter((a) => a.source !== 'service').length;
+  const valid = validAttestations(claim).filter((a) => a.source !== 'service');
+  const people = valid.length;
+  const trustedPeople = valid.filter((a) => trustOf(a) === 'trusted').length;
   const verification = claim.verification || {};
   if (verification.isValid === false) {
     return {
       service: 'failed',
       people,
+      trustedPeople,
       broken: verification.status || 'unknown',
     };
   }
@@ -527,7 +538,7 @@ function proofOf(claim) {
     const dns = claim.domainVerification || 'pending';
     service = dns === 'verified' ? 'yes' : dns === 'pending' ? 'pending' : 'failed';
   }
-  return { service, people, broken: null };
+  return { service, people, trustedPeople, broken: null };
 }
 
 const SERVICE_MARK = {
@@ -584,9 +595,16 @@ function proofSmall(proof, node) {
   if (!s.short) sm.appendChild(el('span', 'sr-only', s.long(node)));
   box.appendChild(sm);
   if (proof.people > 0) {
-    const pm = mark('tone-success', 'users', '', `Vouched by ${proof.people}`);
+    const pm = mark(
+      proof.trustedPeople > 0 ? 'tone-success' : 'tone-muted',
+      'users',
+      '',
+      peopleText(proof)
+    );
     const pips = el('span', 'pips');
-    for (let i = 0; i < Math.min(proof.people, 3); i += 1) pips.appendChild(el('span', 'pip'));
+    // Trusted vouchers first, in green; the rest are counted in grey.
+    for (let i = 0; i < Math.min(proof.people, 3); i += 1)
+      pips.appendChild(el('span', i < proof.trustedPeople ? 'pip' : 'pip untrusted'));
     pm.appendChild(pips);
     if (proof.people > 3) pm.appendChild(document.createTextNode(`+${proof.people - 3}`));
     pm.appendChild(el('span', 'sr-only', `${proof.people} vouches`));
@@ -595,6 +613,16 @@ function proofSmall(proof, node) {
     box.appendChild(mark('tone-dashed', 'users', '0', 'No vouches yet'));
   }
   return box;
+}
+
+// "Vouched by 3", and how many of them the user trusts when not all.
+function peopleText(proof) {
+  if (proof.people === 0) return 'No vouches yet';
+  const base = `Vouched by ${proof.people}`;
+  if (proof.trustedPeople === proof.people) return base;
+  return proof.trustedPeople === 0
+    ? `${base}, none you trust yet`
+    : `${base}, ${proof.trustedPeople} you trust`;
 }
 
 // The marks at panel size: two tiles, or the red block.
@@ -636,21 +664,20 @@ function proofLarge(claim, proof, node) {
   grid.appendChild(svc);
 
   const ppl = el('div', 'tile');
-  const pplIc = el('span', `tile-ic ${proof.people > 0 ? 'tone-success' : 'tone-dashed'}`);
+  const pplIc = el(
+    'span',
+    `tile-ic ${proof.trustedPeople > 0 ? 'tone-success' : proof.people > 0 ? 'tone-muted' : 'tone-dashed'}`
+  );
   pplIc.appendChild(icon('users'));
   ppl.appendChild(pplIc);
   const pplBody = el('div', 'tile-body');
   pplBody.appendChild(el('div', 'tile-label', 'People who know you'));
-  const value = el(
-    'div',
-    'tile-value',
-    proof.people > 0 ? `Vouched by ${proof.people}` : 'No vouches yet'
-  );
+  const value = el('div', 'tile-value', peopleText(proof));
   if (proof.people > 0) {
     const pips = el('span', 'pips-lg');
     const people = validAttestations(claim).filter((a) => a.source !== 'service');
     people.slice(0, 5).forEach((a, i) => {
-      const pip = el('button', 'pip-lg');
+      const pip = el('button', trustOf(a) === 'trusted' ? 'pip-lg' : 'pip-lg untrusted');
       pip.type = 'button';
       pip.title = a.attesterDid ? shortDid(a.attesterDid) : `Vouch ${i + 1}`;
       pip.setAttribute('aria-label', `Vouch from ${pip.title}`);
@@ -875,9 +902,56 @@ function renderAttestation(a, { last = false, node = '' } = {}) {
               text: `Does not verify: ${a.verification?.status || 'unknown'}`,
               badge: badge('invalid', 'x-circle', 'Does not verify'),
             }
-          : { badge: badge('attested', 'check-circle', 'Verified') },
+          : { badge: trustBadge(a) },
     last,
   });
+}
+
+// The chip on one vouch whose signature checks out: whether it counts.
+function trustBadge(a) {
+  const trust = trustOf(a);
+  if (trust === 'trusted') return badge('attested', 'check-circle', 'Trusted by you');
+  if (trust === 'rejected') return badge('invalid', 'x-circle', 'Rejected by you');
+  return badge('vouched', 'users', 'Not trusted by you');
+}
+
+// The plain line under the marks that names who stands behind the badge:
+// the signer you trust, or the vouchers you have not accepted.
+function trustLine(claim) {
+  if (claim.verification && claim.verification.isValid === false) return null;
+  const valid = validAttestations(claim);
+  if (valid.length === 0) return null;
+  const node = nodeName(claim.nodeUrl || serviceUrl) || 'the identity service';
+  const nameOf = (a) =>
+    a.source === 'service' ? node : a.attesterDid ? shortDid(a.attesterDid) : 'someone';
+  const namesOf = (list) =>
+    list.length === 1 ? nameOf(list[0]) : `${nameOf(list[0])} and ${list.length - 1} more`;
+  const line = el('p', 'panel-copy trust-line');
+  const trusted = valid.filter((a) => trustOf(a) === 'trusted');
+  if (trusted.length > 0) {
+    const first = trusted.find((a) => a.source === 'service') || trusted[0];
+    line.appendChild(
+      document.createTextNode(
+        first.source === 'service'
+          ? `Verified: ${node} checked it.`
+          : `Verified: ${nameOf(first)} vouches for it, and you trust them.`
+      )
+    );
+    return line;
+  }
+  const open = valid.filter((a) => trustOf(a) === 'unknown');
+  line.appendChild(
+    document.createTextNode(
+      open.length > 0
+        ? `Vouched by ${namesOf(open)}, not trusted by you. Accept them to count it. `
+        : `Vouched by ${namesOf(valid)}, rejected by you. `
+    )
+  );
+  const review = el('button', 'link-btn', open.length > 0 ? 'Who and when' : 'Review');
+  review.type = 'button';
+  review.addEventListener('click', () => openVouchesDialog(claim));
+  line.appendChild(review);
+  return line;
 }
 
 // The one plain line under the marks that says what to do next.
@@ -900,7 +974,7 @@ function nextStep(claim, proof, elsewhere) {
     return el(
       'p',
       'panel-copy',
-      `${node} checked it. People who know you can vouch for it too, which makes it worth more to a site.`
+      'People who know you can vouch for it too, which makes it worth more to a site.'
     );
   }
   if (proof.people > 0) return null;
@@ -1071,6 +1145,8 @@ function renderClaimPanel(claim) {
   title.appendChild(statusBadge(claim));
   out.push(title);
   out.push(proofLarge(claim, proof, node));
+  const trust = trustLine(claim);
+  if (trust) out.push(trust);
 
   if (elsewhere) {
     const callout = el('div', 'callout info');
@@ -1514,7 +1590,13 @@ function renderVouch(a) {
   const state = a.verification?.isValid ? 'ok' : a.pending ? 'wait' : 'bad';
   const box = el(
     'div',
-    state === 'ok' ? 'vouch' : state === 'wait' ? 'vouch pending' : 'vouch invalid'
+    state === 'ok'
+      ? trustOf(a) === 'trusted'
+        ? 'vouch'
+        : 'vouch untrusted'
+      : state === 'wait'
+        ? 'vouch pending'
+        : 'vouch invalid'
   );
   const head = el('div', 'vouch-head');
   const source = el('span', 'source');
@@ -1529,7 +1611,7 @@ function renderVouch(a) {
   head.appendChild(el('span', 'spacer'));
   head.appendChild(
     state === 'ok'
-      ? badge('attested', 'check-circle', 'Verified')
+      ? trustBadge(a)
       : state === 'wait'
         ? badge('pending', 'clock', 'On its way')
         : badge('invalid', 'x-circle', 'Does not verify')
@@ -1547,6 +1629,7 @@ function renderVouch(a) {
   );
   if (a.tip) box.appendChild(dnsRow('Hash', a.tip));
   if (a.context) box.appendChild(el('div', 'words', a.context));
+  if (state === 'ok' && a.attesterDid) box.appendChild(trustRow(a));
   if (state === 'wait') {
     box.appendChild(
       el(
@@ -1561,6 +1644,50 @@ function renderVouch(a) {
     );
   }
   return box;
+}
+
+// Accept or reject the signer of one vouch. The choice is about the signer,
+// so it applies to every claim they vouch for, and either button undoes the
+// other. Nothing is signed and nothing leaves the browser.
+function trustRow(a) {
+  const trust = trustOf(a);
+  const row = el('div', 'trust-row');
+  row.appendChild(
+    el(
+      'span',
+      'trust-text',
+      trust === 'trusted'
+        ? 'You trust this signer, so their vouch counts.'
+        : trust === 'rejected'
+          ? 'You rejected this signer. Their vouch stays on the claim and does not count.'
+          : 'This signer is not on your trust list, so their vouch does not count yet.'
+    )
+  );
+  const act = (label, iconName, state) => {
+    const btn = button('btn small', iconName, label);
+    btn.addEventListener('click', () => setTrust(a.attesterDid, state, btn));
+    row.appendChild(btn);
+  };
+  if (trust !== 'trusted')
+    act(trust === 'rejected' ? 'Accept again' : 'Accept', 'check', 'trusted');
+  if (trust !== 'rejected') act('Reject', 'x', 'rejected');
+  return row;
+}
+
+async function setTrust(did, state, btn) {
+  const claimId = current?.id;
+  btn.disabled = true;
+  const result = await window.freedomAPI.aquaSetTrust(did, state);
+  btn.disabled = false;
+  if (!result?.success) {
+    showNotice('error', errorText(result, 'The trust list could not be changed.'));
+    return;
+  }
+  // The claims are read again from the vault, not from the node: the same
+  // vouches, judged against the changed list.
+  await loadClaims();
+  const refreshed = claims.find((c) => c.id === claimId);
+  if (refreshed && vouchesDialog.open) openVouchesDialog(refreshed);
 }
 
 // Every vouch on a claim, newest first, then your own signature.

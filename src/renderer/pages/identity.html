@@ -962,6 +962,26 @@
         border-color: var(--warn);
         color: var(--warn);
       }
+      .pip.untrusted,
+      .pip-lg.untrusted {
+        background: var(--text-muted);
+        opacity: 0.55;
+      }
+      .vouch.untrusted {
+        border-left-color: var(--border-strong);
+      }
+      .trust-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+        font-size: 12.5px;
+        color: var(--text-muted);
+      }
+      .trust-row .trust-text {
+        flex: 1 1 220px;
+      }
 
       .proof-lg {
         display: grid;

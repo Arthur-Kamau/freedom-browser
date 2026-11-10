@@ -44,6 +44,15 @@ afterEach(() => {
 });
 
 describe('Share Identity screen', () => {
+  test('a claim reads Verified only when a signer on the trust list signed it', async () => {
+    const entry = (summary) => ({ type: 'name', required: true, fields: null, claimId: 'c1', summary: { payload: { given_name: 'A' }, ...summary } });
+    const { mod, elements } = await load({ prepared: { success: true, request: { purpose: 'p', nonce: 'n' }, entries: [entry({ attested: 3, trusted: 1 }), entry({ attested: 2, trusted: 0 }), entry({ attested: 2 })] } });
+    mod.showAquaDisclosure({ label: 'shop.example', address: '0xabc', request: { aqua: 1, need: ['name'] } }).catch(() => {});
+    await flush();
+    const meta = elements['aqua-disclose-list'].querySelectorAll('.aqua-disclose-meta').map((m) => m.textContent);
+    expect(meta).toEqual(['Verified', 'Vouched by 2', 'Vouched by 2']);
+  });
+
   test('lists the matched claims: required ticked, optional unticked, missing disabled; Share sends the ticks', async () => {
     const { mod, elements, open } = await load();
     const promise = mod.showAquaDisclosure({ label: 'shop.example', address: '0xabc', request: { aqua: 1, need: ['name', 'email'], optional: ['domain'] } });
@@ -57,7 +66,8 @@ describe('Share Identity screen', () => {
     const boxes = rows.map((r) => r.querySelector('.aqua-disclose-check'));
     expect(boxes.map((b) => [b.checked, b.disabled])).toEqual([[true, false], [false, true], [false, false]]);
     expect(rows[0].querySelector('.aqua-disclose-value').textContent).toBe('Given name: Probe · Family name: Freedom');
-    expect(rows[0].querySelector('.aqua-disclose-meta').textContent).toBe('Verified by 1');
+    // A vouch from a signer the user has not accepted is a vouch, not Verified.
+    expect(rows[0].querySelector('.aqua-disclose-meta').textContent).toBe('Vouched by 1');
     expect(rows[1].querySelector('.aqua-disclose-meta').textContent).toBe('You have no such claim');
     expect(rows[2].querySelector('.aqua-disclose-meta').textContent).toContain('Not yet verified');
     // Hold back the family name, add the optional domain.

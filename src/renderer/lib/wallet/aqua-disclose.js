@@ -94,9 +94,13 @@ function renderEntry(entry) {
   } else {
     box.checked = entry.required;
     body.appendChild(el('div', 'aqua-disclose-value', valueOf(entry.summary)));
-    const status = entry.summary.attested > 0
-      ? `Verified by ${entry.summary.attested}`
-      : 'Not yet verified: only your signature';
+    // The same words as freedom://identity: Verified only when a signer on
+    // the user's trust list signed it; other vouches are counted as vouches.
+    const status = entry.summary.trusted > 0
+      ? 'Verified'
+      : entry.summary.attested > 0
+        ? `Vouched by ${entry.summary.attested}`
+        : 'Not yet verified: only your signature';
     body.appendChild(el('div', 'aqua-disclose-meta', status));
     if (entry.fields && entry.fields.length > 1) {
       const fields = el('div', 'aqua-disclose-fields');
