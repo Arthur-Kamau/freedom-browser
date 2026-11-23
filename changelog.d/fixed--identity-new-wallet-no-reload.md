@@ -1,0 +1,1 @@
+- Identity claims: `freedom://identity` notices a wallet created in the sidebar while the page is open and moves on to the sign-in step by itself; before, the page stayed on "Start with a wallet" until it was reloaded

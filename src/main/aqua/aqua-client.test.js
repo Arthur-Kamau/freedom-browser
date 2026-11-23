@@ -187,6 +187,21 @@ describe('createAquaClient claim calls', () => {
     expect(service.calls.find((c) => c.key === 'POST /api/claims/send-code').body).toEqual({ target: 'a@b.c', channel: 'email' });
   });
 
+  test('a claim-first service is reported per kind, and its codes carry the claim tip', async () => {
+    const { client, service } = makeClient({
+      'GET /node/identity': { did: 'did:pkh:eip155:1:0xnode' },
+      'GET /api/claims/twilio-status': { enabled: true, phone_via_identity_service: false, email_via_identity_service: true },
+      'POST /api/claims/send-code': { success: true, message: 'sent' },
+      'POST /api/claims/verify-code': { success: true, message: 'ok', attestation_tip: '0xatt' },
+    });
+    expect((await client.capabilities()).claimFirst).toEqual({ email: true, phone: false });
+    await client.sendCode(ADDRESS, { target: 'a@b.c', channel: 'email', tip: '0xtip' });
+    const verified = await client.verifyCode(ADDRESS, { target: 'a@b.c', code: '123456', tip: '0xtip' });
+    expect(verified.attestation_tip).toBe('0xatt');
+    expect(service.calls.find((c) => c.key === 'POST /api/claims/send-code').body).toEqual({ target: 'a@b.c', channel: 'email', tip: '0xtip' });
+    expect(service.calls.find((c) => c.key === 'POST /api/claims/verify-code').body).toEqual({ target: 'a@b.c', code: '123456', tip: '0xtip' });
+  });
+
   test('a network failure is an AquaServiceError naming the path', async () => {
     const client = createAquaClient({
       baseUrl: 'https://aqua.test',
@@ -234,11 +249,11 @@ describe('createAquaClient attestation calls', () => {
 
   test('capabilities reports a bare node as reachable without out-of-band verification', async () => {
     const full = makeClient({ 'GET /node/identity': { did: 'did:pkh:eip155:1:0xnode' }, 'GET /api/claims/twilio-status': { enabled: true } });
-    expect(await full.client.capabilities()).toEqual({ reachable: true, serviceDid: 'did:pkh:eip155:1:0xnode', attesters: ['did:pkh:eip155:1:0xnode'], claimTypes: {}, outOfBandVerification: true });
+    expect(await full.client.capabilities()).toEqual({ reachable: true, serviceDid: 'did:pkh:eip155:1:0xnode', attesters: ['did:pkh:eip155:1:0xnode'], claimTypes: {}, outOfBandVerification: true, claimFirst: { email: false, phone: false } });
     const bare = makeClient({ 'GET /node/identity': { did: 'did:pkh:eip155:1:0xnode' } });
-    expect(await bare.client.capabilities()).toEqual({ reachable: true, serviceDid: 'did:pkh:eip155:1:0xnode', attesters: ['did:pkh:eip155:1:0xnode'], claimTypes: {}, outOfBandVerification: false });
+    expect(await bare.client.capabilities()).toEqual({ reachable: true, serviceDid: 'did:pkh:eip155:1:0xnode', attesters: ['did:pkh:eip155:1:0xnode'], claimTypes: {}, outOfBandVerification: false, claimFirst: { email: false, phone: false } });
     const down = createAquaClient({ baseUrl: 'https://aqua.test', fetchImpl: async () => { throw new Error('down'); }, signMessage: async () => '0x' });
-    expect(await down.capabilities()).toEqual({ reachable: false, serviceDid: null, attesters: [], claimTypes: {}, outOfBandVerification: false });
+    expect(await down.capabilities()).toEqual({ reachable: false, serviceDid: null, attesters: [], claimTypes: {}, outOfBandVerification: false, claimFirst: { email: false, phone: false } });
     expect(full.signMessage).not.toHaveBeenCalled();
   });
 

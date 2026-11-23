@@ -66,17 +66,18 @@ the next scenes."
 ## Scene 3: The service verifies Alice's email (3 minutes)
 
 **Do**: click Add your email address under the list. Type Alice's address.
-Click Send code (step 1).
+Click Sign and send code (step 1) and approve the signature on the sidebar.
 
 **See**: step 1 ticks and says "Sent to …"; step 2 opens.
 
 **Do**: switch to the inbox, read the code, come back, type it in step 2, click
 Verify code.
 
-**See**: step 2 ticks and says the node checked it; step 3, Sign the claim,
-opens.
+**See**: the composer closes on the new claim.
 
-**Do**: click Sign and add, approve the signature on the sidebar.
+On a service that still checks the code before the claim exists, the steps
+are Send code, Verify code, then Sign and add; the page shows whichever order
+the service uses.
 
 **See**: an Email row with a teal Checked shield. The panel says Node check
 "Checked by dev.aquafire", and under Evidence "Identity service checked it"

@@ -359,8 +359,17 @@ function registerAquaIpc({ createDeps = createAquaDeps, createProbeClient, log =
   });
   handle(IPC.AQUA_CLAIMS_REMOVE_ALL, async (d) => ({ removed: await d.service.removeAllClaims() }), { mutates: true });
   handle(IPC.AQUA_CLAIMS_REFRESH, async (d, id) => ({ claim: await shown(d, d.service.refreshClaim(id)) }), { mutates: true });
-  handle(IPC.AQUA_CLAIMS_SEND_CODE, (d, request) => d.service.sendCode(request || {}));
-  handle(IPC.AQUA_CLAIMS_VERIFY_CODE, (d, request) => d.service.verifyCode(request || {}));
+  // On a claim-first service sending the code creates and signs the claim,
+  // and a held code attests it, so both are changes pages re-read.
+  handle(IPC.AQUA_CLAIMS_SEND_CODE, (d, request) => d.service.sendCode(request || {}), { mutates: true });
+  handle(
+    IPC.AQUA_CLAIMS_VERIFY_CODE,
+    async (d, request) => {
+      const result = await d.service.verifyCode(request || {});
+      return result.claim ? { claim: await shown(d, result.claim) } : result;
+    },
+    { mutates: true }
+  );
   handle(IPC.AQUA_CLAIMS_DNS_INSTRUCTIONS, (d, id) => d.service.dnsInstructions(id));
   handle(IPC.AQUA_CLAIMS_VERIFY_DNS, async (d, id) => ({ claim: await shown(d, d.service.verifyDns(id)) }), { mutates: true });
   // Attestation, owner side: share a claim, pull what the service recorded,

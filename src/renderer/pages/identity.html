@@ -1337,6 +1337,8 @@
       .event-sub .who {
         font-family: var(--font-mono);
       }
+      /* The box holds the padding and the text holds the clamp: a clamp on a
+         padded box lets the next line show through its bottom padding. */
       .event .words {
         margin-top: 8px;
         padding: 8px 12px;
@@ -1346,19 +1348,23 @@
         line-height: 1.5;
         color: var(--text);
         max-width: 65ch;
+        min-width: 0;
+        overflow-wrap: anywhere;
+        cursor: pointer;
+      }
+      .event .words-text {
         display: -webkit-box;
         -webkit-box-orient: vertical;
         -webkit-line-clamp: 2;
         overflow: hidden;
-        cursor: pointer;
       }
-      .event .words::before {
+      .event .words-text::before {
         content: '“';
       }
-      .event .words::after {
+      .event .words-text::after {
         content: '”';
       }
-      .event .words.expanded {
+      .event .words.expanded .words-text {
         -webkit-line-clamp: unset;
         display: block;
       }
@@ -2438,7 +2444,8 @@
                       <span class="step-mark">1</span>
                       <div>
                         <div class="step-title">
-                          Send a code<span class="step-note" id="otp-send-note"></span>
+                          <span id="otp-send-title">Send a code</span
+                          ><span class="step-note" id="otp-send-note"></span>
                         </div>
                         <div class="step-body">
                           <div class="otp-row">

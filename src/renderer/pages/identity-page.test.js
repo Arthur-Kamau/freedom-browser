@@ -96,6 +96,7 @@ const IDS = {
   'otp-step-send': 'div',
   'otp-step-enter': 'div',
   'otp-step-sign': 'div',
+  'otp-send-title': 'span',
   'otp-send-note': 'span',
   'otp-enter-note': 'span',
   'send-code-btn': 'button',
@@ -322,6 +323,33 @@ describe('freedom://identity', () => {
     expect(page.elements['node-state-text'].textContent).toBe('No wallet yet');
     expect(page.elements['claims-list'].children).toHaveLength(0);
     expect(page.elements['add-claim-btn'].disabled).toBe(true);
+  });
+
+  test('a wallet created in the sidebar while the page is open moves it on without a reload', async () => {
+    let status = {
+      success: true,
+      nodeUrl: 'u',
+      wallet: null,
+      vaultUnlocked: false,
+      hasVault: false,
+      signedIn: false,
+    };
+    const page = await run(
+      api({
+        aquaStatus: async () => status,
+        aquaListClaims: async () => ({ success: true, claims: [] }),
+      })
+    );
+    expect(page.elements['node-state-text'].textContent).toBe('No wallet yet');
+    // Nothing announces a new wallet to pages, so the page has to be polling.
+    expect(page.timers.length).toBeGreaterThan(0);
+    status = { ...status, wallet: { address: '0xabc' }, vaultUnlocked: true, hasVault: true };
+    for (const tick of page.timers) await tick();
+    await page.flush();
+    expect(page.elements['status-wallet'].textContent).toBe('0xabc');
+    expect(page.elements['node-state-text'].textContent).toBe('Not signed in');
+    expect(current(page.elements['signin-card'])).toBe(true);
+    expect(current(page.elements['locked-card'])).toBe(false);
   });
 
   test('an open wallet with no service session shows the sign-in step and loads nothing until signed', async () => {
@@ -568,6 +596,29 @@ describe('freedom://identity', () => {
     );
     expect(tiles[1].querySelectorAll('.pip-lg')).toHaveLength(2);
     expect(tiles[1].querySelectorAll('.untrusted')).toHaveLength(1);
+  });
+
+  test("aqua-mail's machine statement is put in words, and other JSON is shown as signed", async () => {
+    const stated = JSON.stringify({
+      type: 'aqua-mail/email-possession/v1',
+      verification_id: 'Q4GodMUBK',
+      address: 'a@b.c',
+    });
+    const other = '{"type":"something/else","x":1}';
+    const attested = claim({
+      attestations: [
+        { tip: '0x1', attesterDid: 'did:key:z6Mk1', context: stated, source: 'service' },
+        { tip: '0x2', attesterDid: 'did:key:z6Mk2', context: other, source: 'peer' },
+      ].map((a) => ({ ...a, trust: 'trusted', verification: { isValid: true } })),
+    });
+    const page = await run(
+      api({ aquaListClaims: async () => ({ success: true, claims: [attested] }) })
+    );
+    const words = panel(page)
+      .querySelectorAll('.words-text')
+      .map((n) => n.textContent);
+    expect(words).toContain('A one-time code sent to a@b.c was entered.');
+    expect(words).toContain(other);
   });
 
   test('an attested claim lists the attester and their words, as text, with the source icon', async () => {
@@ -843,6 +894,58 @@ describe('freedom://identity', () => {
       type: 'email',
       fields: { email: 'a@b.c', verification_token: 'vt' },
     });
+  });
+
+  test('on a claim-first node the email claim is signed before the code goes out, and the code finishes it', async () => {
+    const freedomAPI = api({
+      aquaStatus: jest.fn(async () => ({
+        success: true,
+        nodeUrl: 'https://aqua.test',
+        wallet: { address: '0xabc', canSign: true },
+        vaultUnlocked: true,
+        hasVault: true,
+        signedIn: true,
+        service: { reachable: true, outOfBandVerification: true, claimFirst: { email: true } },
+      })),
+      aquaSendCode: jest.fn(async ({ target }) => ({
+        success: true,
+        target,
+        message: 'sent',
+        claimId: 'c-9',
+      })),
+      aquaVerifyCode: jest.fn(async () => ({ success: true, claim: claim({ id: 'c-9' }) })),
+    });
+    const page = await run(freedomAPI);
+    await page.elements['add-claim-btn'].fire('click');
+    await page.elements['kind-email'].fire('click');
+    // The first step says it signs; there is no third step and no Sign and add.
+    expect(page.elements['otp-send-title'].textContent).toBe('Sign the claim and send a code');
+    expect(shown(page.elements['otp-step-sign'])).toBe(false);
+    expect(shown(page.elements['create-btn'])).toBe(false);
+    expect(page.elements['kind-help'].textContent).toContain('You sign the claim first');
+
+    page.elements.email.value = 'a@b.c';
+    await page.elements['send-code-btn'].fire('click');
+    await page.flush();
+    expect(freedomAPI.aquaSendCode).toHaveBeenCalledWith({ channel: 'email', target: 'a@b.c' });
+    expect(current(page.elements['otp-step-enter'])).toBe(true);
+
+    page.elements.code.value = '123456';
+    await page.elements['verify-code-btn'].fire('click');
+    await page.flush();
+    expect(freedomAPI.aquaVerifyCode).toHaveBeenCalledWith({
+      target: 'a@b.c',
+      code: '123456',
+      claimId: 'c-9',
+    });
+    // Nothing left to sign: the composer closes on the claim.
+    expect(freedomAPI.aquaCreateClaim).not.toHaveBeenCalled();
+    expect(shown(page.elements.composer)).toBe(false);
+
+    // A name on the same node keeps its Sign and add.
+    await page.elements['add-claim-btn'].fire('click');
+    await page.elements['kind-name'].fire('click');
+    expect(shown(page.elements['create-btn'])).toBe(true);
   });
 
   test('a service error lands in the form as text', async () => {

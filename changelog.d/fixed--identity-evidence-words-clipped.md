@@ -1,0 +1,1 @@
+- Identity claims: an attester's words in a claim's evidence no longer show a cut-off third line under the two folded ones, and a long unbroken statement wraps inside its box; aqua-mail's e-mail statement, which is JSON, reads as "A one-time code sent to … was entered."

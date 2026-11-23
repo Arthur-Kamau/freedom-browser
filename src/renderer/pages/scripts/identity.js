@@ -109,6 +109,7 @@ const codeSection = $('code-section');
 const otpStepSend = $('otp-step-send');
 const otpStepEnter = $('otp-step-enter');
 const otpStepSign = $('otp-step-sign');
+const otpSendTitle = $('otp-send-title');
 const otpSendNote = $('otp-send-note');
 const otpEnterNote = $('otp-enter-note');
 const sendCodeBtn = $('send-code-btn');
@@ -182,6 +183,9 @@ const KIND_COPY = {
     title: 'Claim an email address',
     help: 'The node sends a one-time code to the inbox. When you enter it, the node signs that it checked the address. Then you sign the claim.',
     sendHelp: 'The node sends a one-time code to this address.',
+    helpFirst:
+      'You sign the claim first. Then the node sends a one-time code to the inbox, and when you enter it the address is signed as checked.',
+    sendHelpFirst: 'Your wallet signs the claim, then a one-time code goes to this address.',
   },
   phone: {
     slot: 'Add your phone number',
@@ -189,6 +193,9 @@ const KIND_COPY = {
     title: 'Claim a phone number',
     help: 'The node sends a one-time code by SMS. When you enter it, the node signs that it checked the number. Then you sign the claim.',
     sendHelp: 'The node sends a one-time code to this number by SMS.',
+    helpFirst:
+      'You sign the claim first. Then the node sends a one-time code by SMS, and when you enter it the number is signed as checked.',
+    sendHelpFirst: 'Your wallet signs the claim, then a one-time code goes to this number by SMS.',
   },
   domain: {
     slot: 'Add a domain you own',
@@ -199,8 +206,14 @@ const KIND_COPY = {
 };
 
 // One-time-code state for the email/phone flow: the target the code was
-// sent to and the token the service handed back once it was entered.
-let verification = { target: null, token: null };
+// sent to and the token the service handed back once it was entered. On a
+// claim-first node the claim is signed before the code goes out: `claimId`
+// is that claim, and entering the code finishes it (no token, no third step).
+let verification = { target: null, token: null, claimId: null };
+// Per kind (email, phone): whether the node checks it only after the claim
+// is created and signed. From the last status read.
+let claimFirst = {};
+const signsFirst = (type) => OTP_TYPES.has(type) && claimFirst[type] === true;
 let busy = false;
 let selectedKind = 'name';
 // From the last status read: whether this profile has a wallet at all, so a
@@ -801,9 +814,27 @@ function backLink(label, onClick) {
   return link;
 }
 
+// An attester's words as a sentence. A service writes a statement for
+// machines (aqua-mail's is JSON); the ones known here are put in words, and
+// anything else is shown as it was signed. All details keeps the original.
+function readableWords(text) {
+  if (typeof text !== 'string' || !text.trim().startsWith('{')) return text;
+  let stated;
+  try {
+    stated = JSON.parse(text);
+  } catch {
+    return text;
+  }
+  if (!stated || typeof stated !== 'object' || typeof stated.type !== 'string') return text;
+  if (stated.type.startsWith('aqua-mail/email-possession/') && typeof stated.address === 'string')
+    return `A one-time code sent to ${stated.address} was entered.`;
+  return text;
+}
+
 // The folded words that fill in when clicked.
 function wordsOf(text) {
-  const words = el('div', 'words', text);
+  const words = el('div', 'words');
+  words.appendChild(el('span', 'words-text', readableWords(text)));
   words.title = 'Show more';
   words.addEventListener('click', () => {
     const open = words.classList.toggle('expanded');
@@ -1363,6 +1394,9 @@ async function loadStatus() {
   activeAddress = (result.vaultUnlocked && result.wallet?.address) || '';
   serviceUrl = result.nodeUrl || '';
   outOfBandVerification = result.service ? result.service.outOfBandVerification !== false : true;
+  const wasFirst = signsFirst(selectedKind);
+  claimFirst = result.service?.claimFirst || {};
+  if (wasFirst !== signsFirst(selectedKind)) syncOtpCopy();
   kindButtons.email.disabled = !outOfBandVerification;
   kindButtons.phone.disabled = !outOfBandVerification;
   kindsNote.classList.toggle('hidden', outOfBandVerification);
@@ -1404,7 +1438,7 @@ async function loadStatus() {
     signedIn: signedIn || !activeAddress,
     nodeUrl: result.nodeUrl,
   });
-  watchLock(locked);
+  watchLock(locked || missing);
   if (result.hasVault && result.vaultUnlocked && result.wallet && result.wallet.canSign === false) {
     showNotice(
       'warn',
@@ -2319,22 +2353,27 @@ copyAddressBtn.addEventListener('click', async () => {
   setTimeout(() => setLabel(copyAddressBtn, 'copy', ''), 1500);
 });
 
-// An unlock made elsewhere (the sidebar's own prompts, a signing flow) is
-// not announced to pages, so while the vault is locked the page re-reads
-// its status every few seconds and fills in once it opens.
+// An unlock made elsewhere (the sidebar's own prompts, a signing flow) and
+// a wallet created in the sidebar are not announced to pages, so while
+// there is no wallet or the vault is locked the page re-reads its status
+// every few seconds and fills in once the wallet is there and open.
 let lockPoll = null;
-function watchLock(locked) {
-  if (locked && !lockPoll) {
+function watchLock(waiting) {
+  if (waiting && !lockPoll) {
     lockPoll = setInterval(async () => {
       const result = await window.freedomAPI.aquaStatus();
-      if (result?.success && result.vaultUnlocked) {
+      if (!result?.success) return;
+      if (result.vaultUnlocked) {
         clearInterval(lockPoll);
         lockPoll = null;
         await loadStatus();
         await loadAll();
+      } else if ((result.hasVault !== false) !== hasVault) {
+        // A wallet appeared (or went) but is not open: say so, keep waiting.
+        await loadStatus();
       }
     }, 3000);
-  } else if (!locked && lockPoll) {
+  } else if (!waiting && lockPoll) {
     clearInterval(lockPoll);
     lockPoll = null;
   }
@@ -2383,6 +2422,20 @@ function syncPreview() {
   );
 }
 
+// The words of the code steps for the selected kind: a claim-first node
+// signs before it sends, so the first step says so and the third is gone.
+function syncOtpCopy() {
+  const type = selectedType();
+  const first = signsFirst(type);
+  const copy = KIND_COPY[type];
+  kindHelp.textContent = (first && copy.helpFirst) || copy.help;
+  if (copy.sendHelp) codeHelp.textContent = (first && copy.sendHelpFirst) || copy.sendHelp;
+  otpSendTitle.textContent = first ? 'Sign the claim and send a code' : 'Send a code';
+  setLabel(sendCodeBtn, 'send', first ? 'Sign and send code' : 'Send code');
+  otpStepSign.classList.toggle('hidden', first);
+  createBtn.classList.toggle('hidden', first);
+}
+
 // The three steps of the one-time code: send, enter, sign.
 function syncOtpSteps() {
   const sent = Boolean(verification.target);
@@ -2418,15 +2471,14 @@ function syncTypeFields() {
   }
   codeSection.classList.toggle('hidden', !OTP_TYPES.has(type));
   addClaimTitle.textContent = KIND_COPY[type].title;
-  kindHelp.textContent = KIND_COPY[type].help;
-  if (KIND_COPY[type].sendHelp) codeHelp.textContent = KIND_COPY[type].sendHelp;
+  syncOtpCopy();
   setLabel(createBtn, 'pen', type === 'domain' ? 'Sign and show the DNS record' : 'Sign and add');
   resetVerification();
   setFormError('');
 }
 
 function resetVerification() {
-  verification = { target: null, token: null };
+  verification = { target: null, token: null, claimId: null };
   inputs.code.value = '';
   codeStatus.textContent = '';
   verifyCodeBtn.disabled = true;
@@ -2450,17 +2502,24 @@ async function sendCode() {
   }
   setFormError('');
   setBusy(true);
+  const first = signsFirst(type);
+  if (first) setLabel(sendCodeBtn, 'clock', 'Waiting for your signature…');
   try {
     const result = await window.freedomAPI.aquaSendCode({ channel: type, target });
     if (!result?.success) {
       setFormError(errorText(result, 'The code could not be sent.'));
       return;
     }
-    verification = { target: result.target || target, token: null };
+    verification = {
+      target: result.target || target,
+      token: null,
+      claimId: result.claimId || null,
+    };
     codeStatus.textContent = `Code sent to ${verification.target}. Type it here and press Verify code.`;
     syncOtpSteps();
     focusOn(inputs.code);
   } finally {
+    if (first) setLabel(sendCodeBtn, 'send', 'Sign and send code');
     setBusy(false);
   }
 }
@@ -2475,9 +2534,22 @@ async function verifyCode() {
   setFormError('');
   setBusy(true);
   try {
-    const result = await window.freedomAPI.aquaVerifyCode({ target: verification.target, code });
+    const result = await window.freedomAPI.aquaVerifyCode({
+      target: verification.target,
+      code,
+      ...(verification.claimId ? { claimId: verification.claimId } : {}),
+    });
     if (!result?.success) {
       setFormError(errorText(result, 'The code was not accepted.'));
+      return;
+    }
+    if (verification.claimId) {
+      // Claim-first: the claim was signed before the code went out, and the
+      // node has now attested it. Nothing is left to sign.
+      selectedClaimId = result.claim?.id || verification.claimId;
+      closeComposer();
+      hideNotice();
+      await loadClaims();
       return;
     }
     verification.token = result.verificationToken;
@@ -2518,6 +2590,10 @@ function collectFields() {
 async function createClaim() {
   if (busy) return;
   const type = selectedType();
+  if (signsFirst(type)) {
+    // Enter in the form: the next step, whichever it is.
+    return verification.target ? verifyCode() : sendCode();
+  }
   if (OTP_TYPES.has(type)) {
     if (!verification.token) {
       setFormError('Verify the code the node sent before saving this claim.');
