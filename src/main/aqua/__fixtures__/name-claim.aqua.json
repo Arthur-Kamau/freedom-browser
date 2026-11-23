@@ -1,0 +1,62 @@
+{
+  "revisions": {
+    "0x16204caa3dae0b84554d1925164bb0abd85e1007f0a4f2ff106b15597647fa6156b2": {
+      "revision_type": "0x1620479a304927c47f4308d027a858060ce287a9bdb45f2203f8130574a73511e899",
+      "nonce": "0xb79d1ca8701ec4b6b71efccfb123738a",
+      "local_timestamp": 1792668266,
+      "version": "https://aqua-protocol.org/docs/v4/schema",
+      "method": "scalar",
+      "structural_links": [
+        {
+          "hash": "0x1620fbc89ad2a9535669a7ba5b0b5bbdb0c56be13cb2ac0aae45cb4ab07c4022b7ed"
+        }
+      ]
+    },
+    "0x1620575cde46fd996c0f69beffa5c8e82b7c5fa48b7baf4d3201f2d9565a4726e08d": {
+      "previous_revision": "0x16204caa3dae0b84554d1925164bb0abd85e1007f0a4f2ff106b15597647fa6156b2",
+      "revision_type": "0x1620fbc89ad2a9535669a7ba5b0b5bbdb0c56be13cb2ac0aae45cb4ab07c4022b7ed",
+      "nonce": "0xd0d6586c9a5c18310f87a1e0e047442c",
+      "local_timestamp": 1792668267,
+      "version": "https://aqua-protocol.org/docs/v4/schema",
+      "method": "tree",
+      "payloads": {
+        "signer_did": "did:pkh:eip155:1:0x12becb263eb324b9638ef75ce9ba1ae5db8b1af8",
+        "given_name": "Probe",
+        "family_name": "Freedom",
+        "valid_from": 1792668267
+      },
+      "leaves": [
+        "0xe991c2612c62dfd5e75dc1f42552f19b828145e6671d85897832b415552afaa1",
+        "0x01b7d89bcea803e9e5cc339248566d4ecb333071628fd99cd78c0aa78fddb4e2",
+        "0xc45c26b1ae23cce752415f41c63e0c481f9fec061260b844d9f16cce298e249f",
+        "0x493cbbe5cbd724d14aa9b5baf1fa424d9be7eb0515c05ad3e58ac3c244074d0c",
+        "0xa109bc6d80aa8535e36f5f53d005780dab9b8d37c912895c8b2c95add72f849a",
+        "0x2e83f5d5e2dfd4906028567bfd31537bbd368f8f7ab883b2335124317625314f",
+        "0x30a3bcdcb2106a2cc82c1579622b505672ae070ad8fb1233437a2fc43f02f6f5",
+        "0xba2af7ba3c9b7e223c532606984323c5e36a59f6156c9d35b1aecf6b5cbe359d",
+        "0x11eab56b1d5d1ddc67b9b2c297f95b9f37f622bc71cbd40abc940a009842642c",
+        "0x5b527498cb1d011a81d8695ddda82e54053234a8b0913bc92409202b53c2daf0",
+        "0xcb5c65ab7ef531c5e6755a141fb47cf17144582cb9abd5f4faa37d161f31724c",
+        "0xcc5a9558dcfde89b9ef84887c0bc132d6d1c142997febdb9890c1bb3fc3d7f10"
+      ]
+    },
+    "0x1620a63b06554eba61afe77b4925002d7ec6cb663546902e7d39349de86f6c2d8d3f": {
+      "previous_revision": "0x1620575cde46fd996c0f69beffa5c8e82b7c5fa48b7baf4d3201f2d9565a4726e08d",
+      "revision_type": "0x1620eda1927a164cd8c0b9d13f414da25a38b18214991c1ebbe3b986098d23c9bc4b",
+      "nonce": "0x2c2b84ecad14b4152dbd2fc258260541",
+      "local_timestamp": 1792668268,
+      "version": "https://aqua-protocol.org/docs/v4/schema",
+      "method": "scalar",
+      "signer": "did:pkh:eip155:1:0x12BECb263eB324b9638Ef75cE9BA1ae5DB8b1AF8",
+      "signature": {
+        "signature_type": "ethereum:eip-191",
+        "signature": "0x17acc6aab856434c50d91e352d3d5529fa4b9fc586f677577c9fbf2ec57873837ce9d65fc761df20212e251dd505e4badc283fd1eab0b55eec36b422737118fc1c",
+        "signature_public_identifier": "0x12BECb263eB324b9638Ef75cE9BA1ae5DB8b1AF8"
+      }
+    }
+  },
+  "file_index": {
+    "0x16204caa3dae0b84554d1925164bb0abd85e1007f0a4f2ff106b15597647fa6156b2": "anchor_0x16204c",
+    "0x1620575cde46fd996c0f69beffa5c8e82b7c5fa48b7baf4d3201f2d9565a4726e08d": "name_claim_Probe_Freedom"
+  }
+}

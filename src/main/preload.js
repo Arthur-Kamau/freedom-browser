@@ -868,6 +868,41 @@ contextBridge.exposeInMainWorld('ledger', {
 // Remote (phone) signing: main publishes signing jobs here; the renderer
 // session broker (lib/wallet/remote-session.js) shows the QR, tunnels the
 // request to the phone over openlv, and responds with the result.
+// Aqua identity claims: main asks the sidebar to sign a claim's pre-image or
+// a service sign-in message (src/main/aqua/aqua-ipc.js); the sidebar's
+// approval screen answers with the signature or a rejection.
+contextBridge.exposeInMainWorld('aqua', {
+  // Main asks the chrome for a wallet signature. Returns a disposer.
+  onSignRequest: (callback) => {
+    const handler = (_event, request) => callback(request);
+    ipcRenderer.on('aqua:sign-request', handler);
+    return () => ipcRenderer.removeListener('aqua:sign-request', handler);
+  },
+  // { requestId, signature } or { requestId, error: { message } }.
+  respondToSignRequest: (payload) => ipcRenderer.send('aqua:sign-response', payload),
+  // Disclosure consent screen: match a request against the stored claims,
+  // then build the response for what the user ticked.
+  prepareDisclosure: (args) => ipcRenderer.invoke('aqua:disclosure:prepare', args),
+  buildDisclosure: (args) => ipcRenderer.invoke('aqua:disclosure:build', args),
+  // A request the user pasted on freedom://identity, routed through the
+  // same screen. Returns a disposer; the answer goes back below.
+  onDisclosureRequest: (callback) => {
+    const handler = (_event, request) => callback(request);
+    ipcRenderer.on('aqua:disclosure-request', handler);
+    return () => ipcRenderer.removeListener('aqua:disclosure-request', handler);
+  },
+  // { requestId, response } or { requestId, error: { message } }.
+  respondToDisclosureRequest: (payload) => ipcRenderer.send('aqua:disclosure:manual-response', payload),
+  // freedom://identity asked for the vault to be unlocked; show the unlock
+  // screen and answer { requestId, unlocked } or { requestId, error }.
+  onUnlockRequest: (callback) => {
+    const handler = (_event, request) => callback(request);
+    ipcRenderer.on('aqua:unlock-request', handler);
+    return () => ipcRenderer.removeListener('aqua:unlock-request', handler);
+  },
+  respondToUnlockRequest: (payload) => ipcRenderer.send('aqua:unlock-response', payload),
+});
+
 contextBridge.exposeInMainWorld('remoteSigner', {
   // Main asks the renderer to run a signing job. Returns a disposer.
   onRequest: (callback) => {

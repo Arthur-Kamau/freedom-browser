@@ -1152,6 +1152,28 @@
           </div>
         </div>
       </div>
+      <!-- Identity claims live on freedom://identity, not in the wallet panel:
+           the page needs the vault open but is its own surface. Shown with
+           the wallet button, under the same Beta switch. -->
+      <button id="identity-toggle-btn" class="wallet-toggle-btn identity-btn hidden" type="button" aria-label="Identity" title="Identity">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.25"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path d="M3 7V5a2 2 0 0 1 2-2h2" vector-effect="non-scaling-stroke" />
+          <path d="M17 3h2a2 2 0 0 1 2 2v2" vector-effect="non-scaling-stroke" />
+          <path d="M21 17v2a2 2 0 0 1-2 2h-2" vector-effect="non-scaling-stroke" />
+          <path d="M7 21H5a2 2 0 0 1-2-2v-2" vector-effect="non-scaling-stroke" />
+          <path d="M8 14s1.5 2 4 2 4-2 4-2" vector-effect="non-scaling-stroke" />
+          <path d="M9 9h.01" vector-effect="non-scaling-stroke" />
+          <path d="M15 9h.01" vector-effect="non-scaling-stroke" />
+        </svg>
+      </button>
       <button
         id="agent-toggle-btn"
         hidden
@@ -1381,6 +1403,13 @@
           </button>
 
           <div class="menu-divider"></div>
+
+          <!-- Identity (Beta): shown with the wallet button, under the same
+               switch; its divider goes with it so the menu never shows two. -->
+          <button id="identity-btn" class="menu-item hidden" type="button">
+            <span class="menu-item-label">Identity</span>
+          </button>
+          <div class="menu-divider hidden" id="identity-menu-divider"></div>
 
           <!-- Group 7: About & Updates -->
           <button id="about-btn" class="menu-item" type="button">
@@ -2615,6 +2644,16 @@
                     </span>
                     <span class="safe-pending-badge" id="safe-pending-count"></span>
                   </button>
+
+                  <!-- Identity claims live on freedom://identity; this is the deep link. -->
+                  <div class="recent-payments" id="identity-claims-link">
+                    <div class="recent-payments-header">
+                      <span class="recent-payments-title">Identity claims</span>
+                      <a href="#" class="recent-payments-link" id="identity-claims-manage"
+                        >Manage →</a
+                      >
+                    </div>
+                  </div>
 
                   <!-- Recent payments (5 most recent; full list at freedom://payments) -->
                   <div class="recent-payments">
@@ -4068,7 +4107,7 @@
                 <!-- Origin info -->
                 <div class="dapp-sign-origin">
                   <div class="dapp-sign-site" id="dapp-sign-site">example.com</div>
-                  <div class="dapp-sign-action">requests your signature</div>
+                  <div class="dapp-sign-action" id="dapp-sign-action">requests your signature</div>
                 </div>
 
                 <!-- Message display -->
@@ -4176,6 +4215,49 @@
                     disabled
                   >
                     Sign
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Aqua identity disclosure consent sub-screen -->
+            <div id="sidebar-aqua-disclose" class="sidebar-subscreen sidebar-modal hidden">
+              <div
+                class="subscreen-header"
+                data-back="aqua-disclose-back"
+                data-title="Share Identity"
+              ></div>
+
+              <div class="subscreen-content" id="aqua-disclose-content">
+                <div class="dapp-sign-origin">
+                  <div class="dapp-sign-site" id="aqua-disclose-site">example.com</div>
+                  <div class="dapp-sign-action">asks for identity claims</div>
+                </div>
+
+                <div class="aqua-disclose-purpose" id="aqua-disclose-purpose"></div>
+
+                <div class="aqua-disclose-list" id="aqua-disclose-list"></div>
+
+                <div class="dapp-sign-warning">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="16" x2="12" y2="12" />
+                    <line x1="12" y1="8" x2="12.01" y2="8" />
+                  </svg>
+                  <span
+                    >Only the ticked claims leave this browser, with their signatures and attestations,
+                    so the requester can verify them. Untick anything you do not want to share.</span
+                  >
+                </div>
+
+                <div class="dapp-sign-error hidden" id="aqua-disclose-error"></div>
+
+                <div class="dapp-sign-actions">
+                  <button type="button" class="dapp-sign-reject-btn" id="aqua-disclose-reject">
+                    Reject
+                  </button>
+                  <button type="button" class="dapp-sign-approve-btn" id="aqua-disclose-share">
+                    Share
                   </button>
                 </div>
               </div>

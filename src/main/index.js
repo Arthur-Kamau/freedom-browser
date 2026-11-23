@@ -444,6 +444,7 @@ const {
 } = require('./identity-manager');
 const { registerQuickUnlockIpc } = require('./quick-unlock');
 const { registerWalletIpc } = require('./wallet/wallet-ipc');
+const { registerAquaIpc } = require('./aqua/aqua-ipc');
 const { registerLedgerIpc } = require('./wallet/ledger/ipc');
 const { registerRemoteSignerIpc } = require('./wallet/remote/bridge');
 const { registerTokenRegistryIpc } = require('./token-registry');
@@ -647,6 +648,9 @@ async function bootstrap() {
   registerIdentityIpc();
   registerQuickUnlockIpc();
   registerWalletIpc();
+  // Aqua identity claims (freedom://identity): needs the wallet IPC above for
+  // the sidebar's signing path.
+  registerAquaIpc();
   registerLedgerIpc();
   registerRemoteSignerIpc();
 

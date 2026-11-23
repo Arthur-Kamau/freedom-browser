@@ -466,7 +466,7 @@ test.describe('renderer screenshots', () => {
         );
         await shot('27-error-page', { mask: [...scrollbar, ...countdown] });
 
-        for (const [i, page] of ['downloads', 'history', 'profiles', 'payments'].entries()) {
+        for (const [i, page] of ['downloads', 'history', 'profiles', 'payments', 'identity'].entries()) {
           await go(window, `freedom://${page}`, 1_800);
           await shot(`${50 + i}-page-${page}`);
         }
@@ -534,6 +534,13 @@ test.describe('renderer screenshots', () => {
         // down under a seam (#604) — and with no baseline for any of them,
         // nothing noticed. It re-aligns for a second after the hash moves, so
         // each is captured once that is over.
+        // Identity, the entry added after the 10 above were numbered: its own
+        // number so no existing baseline is renamed.
+        await page.evaluate(() => {
+          location.hash = 'identity';
+        });
+        await page.waitForTimeout(1_500);
+        await shot('49-settings-identity');
         for (const [i, route] of [
           'privacy/permissions',
           'networks/rpc',

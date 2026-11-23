@@ -306,6 +306,12 @@ async function runPageScript(
       return timers.length;
     },
     clearTimeout: () => {},
+    // Polling timers are recorded like timeouts, never run.
+    setInterval: (handler) => {
+      timers.push(handler);
+      return timers.length;
+    },
+    clearInterval: () => {},
     URL,
   };
   const source = fs.readFileSync(path.join(SCRIPTS_DIR, `${page}.js`), 'utf8');

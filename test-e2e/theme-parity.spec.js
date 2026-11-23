@@ -442,7 +442,7 @@ test.afterAll(() => {
  * labels in the baseline did not have to move. Since #268 the `permissions`
  * view also has Ad Blocking's panel on screen above Site Permissions.
  */
-const SETTINGS_SECTIONS = ['appearance', 'nodes', 'ens', 'permissions', 'shortcuts', 'chains', 'ai'];
+const SETTINGS_SECTIONS = ['appearance', 'nodes', 'identity', 'ens', 'permissions', 'shortcuts', 'chains', 'ai'];
 
 /** Internal pages, by the URL that reaches them and the file they render in. */
 const INTERNAL_PAGES = [
@@ -450,6 +450,7 @@ const INTERNAL_PAGES = [
   { name: 'history', url: 'freedom://history', file: '/pages/history.html' },
   { name: 'downloads', url: 'freedom://downloads', file: '/pages/downloads.html' },
   { name: 'payments', url: 'freedom://payments', file: '/pages/payments.html' },
+  { name: 'identity', url: 'freedom://identity', file: '/pages/identity.html' },
   { name: 'profiles', url: 'freedom://profiles', file: '/pages/profiles.html' },
   { name: 'links', url: 'freedom://links', file: '/pages/links.html' },
 ];

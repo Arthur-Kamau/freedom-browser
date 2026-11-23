@@ -32,6 +32,7 @@ const PAGES = [
   { file: 'downloads.html', selector: 'h1', icon: true },
   { file: 'links.html', selector: 'h1', icon: false },
   { file: 'payments.html', selector: 'h1', icon: true },
+  { file: 'identity.html', selector: 'h1', icon: true },
   { file: 'profiles.html', selector: '.page-title', icon: true },
 ];
 

@@ -541,6 +541,7 @@ test('every nav item opens a section titled with its own label', async ({ window
     'Privacy and security',
     'Networks',
     'Nodes',
+    'Identity',
     'AI',
     'Advanced',
     'About Freedom',

@@ -77,6 +77,7 @@ const SURFACES = {
     '51-page-history',
     '52-page-profiles',
     '53-page-payments',
+    '54-page-identity',
   ],
   'settings sections': [
     '30-settings-profile',
@@ -89,6 +90,9 @@ const SURFACES = {
     '37-settings-nodes',
     '38-settings-advanced',
     '39-settings-about',
+    // Identity, the entry added after the ten above were numbered: its own
+    // number so no existing baseline was renamed.
+    '49-settings-identity',
     // A panel below its entry's first, brought up by its route (#604).
     '40-settings-privacy-permissions',
     '41-settings-networks-rpc',

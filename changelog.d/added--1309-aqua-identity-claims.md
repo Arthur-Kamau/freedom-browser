@@ -1,0 +1,5 @@
+- Identity claims (Beta): sign a name, email, phone number or domain with your wallet, at `freedom://identity` ([#1309](https://github.com/solardev-xyz/freedom-browser/issues/1309))
+  - An identity service can check an email, phone number or domain, and people can vouch for a claim
+  - A vouch counts only from signers you accept; a site asking for claims gets only what you tick
+  - Claims stay in the profile, encrypted with your wallet; the service is set under `Settings > Identity`
+  - Bundles [aqua-rs-sdk](https://github.com/inblockio/aqua-rs-sdk) 7.0.0 for selective disclosure

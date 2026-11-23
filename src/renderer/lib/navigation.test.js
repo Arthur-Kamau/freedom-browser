@@ -2766,7 +2766,7 @@ describe('navigation', () => {
       await flushMicrotasks();
 
       expect(global.alert).toHaveBeenCalledWith(
-        'Enable Identity & Wallet (Settings → Advanced) to accept tips.'
+        'Enable Identity & Wallet (Settings → Identity) to accept tips.'
       );
     });
 

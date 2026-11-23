@@ -1726,6 +1726,12 @@ const applyFormState = (settings) => {
   fields.enableTor.checked = settings.enableTorIntegration === true;
   fields.startTor.checked = settings.startTorAtLaunch === true;
   fields.enableIdentity.checked = settings.enableIdentityWallet === true;
+  if (identityFields.nodeUrl !== document.activeElement) {
+    savedNodeUrl = settings.aquaNodeUrl || '';
+    identityFields.nodeUrl.value = savedNodeUrl;
+    showSavedNodeUrl();
+  }
+  applyIdentityPanelState();
   fields.showIpfsProgressStatus.checked = settings.showIpfsProgressStatus === true;
   fields.autoUpdate.checked = settings.autoUpdate !== false;
   fields.unverifiedEnsAction.value = settings.blockUnverifiedEns === false ? 'open' : 'ask';
@@ -1914,7 +1920,7 @@ const renderSwarmPublishingRow = (settings, setupState) => {
   // deep-link into a sidebar the user can't open.
   if (settings?.enableIdentityWallet !== true) {
     swarmPublishingHelp.textContent =
-      'Enable Identity & Wallet under Advanced to publish on Swarm.';
+      'Enable Identity & Wallet under Identity to publish on Swarm.';
     hideAction();
     return;
   }
@@ -2191,6 +2197,192 @@ swarmCacheSelect?.addEventListener('change', async () => {
   setSwarmCacheStatus(message);
 });
 
+// ── Identity ─────────────────────────────────────────────────────────────
+// The identity service address is shown on its row and changed in a
+// modal. Save asks main to probe the address first — an Aqua identity
+// service has to answer there — and only then stores it, so a typo or a
+// dead host is refused in the modal rather than saved. (Settings apply on
+// change elsewhere; this one needs the check, so it keeps an explicit Save,
+// like the item editors.) Export and Remove all go through main, which owns
+// the claims and the save dialog.
+const identityFields = {
+  controls: $('identity-controls'),
+  nodeUrlCurrent: $('aqua-node-url-current'),
+  nodeUrlDialog: $('aqua-node-url-dialog'),
+  nodeUrl: $('aqua-node-url'),
+  nodeUrlEdit: $('aqua-node-url-edit'),
+  nodeUrlSave: $('aqua-node-url-save'),
+  nodeUrlCancel: $('aqua-node-url-cancel'),
+  nodeUrlClose: $('aqua-node-url-close'),
+  nodeUrlCheck: $('aqua-node-url-check'),
+  nodeUrlStatus: $('aqua-node-url-status'),
+  exportBtn: $('aqua-claims-export'),
+  removeAllBtn: $('aqua-claims-remove-all'),
+  status: $('aqua-claims-status'),
+};
+let savedNodeUrl = '';
+
+const setIdentityStatus = (el, text, kind) => {
+  if (!el) return;
+  el.textContent = text || '';
+  el.className = kind ? `rpc-status ${kind}` : 'rpc-status';
+};
+
+// While the switch above is off, the controls that would fail are folded
+// away; the switch itself is the first row of the page.
+const applyIdentityPanelState = () => {
+  if (identityFields.controls) identityFields.controls.hidden = !fields.enableIdentity.checked;
+};
+
+const claimsErrorText = (result, fallback) => {
+  const err = result?.error;
+  if (err?.code === 'VAULT_LOCKED') return 'Unlock your wallet first.';
+  return err?.message || fallback;
+};
+
+// Native <dialog>; the unit-test DOM has no showModal, so the open state
+// falls back to the property the browser would set itself.
+const openNodeUrlDialog = () => {
+  const dialog = identityFields.nodeUrlDialog;
+  if (!dialog) return;
+  if (typeof dialog.showModal === 'function') {
+    if (!dialog.open) dialog.showModal();
+  } else {
+    dialog.open = true;
+  }
+};
+
+const closeNodeUrlDialog = () => {
+  const dialog = identityFields.nodeUrlDialog;
+  if (!dialog) return;
+  if (typeof dialog.close === 'function') dialog.close();
+  else dialog.open = false;
+};
+
+const showSavedNodeUrl = () => {
+  if (identityFields.nodeUrlCurrent) identityFields.nodeUrlCurrent.textContent = savedNodeUrl;
+};
+
+const startNodeUrlEdit = () => {
+  setIdentityStatus(identityFields.nodeUrlStatus, '', null);
+  setIdentityStatus(identityFields.nodeUrlCheck, '', null);
+  identityFields.nodeUrl.value = savedNodeUrl;
+  openNodeUrlDialog();
+  identityFields.nodeUrl?.focus?.();
+};
+
+const cancelNodeUrlEdit = () => {
+  identityFields.nodeUrl.value = savedNodeUrl;
+  setIdentityStatus(identityFields.nodeUrlCheck, '', null);
+  closeNodeUrlDialog();
+};
+
+const saveNodeUrl = async () => {
+  const input = identityFields.nodeUrl;
+  if (!input) return;
+  const value = input.value.trim().replace(/\/+$/, '');
+  if (!value || value === savedNodeUrl) {
+    cancelNodeUrlEdit();
+    return;
+  }
+  const check = identityFields.nodeUrlCheck;
+  const protocol = (() => {
+    try {
+      return new URL(value).protocol;
+    } catch {
+      return '';
+    }
+  })();
+  if (!/^https?:$/.test(protocol)) {
+    setIdentityStatus(check, 'Enter the service address as a full http or https URL.', 'error');
+    return;
+  }
+  identityFields.nodeUrlSave.disabled = true;
+  setIdentityStatus(check, `Checking ${value}…`, 'testing');
+  try {
+    const probe = await freedomAPI.aquaProbeService?.(value);
+    if (!probe?.success) {
+      setIdentityStatus(check, claimsErrorText(probe, 'The service could not be checked.'), 'error');
+      return;
+    }
+    if (!probe.reachable) {
+      setIdentityStatus(check, `Nothing answered at ${probe.url}. Check the address and that the service is up.`, 'error');
+      return;
+    }
+    if (!probe.compatible) {
+      setIdentityStatus(check, `${probe.url} answered, but not as an Aqua identity service. Not saved.`, 'error');
+      return;
+    }
+    const ok = await freedomAPI.saveSettings({ aquaNodeUrl: probe.url });
+    if (!ok) {
+      setIdentityStatus(check, 'The identity service was not saved.', 'error');
+      return;
+    }
+    savedNodeUrl = probe.url;
+    input.value = probe.url;
+    showSavedNodeUrl();
+    closeNodeUrlDialog();
+    setIdentityStatus(
+      identityFields.nodeUrlStatus,
+      probe.outOfBandVerification
+        ? 'Saved. New claims use this service.'
+        : 'Saved. This service runs no email or phone verification, so only name and domain claims are offered.',
+      'success'
+    );
+  } finally {
+    identityFields.nodeUrlSave.disabled = false;
+  }
+};
+
+identityFields.nodeUrlEdit?.addEventListener('click', startNodeUrlEdit);
+identityFields.nodeUrlSave?.addEventListener('click', saveNodeUrl);
+identityFields.nodeUrlCancel?.addEventListener('click', cancelNodeUrlEdit);
+identityFields.nodeUrlClose?.addEventListener('click', cancelNodeUrlEdit);
+// Escape closes a native dialog by itself; the field is reset on close.
+identityFields.nodeUrlDialog?.addEventListener('close', () => {
+  identityFields.nodeUrl.value = savedNodeUrl;
+});
+identityFields.nodeUrl?.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    saveNodeUrl();
+  }
+});
+
+identityFields.exportBtn?.addEventListener('click', async () => {
+  identityFields.exportBtn.disabled = true;
+  setIdentityStatus(identityFields.status, '', null);
+  try {
+    const result = await freedomAPI.aquaExportAllClaims?.();
+    if (!result?.success) {
+      setIdentityStatus(identityFields.status, claimsErrorText(result, 'The claims could not be exported.'), 'error');
+      return;
+    }
+    if (result.canceled) return;
+    const n = result.count || 0;
+    setIdentityStatus(identityFields.status, `Saved ${n} claim${n === 1 ? '' : 's'} to ${result.path}.`, 'success');
+  } finally {
+    identityFields.exportBtn.disabled = false;
+  }
+});
+
+identityFields.removeAllBtn?.addEventListener('click', async () => {
+  if (!window.confirm('Remove all identity claims from this profile? The identity service keeps its copies.')) return;
+  identityFields.removeAllBtn.disabled = true;
+  setIdentityStatus(identityFields.status, '', null);
+  try {
+    const result = await freedomAPI.aquaRemoveAllClaims?.();
+    if (!result?.success) {
+      setIdentityStatus(identityFields.status, claimsErrorText(result, 'The claims could not be removed.'), 'error');
+      return;
+    }
+    const n = result.removed || 0;
+    setIdentityStatus(identityFields.status, n === 0 ? 'No claims to remove' : `Removed ${n} claim${n === 1 ? '' : 's'}.`, 'success');
+  } finally {
+    identityFields.removeAllBtn.disabled = false;
+  }
+});
+
 const save = async () => {
   const ok = await freedomAPI.saveSettings(currentFormState());
   if (!ok) console.error('[settings] failed to save settings');
@@ -2216,7 +2408,10 @@ fields.enableTor.addEventListener('change', () => {
   save();
 });
 fields.startTor.addEventListener('change', save);
-fields.enableIdentity.addEventListener('change', save);
+fields.enableIdentity.addEventListener('change', () => {
+  applyIdentityPanelState();
+  save();
+});
 fields.showIpfsProgressStatus.addEventListener('change', save);
 fields.autoUpdate.addEventListener('change', save);
 fields.unverifiedEnsAction.addEventListener('change', save);

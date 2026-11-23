@@ -105,11 +105,16 @@ export function initSidebar() {
 }
 
 /**
- * Show/hide the toolbar toggle button based on feature flag
+ * Show/hide the toolbar toggle button based on feature flag, and with it the
+ * Identity toolbar button and hamburger row (plus that row's divider), which
+ * sit under the same Beta switch.
  */
 function applyFeatureVisibility() {
   if (!toggleBtn) return;
   toggleBtn.classList.toggle('hidden', !featureEnabled);
+  for (const id of ['identity-toggle-btn', 'identity-btn', 'identity-menu-divider']) {
+    document.getElementById(id)?.classList.toggle('hidden', !featureEnabled);
+  }
 }
 
 /**

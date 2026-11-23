@@ -1,6 +1,7 @@
 .toolbar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) repeat(4, auto);
+  /* nav buttons | address bar | then the buttons on the right, Identity among them */
+  grid-template-columns: auto minmax(0, 1fr) repeat(5, auto);
   align-items: center;
   gap: 0;
   padding: 6px 10px;

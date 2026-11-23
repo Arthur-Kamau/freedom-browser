@@ -1,6 +1,6 @@
 {
   "issue": "https://github.com/solardev-xyz/freedom-browser/issues/261",
-  "total": 75,
+  "total": 77,
   "gaps": [
     {
       "surface": "Swarm connect approval",
@@ -232,6 +232,14 @@
       "el": "p",
       "text": "No history yet",
       "ratio": 3.31,
+      "bar": 4.5
+    },
+    {
+      "surface": "page identity",
+      "theme": "light",
+      "el": "button#nav-claims.nav-item.active",
+      "text": "Your claims",
+      "ratio": 4.32,
       "bar": 4.5
     },
     {
@@ -520,6 +528,14 @@
       "el": "summary",
       "text": "Advanced",
       "ratio": 2.55,
+      "bar": 4.5
+    },
+    {
+      "surface": "settings identity",
+      "theme": "light",
+      "el": "button.nav-item.active",
+      "text": "Identity",
+      "ratio": 4.32,
       "bar": 4.5
     },
     {

@@ -234,6 +234,22 @@ describe('webview-preload-ethereum-inject', () => {
       jest.advanceTimersByTime(240000);
       await expect(pending).rejects.toThrow('Request timed out');
     });
+
+    test('aqua_requestDisclosure waits the same 5min as a transaction, and is forwarded as any method', async () => {
+      const { window, postedMessages } = createInstance();
+      const request = { aqua: 1, need: ['email'], nonce: 'n' };
+      const pending = window.ethereum.request({ method: 'aqua_requestDisclosure', params: [request] });
+      const settled = jest.fn();
+      pending.then(settled, settled);
+      expect(postedMessages.at(-1).data).toMatchObject({ type: 'FREEDOM_ETHEREUM_REQUEST', method: 'aqua_requestDisclosure', params: [request] });
+
+      jest.advanceTimersByTime(60000);
+      await flushMicrotasks();
+      expect(settled).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(240000);
+      await expect(pending).rejects.toThrow('Request timed out');
+    });
   });
 
   describe('event emission via FREEDOM_ETHEREUM_EVENT', () => {

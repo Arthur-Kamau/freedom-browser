@@ -1,0 +1,901 @@
+/**
+ * Identity claims: the flow between the Aqua service, the wallet and the
+ * local encrypted store.
+ *
+ * A claim starts life on the service, which builds the tree from the SDK's
+ * claim template with the active wallet as `signer_did`. The service then
+ * prepares the EIP-191 pre-image for the claim's signature revision; the
+ * wallet signs it on the sidebar's approval screen (the only path that can
+ * sign anything, main-side confirmation token included); the service
+ * finalizes the signature. Freedom downloads the resulting artifact, has
+ * the tree verified, and keeps the copy in the encrypted store. The service
+ * keeps its copy too.
+ *
+ * Email and phone claims are gated by a one-time code the service sends
+ * out of band; once such a claim is signed the service issues its own
+ * attestation tree, which is downloaded and stored beside the claim. A name
+ * claim has no out-of-band step and stays self-signed until someone attests
+ * it. Nothing here ever labels a self-signed claim as verified.
+ */
+const crypto = require('crypto');
+const { readAquaChains } = require('./zip-reader');
+const { CLAIM_TYPES, TRUST_STATES, didKey } = require('./claims-store');
+
+// Matches the SDK's phone_claim template pattern (E.164).
+const E164 = /^\+[1-9]\d{1,14}$/;
+// Matches the SDK's email_claim template pattern.
+const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+// A registrable hostname: labels of letters, digits and hyphens, a dotted TLD.
+const DOMAIN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+const NAME_MAX = 256;
+
+class ClaimInputError extends Error {
+  constructor(message, field, options) {
+    super(message, options);
+    this.name = 'ClaimInputError';
+    this.code = 'INVALID_INPUT';
+    this.field = field;
+  }
+}
+
+function text(value, field, { required = false, max = NAME_MAX } = {}) {
+  if (value === undefined || value === null || value === '') {
+    if (required) throw new ClaimInputError(`${field} is required`, field);
+    return undefined;
+  }
+  if (typeof value !== 'string') throw new ClaimInputError(`${field} must be text`, field);
+  const trimmed = value.trim();
+  if (!trimmed && required) throw new ClaimInputError(`${field} is required`, field);
+  if (trimmed.length > max) throw new ClaimInputError(`${field} is too long`, field);
+  return trimmed || undefined;
+}
+
+/**
+ * Check a claim's fields the way the SDK template will, so a mistake is
+ * reported before anything is sent. Returns the body for the service.
+ */
+function validateClaimInput(type, fields = {}) {
+  switch (type) {
+    case 'name': {
+      return {
+        given_name: text(fields.given_name, 'given_name', { required: true }),
+        family_name: text(fields.family_name, 'family_name', { required: true }),
+        middle_name: text(fields.middle_name, 'middle_name'),
+        nickname: text(fields.nickname, 'nickname'),
+      };
+    }
+    case 'email': {
+      const email = text(fields.email, 'email', { required: true });
+      if (!EMAIL.test(email)) throw new ClaimInputError('Enter a valid email address', 'email');
+      return {
+        email,
+        verification_token: text(fields.verification_token, 'verification_token', { max: 1024 }),
+        display_name: text(fields.display_name, 'display_name'),
+      };
+    }
+    case 'phone': {
+      const phone = text(fields.phone_number, 'phone_number', { required: true, max: 20 });
+      if (!E164.test(phone)) {
+        throw new ClaimInputError('Phone number must be in international E.164 form: a plus sign, the country code, then the number', 'phone_number');
+      }
+      return {
+        phone_number: phone,
+        verification_token: text(fields.verification_token, 'verification_token', { max: 1024 }),
+        display_name: text(fields.display_name, 'display_name'),
+      };
+    }
+    case 'domain': {
+      const domain = text(fields.domain, 'domain', { required: true, max: 253 })?.toLowerCase();
+      if (!DOMAIN.test(domain)) throw new ClaimInputError('Enter a domain name, like example.com', 'domain');
+      return { domain };
+    }
+    default:
+      throw new ClaimInputError(`Unknown claim type: ${type}`, 'type');
+  }
+}
+
+function stripUndefined(body) {
+  return Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined));
+}
+
+/** The chain in an artifact that holds `tip` as a revision. */
+function chainWithTip(chains, tip) {
+  const found = chains.find((chain) => Object.prototype.hasOwnProperty.call(chain.tree.revisions, tip));
+  if (!found) throw new Error(`Downloaded artifact does not contain revision ${tip}`);
+  return found.tree;
+}
+
+function genesisOf(tree) {
+  const entry = Object.entries(tree.revisions).find(([, rev]) => !rev.previous_revision);
+  return entry ? entry[0] : null;
+}
+
+/** The typed object revision's payload (the claim or attestation fields). */
+function payloadOf(tree) {
+  const typed = Object.values(tree.revisions).find((rev) => rev.payloads && typeof rev.payloads === 'object');
+  return typed ? typed.payloads : null;
+}
+
+function signerDidOf(tree) {
+  const sig = Object.values(tree.revisions).find((rev) => rev.signature && rev.signer);
+  return sig ? sig.signer : null;
+}
+
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const REVISION_HASH = /0x1620[0-9a-f]{64}/g;
+
+/**
+ * The claim a peer attestation names. The service's wallet-signed attestation
+ * anchors to the attestation template, not to the claim (its only link to
+ * the claim is the service's own index), so Freedom writes the claim's tip
+ * into the attestation's `context` when it issues one, and reads it back
+ * here. A structural link, when a service does anchor to the claim's
+ * signature hash, is honoured first.
+ */
+function claimTipsNamedBy(attestationTree) {
+  const named = new Set();
+  for (const rev of Object.values(attestationTree.revisions || {})) {
+    for (const link of rev.structural_links || []) {
+      if (link && typeof link.hash === 'string') named.add(link.hash.toLowerCase());
+    }
+    const context = rev.payloads && typeof rev.payloads.context === 'string' ? rev.payloads.context : '';
+    for (const match of context.matchAll(REVISION_HASH)) named.add(match[0].toLowerCase());
+  }
+  return named;
+}
+
+function attestationContext(words, claimTip) {
+  return `${words.trim()} (attests claim ${claimTip})`;
+}
+
+/**
+ * The verifier's own failing lines (`{ logType: 'error', log }` entries),
+ * so a verdict says what failed rather than just "FAILED".
+ */
+function failingLogs(result) {
+  const logs = Array.isArray(result?.logs) ? result.logs : [];
+  return logs
+    .filter((entry) => /error|fail/i.test(String(entry?.logType || entry?.log_type || '')))
+    .map((entry) => String(entry?.log || '').trim())
+    .filter(Boolean);
+}
+
+function summarizeVerification(result, backend, checkedAt) {
+  const isValid = result?.is_valid === true;
+  const verdict = typeof result?.status === 'string' ? result.status : isValid ? 'OK' : 'unknown';
+  const reasons = isValid ? [] : failingLogs(result);
+  return {
+    isValid,
+    status: reasons.length > 0 ? `${verdict}: ${reasons[0]}` : verdict,
+    reasons,
+    backend,
+    checkedAt,
+  };
+}
+
+/** The wallet address a `did:pkh:eip155:…` names, or null for any other DID. */
+function addressOfDid(did) {
+  const match = typeof did === 'string' && did.match(/^did:pkh:eip155:\d+:(0x[0-9a-fA-F]{40})$/);
+  return match ? match[1] : null;
+}
+
+/** Freedom's own naming for the contract that hands an attestation back to the claim's owner. */
+const SHARE_BACK_PREFIX = 'freedom-attestation-';
+
+/**
+ * @param {object} deps
+ * @param {ReturnType<import('./claims-store').createClaimsStore>} deps.store
+ * @param {ReturnType<import('./aqua-client').createAquaClient>} deps.client
+ * @param {() => Promise<{ index: number, address: string, type: string }|null>} deps.getActiveWallet
+ * @param {{ sign: (req: { address: string, purpose: string, message: string, display: string }) => Promise<string> }} deps.signer
+ * @param {() => Date} [deps.now]
+ * @param {{ error: Function, info?: Function }} [deps.log]
+ */
+function createClaimsService({ store, client, getActiveWallet, signer, now = () => new Date(), log = console }) {
+  async function activeWalletOrThrow() {
+    const wallet = await getActiveWallet();
+    if (!wallet?.address) throw new Error('Set up a wallet before creating identity claims');
+    if (wallet.type === 'safe') {
+      throw new Error('A multi-owner account signs as a smart contract and cannot sign an identity claim');
+    }
+    return wallet;
+  }
+
+  const sameService = (a, b) => String(a || '').replace(/\/+$/, '').toLowerCase() === String(b || '').replace(/\/+$/, '').toLowerCase();
+  // A claim is held by the service it was made on. After the profile's
+  // identity service changed, that service no longer answers for it.
+  function madeElsewhere(record) {
+    return Boolean(record.nodeUrl) && !sameService(record.nodeUrl, client.baseUrl);
+  }
+  function requireThisService(record, what) {
+    if (!madeElsewhere(record)) return;
+    throw new Error(`This claim was made on ${record.nodeUrl}; ${client.baseUrl} does not hold it. Switch the identity service back under Settings → Identity to ${what} it.`);
+  }
+
+  async function verify(tree) {
+    const checkedAt = now().toISOString();
+    try {
+      return summarizeVerification(await client.verifyTree(tree), 'service', checkedAt);
+    } catch (err) {
+      log.error('[AquaClaims] verification failed:', err?.message || err);
+      return { isValid: false, status: `Verification unavailable: ${err?.message || err}`, backend: 'service', checkedAt };
+    }
+  }
+
+  async function fetchChain(address, tip) {
+    const zip = await client.downloadTree(address, tip);
+    return chainWithTip(readAquaChains(zip), tip);
+  }
+
+  // A peer's attestation is downloadable only by the peer, so Freedom's
+  // attester shares it back with the claim's owner; the owner imports that
+  // share, which gives them their own copy to download. Null when no share
+  // received holds the tree.
+  async function importSharedBack(address, tip) {
+    const contracts = (await client.listSharesReceived(address))?.contracts || [];
+    for (const contract of contracts) {
+      if (!contract?.hash) continue;
+      let data;
+      try {
+        data = await client.sharedData(address, contract.hash);
+      } catch {
+        continue;
+      }
+      if (!(data?.trees || []).some((tree) => tree?.tip === tip && !tree.unavailable)) continue;
+      await client.importShared(address, contract.hash);
+      return fetchChain(address, tip);
+    }
+    return null;
+  }
+
+  // Share an attestation this wallet issued with the claim's owner, under
+  // Freedom's naming, and return the contract hash; null when the owner is
+  // not a wallet address or the service refused, which the caller records
+  // so the share is tried again later.
+  async function shareBack(address, tree, tip, owner) {
+    if (!owner) return null;
+    const hash = `${SHARE_BACK_PREFIX}${crypto.randomUUID()}`;
+    try {
+      await client.shareTree(address, { hash, recipient: owner, genesis: genesisOf(tree), tip, fileName: 'attestation' });
+      return hash;
+    } catch (err) {
+      log.error('[AquaClaims] attestation could not be shared back with the owner:', err?.message || err);
+      return null;
+    }
+  }
+
+  // An attestation anchors to the claim it attests (the service's own
+  // attestations link to the claim's signature revision), so it verifies
+  // only with the claim tree supplied as a linked tree.
+  async function attestationRecord(address, tip, claimTree) {
+    const tree = await fetchChain(address, tip);
+    const payload = payloadOf(tree) || {};
+    return {
+      tip,
+      tree,
+      attesterDid: payload.signer_did || signerDidOf(tree) || null,
+      context: typeof payload.context === 'string' ? payload.context : '',
+      source: 'service',
+      issuedAt: now().toISOString(),
+      verification: claimTree ? await verifyLinked(tree, claimTree) : await verify(tree),
+    };
+  }
+
+  let capabilities = null;
+  async function serviceCapabilities() {
+    if (!capabilities) capabilities = await client.capabilities();
+    return capabilities;
+  }
+
+  // Whether the service checks this kind (email | phone) only after the
+  // claim is created and signed, sending the code for the claim's tip.
+  async function claimFirst(kind) {
+    const caps = await serviceCapabilities().catch(() => null);
+    return Boolean(caps?.claimFirst?.[kind]);
+  }
+
+  // A claim of this wallet, on this service, for the same address or number,
+  // that the service has not attested yet: the one a new code is sent for.
+  async function waitingForCheck(address, kind, value) {
+    const caps = await serviceCapabilities();
+    const field = kind === 'email' ? 'email' : 'phone_number';
+    const same = (a, b) => (kind === 'email' ? String(a).toLowerCase() === String(b).toLowerCase() : a === b);
+    return (
+      (await store.list()).find(
+        (r) =>
+          r.type === kind &&
+          r.address.toLowerCase() === address.toLowerCase() &&
+          !madeElsewhere(r) &&
+          typeof r.payload?.[field] === 'string' &&
+          same(r.payload[field], value) &&
+          !(r.attestations || []).some((a) => !a.pending && sourceOf(a.attesterDid, caps) === 'service')
+      ) || null
+    );
+  }
+
+  /**
+   * `service` when the attester is one the service vouches with: its node DID
+   * or any attester its `/.well-known/aqua-identity` names (read once per
+   * session, see `capabilities()`); otherwise a `peer`.
+   */
+  function sourceOf(attesterDid, caps) {
+    if (!attesterDid || !caps) return 'peer';
+    const wanted = didKey(attesterDid);
+    return serviceDids(caps).some((did) => didKey(did) === wanted) ? 'service' : 'peer';
+  }
+
+  /** The DIDs the chosen identity service signs with: its node DID and its named attesters. */
+  function serviceDids(caps) {
+    return [caps?.serviceDid, ...(caps?.attesters || [])].filter(Boolean);
+  }
+
+  // ── The trust list ───────────────────────────────────────────────────
+  // The chosen service's DIDs go on the list as trusted the first time they
+  // are seen with the vault open, which is what choosing a service means. A
+  // DID the user rejected stays rejected. A service that does not answer
+  // adds nothing; the list as stored still applies.
+  async function trustList() {
+    const caps = await serviceCapabilities().catch(() => null);
+    if (caps && caps.reachable !== false) {
+      await store.addTrusted(serviceDids(caps), { kind: 'service', at: now().toISOString() });
+    }
+    return store.listTrust();
+  }
+
+  /** `trusted`, `rejected`, or `unknown` for a DID that is not on the list. */
+  function trustOf(did, list) {
+    const key = didKey(did);
+    if (!key) return 'unknown';
+    return list.find((entry) => didKey(entry.did) === key)?.state || 'unknown';
+  }
+
+  // A copy of a claim record with each attestation's trust state for the
+  // page. Copies only: the stored record and what a disclosure releases
+  // never carry the user's judgement.
+  function annotate(record, list) {
+    if (!record || !Array.isArray(record.attestations)) return record;
+    return {
+      ...record,
+      attestations: record.attestations.map((a) => ({ ...a, trust: trustOf(a.attesterDid, list) })),
+    };
+  }
+
+  async function verifyLinked(tree, claimTree) {
+    const checkedAt = now().toISOString();
+    try {
+      const summary = summarizeVerification(await client.verifyTree(tree, { linkedTrees: [claimTree] }), 'service', checkedAt);
+      if (!summary.isValid) log.error('[AquaClaims] attestation did not verify against its claim:', summary.status, summary.reasons);
+      return summary;
+    } catch (err) {
+      log.error('[AquaClaims] verification failed:', err?.message || err);
+      return { isValid: false, status: `Verification unavailable: ${err?.message || err}`, backend: 'service', checkedAt };
+    }
+  }
+
+  /** Parse an attestation tree handed over as JSON text or an object. */
+  function parseAttestationTree(input) {
+    let tree = input;
+    if (typeof input === 'string') {
+      try {
+        tree = JSON.parse(input);
+      } catch (err) {
+        throw new ClaimInputError('That is not an Aqua tree (invalid JSON)', 'tree', { cause: err });
+      }
+    }
+    if (tree && tree.aqua_tree && typeof tree.aqua_tree === 'object') tree = tree.aqua_tree;
+    if (!tree || typeof tree !== 'object' || !tree.revisions || typeof tree.revisions !== 'object') {
+      throw new ClaimInputError('That is not an Aqua tree (no revisions)', 'tree');
+    }
+    const payload = payloadOf(tree);
+    if (!payload || typeof payload.context !== 'string' || typeof payload.signer_did !== 'string') {
+      throw new ClaimInputError('That tree is not an attestation (no context and signer)', 'tree');
+    }
+    const [tip] = Object.entries(tree.revisions).find(([, rev]) => rev.payloads === payload);
+    return { tree, payload, tip, attesterDid: signerDidOf(tree) || payload.signer_did };
+  }
+
+  async function signClaim(wallet, tip) {
+    const prepared = await client.prepareSign(wallet.address, tip);
+    const signature = await signer.sign({
+      address: wallet.address,
+      purpose: 'claim',
+      message: prepared.message_hex,
+      display: prepared.message_utf8,
+    });
+    return client.completeSign(wallet.address, tip, { message_hex: prepared.message_hex, signature });
+  }
+
+  return {
+    /** Everything the page needs to render, no secrets. */
+    async status() {
+      const wallet = await getActiveWallet().catch(() => null);
+      const caps = await serviceCapabilities().catch(() => ({ reachable: false, serviceDid: null, attesters: [], claimTypes: {}, outOfBandVerification: false }));
+      return {
+        nodeUrl: client.baseUrl,
+        service: caps,
+        wallet: wallet
+          ? { address: wallet.address, index: wallet.index, type: wallet.type, canSign: wallet.type !== 'safe' }
+          : null,
+        // Whether this wallet holds a session with the service: the page
+        // shows nothing that would need one until it does.
+        signedIn: Boolean(wallet && client.hasSession(wallet.address)),
+      };
+    },
+
+    /** Sign in to the service as the active wallet: one wallet signature, confirmed in the sidebar. */
+    async signIn() {
+      const wallet = await activeWalletOrThrow();
+      const session = await client.login(wallet.address);
+      return { signedIn: true, did: session.did || null };
+    },
+
+    listClaims: () => store.list(),
+
+    /**
+     * Claim records as the identity page shows them: each attestation says
+     * whether its signer is on the user's trust list. Takes one record or a
+     * list, and never touches what is stored.
+     */
+    async withTrust(records) {
+      const list = await trustList();
+      return Array.isArray(records) ? records.map((r) => annotate(r, list)) : annotate(records, list);
+    },
+
+    /** The trust list, the chosen service's DIDs included. */
+    listTrust: () => trustList(),
+
+    /** Accept (`trusted`) or reject (`rejected`) a DID; either can be reversed with the other. */
+    async setTrust({ did, state } = {}) {
+      if (typeof did !== 'string' || !didKey(did).startsWith('did:')) {
+        throw new ClaimInputError('Name the DID to trust or reject', 'did');
+      }
+      if (!TRUST_STATES.includes(state)) throw new ClaimInputError('Choose trusted or rejected', 'state');
+      const wallet = await getActiveWallet().catch(() => null);
+      if (wallet?.address && didKey(did) === didKey(`did:pkh:eip155:1:${wallet.address}`)) {
+        throw new ClaimInputError('Your own wallet cannot vouch for your own claims', 'did');
+      }
+      const caps = await serviceCapabilities().catch(() => null);
+      return store.setTrust(did, state, { kind: sourceOf(did, caps) === 'service' ? 'service' : 'person', at: now().toISOString() });
+    },
+
+    /**
+     * Every claim record as one JSON document: the trees, the attestations
+     * and the verification results, as the store holds them.
+     */
+    async exportAll() {
+      const claims = await store.list();
+      return JSON.stringify({ format: 'freedom-identity-claims', version: 1, exportedAt: now().toISOString(), nodeUrl: client.baseUrl, claims }, null, 2);
+    },
+
+    removeAllClaims: () => store.removeAll(),
+
+    /**
+     * One-time code for an email or phone claim; the service sends it.
+     *
+     * A service that checks the address after the claim exists (claim-first)
+     * is sent the code for a signed claim: the claim is created, signed and
+     * stored here first, and `claimId` comes back for `verifyCode`. A claim
+     * for the same value still waiting for its check is used again, so a
+     * code that was never entered does not leave a second claim behind.
+     */
+    async sendCode({ channel, target }) {
+      const wallet = await activeWalletOrThrow();
+      if (channel !== 'email' && channel !== 'phone') throw new ClaimInputError('Unknown channel', 'channel');
+      const body = channel === 'email' ? validateClaimInput('email', { email: target }) : validateClaimInput('phone', { phone_number: target });
+      const normalized = channel === 'email' ? body.email : body.phone_number;
+      if (!(await claimFirst(channel))) {
+        const result = await client.sendCode(wallet.address, { target: normalized, channel });
+        return { target: normalized, message: result?.message || 'Code sent' };
+      }
+      const record =
+        (await waitingForCheck(wallet.address, channel, normalized)) ||
+        (await this.createClaim({ type: channel, fields: channel === 'email' ? { email: normalized } : { phone_number: normalized } }));
+      const result = await client.sendCode(wallet.address, { target: normalized, channel, tip: record.tip });
+      return { target: normalized, message: result?.message || 'Code sent', claimId: record.id };
+    },
+
+    /**
+     * Check the code. Before creation it buys the token the create call
+     * needs; with `claimId` (claim-first) the service attests that claim, and
+     * the claim comes back with the attestation on it.
+     */
+    async verifyCode({ target, code, claimId }) {
+      const wallet = await activeWalletOrThrow();
+      const cleanCode = text(code, 'code', { required: true, max: 16 });
+      const cleanTarget = text(target, 'target', { required: true });
+      if (!claimId) {
+        const result = await client.verifyCode(wallet.address, { target: cleanTarget, code: cleanCode });
+        if (!result?.verification_token) throw new Error(result?.message || 'The code was not accepted');
+        return { verificationToken: result.verification_token };
+      }
+      const record = await store.get(claimId);
+      if (!record) throw new Error('Claim not found');
+      requireThisService(record, 'check');
+      const result = await client.verifyCode(record.address, { target: cleanTarget, code: cleanCode, tip: record.tip });
+      if (!result?.success || !result.attestation_tip) {
+        const left = Number.isInteger(result?.attempts_left) ? `, ${result.attempts_left} ${result.attempts_left === 1 ? 'try' : 'tries'} left` : '';
+        throw new Error(`${result?.message || 'The code was not accepted'}${left}`);
+      }
+      if (!record.attestations.some((a) => a.tip === result.attestation_tip)) {
+        try {
+          const attestation = await attestationRecord(record.address, result.attestation_tip, record.tree);
+          attestation.source = sourceOf(attestation.attesterDid, await serviceCapabilities());
+          record.attestations.push(attestation);
+          record.serverTips = { ...(record.serverTips || {}), attestation: result.attestation_tip };
+          await store.upsert(record);
+        } catch (err) {
+          // The check held on the service; the tree is fetched by the next pull.
+          log.error('[AquaClaims] attestation download failed:', err?.message || err);
+        }
+      }
+      return { claim: record };
+    },
+
+    /**
+     * Create, sign, download, verify and store a claim. Returns the record.
+     * `type` is one of name | email | phone | domain.
+     */
+    async createClaim({ type, fields }) {
+      if (!CLAIM_TYPES.includes(type)) throw new ClaimInputError(`Unknown claim type: ${type}`, 'type');
+      const body = stripUndefined(validateClaimInput(type, fields));
+      const wallet = await activeWalletOrThrow();
+      if ((type === 'email' || type === 'phone') && !body.verification_token && !(await claimFirst(type))) {
+        throw new ClaimInputError('verification_token is required', 'verification_token');
+      }
+
+      const create = {
+        name: client.createNameClaim,
+        email: client.createEmailClaim,
+        phone: client.createPhoneClaim,
+        domain: client.createDnsClaim,
+      }[type];
+      const created = await create(wallet.address, body);
+      if (!created?.tip) throw new Error('The service created no claim');
+      const createdAt = now().toISOString();
+
+      const completed = await signClaim(wallet, created.tip);
+      const tip = completed?.new_tip || created.tip;
+      const tree = await fetchChain(wallet.address, tip);
+      const payload = payloadOf(tree) || {};
+      const signerDid = payload.signer_did || signerDidOf(tree);
+      if (!signerDid) throw new Error('Downloaded claim names no signer');
+
+      const attestations = [];
+      if (completed?.attestation_tip) {
+        try {
+          attestations.push(await attestationRecord(wallet.address, completed.attestation_tip, tree));
+        } catch (err) {
+          log.error('[AquaClaims] attestation download failed:', err?.message || err);
+        }
+      }
+
+      const record = {
+        id: crypto.randomUUID(),
+        type,
+        signerDid,
+        address: wallet.address,
+        nodeUrl: client.baseUrl,
+        tip,
+        genesis: genesisOf(tree),
+        payload,
+        createdAt,
+        signedAt: now().toISOString(),
+        tree,
+        verification: await verify(tree),
+        attestations,
+        serverTips: { claim: tip, attestation: completed?.attestation_tip || null },
+        ...(type === 'domain' ? { domainVerification: created.verification_status || 'pending' } : {}),
+      };
+      await store.upsert(record);
+      return record;
+    },
+
+    /** Re-run verification on the stored tree and its attestations. */
+    async refreshClaim(id) {
+      const record = await store.get(id);
+      if (!record) throw new Error('Claim not found');
+      record.verification = await verify(record.tree);
+      for (const attestation of record.attestations) {
+        if (!attestation.tree) continue;
+        attestation.verification = await verifyLinked(attestation.tree, record.tree);
+      }
+      await store.upsert(record);
+      return record;
+    },
+
+    removeClaim: (id) => store.remove(id),
+
+    // ── Attestation: the owner's side ────────────────────────────────
+
+    /** Share a claim with another account so it can attest it. */
+    async shareForAttestation(id, recipient) {
+      const address = text(recipient, 'recipient', { required: true, max: 42 });
+      if (!ADDRESS.test(address)) throw new ClaimInputError('Enter the attester\'s wallet address (0x…)', 'recipient');
+      const record = await store.get(id);
+      if (!record) throw new Error('Claim not found');
+      requireThisService(record, 'share');
+      if (address.toLowerCase() === record.address.toLowerCase()) {
+        throw new ClaimInputError('A claim cannot be shared with its own wallet', 'recipient');
+      }
+      const hash = `freedom-attest-${crypto.randomUUID()}`;
+      await client.shareTree(record.address, {
+        hash,
+        recipient: address,
+        genesis: record.genesis,
+        tip: record.tip,
+        fileName: (record.tree.file_index && record.tree.file_index[record.tip]) || `${record.type}_claim`,
+      });
+      record.shares = record.shares || [];
+      record.shares.push({ hash, recipient: address, createdAt: now().toISOString() });
+      await store.upsert(record);
+      return record;
+    },
+
+    /**
+     * Fetch the attestations the service has recorded against a claim. The
+     * service lets only the attester download a peer attestation's tree, so
+     * such an entry is stored as pending until the attester hands the tree
+     * over and it is imported; the service's own attestations download.
+     */
+    async pullAttestations(id) {
+      const record = await store.get(id);
+      if (!record) throw new Error('Claim not found');
+      // Pulled for every claim on open, so one made elsewhere is left as it
+      // is rather than reported each time.
+      if (madeElsewhere(record)) return record;
+      const caps = await serviceCapabilities();
+      const listed = (await client.listAttestations(record.address, record.tip))?.attestations || [];
+      for (const info of listed) {
+        if (!info?.tip) continue;
+        const known = record.attestations.find((a) => a.tip === info.tip);
+        // One already held is done; one still pending is tried again, since
+        // the attester may have shared it back since the last pull.
+        if (known && !known.pending) continue;
+        const entry = known || {
+          tip: info.tip,
+          tree: null,
+          attesterDid: info.attester_did || null,
+          context: typeof info.context === 'string' ? info.context : '',
+          source: sourceOf(info.attester_did, caps),
+          issuedAt: info.created_at || now().toISOString(),
+          pending: true,
+          verification: { isValid: false, status: 'Recorded by the service; waiting for the attester to share the tree', backend: 'service', checkedAt: now().toISOString() },
+        };
+        try {
+          entry.tree = await fetchChain(record.address, info.tip).catch(() => importSharedBack(record.address, info.tip));
+          if (entry.tree) {
+            entry.pending = false;
+            entry.verification = await verifyLinked(entry.tree, record.tree);
+          }
+        } catch (err) {
+          log.error('[AquaClaims] attestation tree not downloadable:', err?.message || err);
+        }
+        if (!known) record.attestations.push(entry);
+      }
+      await store.upsert(record);
+      return record;
+    },
+
+    /**
+     * Import an attestation tree the attester handed over (file or pasted
+     * JSON). It must name this claim, by a structural link or by the claim
+     * tip in its context; one for another claim is refused (AS-REQ-0013).
+     */
+    async importAttestation(id, input) {
+      const record = await store.get(id);
+      if (!record) throw new Error('Claim not found');
+      const { tree, payload, tip, attesterDid } = parseAttestationTree(input);
+      const named = claimTipsNamedBy(tree);
+      const listedTips = new Set(record.attestations.map((a) => a.tip));
+      const namesThisClaim =
+        named.has(record.tip.toLowerCase()) ||
+        (record.genesis && named.has(record.genesis.toLowerCase())) ||
+        Object.keys(record.tree.revisions).some((hash) => named.has(hash.toLowerCase())) ||
+        listedTips.has(tip);
+      if (!namesThisClaim) {
+        throw new ClaimInputError('This attestation does not name this claim', 'tree');
+      }
+      if (attesterDid && attesterDid.toLowerCase() === record.signerDid.toLowerCase()) {
+        throw new ClaimInputError('A claim cannot be attested by its own subject', 'tree');
+      }
+      const caps = await serviceCapabilities();
+      const entry = {
+        tip,
+        tree,
+        attesterDid,
+        context: payload.context,
+        source: sourceOf(attesterDid, caps),
+        issuedAt: now().toISOString(),
+        pending: false,
+        verification: await verifyLinked(tree, record.tree),
+      };
+      const index = record.attestations.findIndex((a) => a.tip === tip);
+      if (index >= 0) record.attestations[index] = { ...record.attestations[index], ...entry };
+      else record.attestations.push(entry);
+      await store.upsert(record);
+      return record;
+    },
+
+    // ── Attestation: the attester's side ─────────────────────────────
+
+    /** Claims other accounts shared with this wallet for attestation. */
+    async listSharedClaims() {
+      const wallet = await activeWalletOrThrow();
+      const contracts = (await client.listSharesReceived(wallet.address))?.contracts || [];
+      // A contract the service lists but whose trees cannot be read is
+      // still returned, flagged, with the reason: a silent skip here is how
+      // a share that reached the service showed as "nothing shared" on the
+      // attester's page.
+      const shared = [];
+      const unreadable = (contract, reason, tree = null) => ({
+        contractHash: contract.hash,
+        sender: contract.sender || null,
+        tip: tree?.tip || null,
+        fileName: tree?.file_name || contract.file_name || '',
+        payload: null,
+        templateName: null,
+        revisionCount: 0,
+        attestationCount: 0,
+        sharedAt: contract.created_at || null,
+        unavailable: true,
+        reason,
+      });
+      for (const contract of contracts) {
+        if (!contract?.hash || contract.hash.startsWith(SHARE_BACK_PREFIX)) continue;
+        let data;
+        try {
+          data = await client.sharedData(wallet.address, contract.hash);
+        } catch (err) {
+          log.error('[AquaClaims] shared data unavailable:', err?.message || err);
+          shared.push(unreadable(contract, `The service refused to show it: ${err?.message || err}`));
+          continue;
+        }
+        const trees = data?.trees || [];
+        if (trees.length === 0) shared.push(unreadable(contract, 'The service lists no tree under this share'));
+        for (const tree of trees) {
+          if (!tree?.tip || tree.unavailable) {
+            shared.push(unreadable(contract, "The sender's tree is not on the service any more", tree));
+            continue;
+          }
+          if (tree.template_name === 'attestation') continue;
+          shared.push({
+            contractHash: contract.hash,
+            sender: contract.sender || data?.contract?.sender || null,
+            tip: tree.tip,
+            fileName: tree.file_name || contract.file_name || '',
+            payload: tree.payload || null,
+            templateName: tree.template_name || null,
+            revisionCount: tree.revision_count || 0,
+            attestationCount: tree.attestation_count || 0,
+            sharedAt: contract.created_at || null,
+          });
+        }
+      }
+      return shared;
+    },
+
+    /**
+     * Attest a claim another account shared with this wallet: the service
+     * prepares the attestation's pre-image, the wallet signs it, the service
+     * finalizes it, and the attester, who alone can download it, shares it
+     * back with the owner.
+     */
+    async attestSharedClaim({ contractHash, tip, context }) {
+      const wallet = await activeWalletOrThrow();
+      const words = text(context, 'context', { required: true, max: 1200 });
+      // AS-REQ-0020: only a claim the service shows as shared with this
+      // account is attested; the service enforces the same rule on its side.
+      const shared = (await this.listSharedClaims()).find((s) => !s.unavailable && s.contractHash === contractHash && s.tip === tip);
+      if (!shared) throw new Error('That claim is not shared with this wallet');
+      const subjectDid = shared.payload?.signer_did || null;
+      if (subjectDid && subjectDid.toLowerCase() === `did:pkh:eip155:1:${wallet.address}`.toLowerCase()) {
+        throw new Error('You cannot attest your own claim');
+      }
+      const fullContext = attestationContext(words, tip);
+      const prepared = await client.attestPrepare(wallet.address, tip, { context: fullContext });
+      const signature = await signer.sign({
+        address: wallet.address,
+        purpose: 'attestation',
+        message: prepared.message_hex,
+        display: prepared.message_utf8,
+      });
+      const completed = await client.attestComplete(wallet.address, tip, { message_hex: prepared.message_hex, signature });
+      const attestationTip = completed?.attestation_tip;
+      if (!attestationTip) throw new Error('The service recorded no attestation');
+      const tree = await fetchChain(wallet.address, attestationTip);
+      // Only the attester can download the attestation, so it is shared
+      // back with the claim's owner, whose Freedom imports it on its next
+      // pull. A share that fails leaves Copy JSON as the way to hand it over.
+      const sharedBack = await shareBack(wallet.address, tree, attestationTip, addressOfDid(subjectDid) || addressOfDid(shared.sender));
+      const issued = {
+        id: crypto.randomUUID(),
+        tip: attestationTip,
+        claimTip: tip,
+        contractHash,
+        sharedBack,
+        subjectDid,
+        subjectPayload: shared.payload || null,
+        templateName: shared.templateName || null,
+        context: fullContext,
+        attesterDid: signerDidOf(tree) || `did:pkh:eip155:1:${wallet.address}`,
+        tree,
+        createdAt: now().toISOString(),
+        verification: await verify(tree),
+      };
+      await store.addIssued(issued);
+      return issued;
+    },
+
+    /**
+     * Attestations this wallet issued. One issued before Freedom shared
+     * attestations back, or whose share failed, is shared back now, so the
+     * owner's Freedom picks it up without a file changing hands.
+     */
+    async listIssued() {
+      const issued = await store.listIssued();
+      const wallet = await getActiveWallet();
+      if (!wallet?.address) return issued;
+      for (const entry of issued) {
+        if (entry.sharedBack || !entry.tree || !entry.tip) continue;
+        if ((addressOfDid(entry.attesterDid) || '').toLowerCase() !== wallet.address.toLowerCase()) continue;
+        const hash = await shareBack(wallet.address, entry.tree, entry.tip, addressOfDid(entry.subjectDid));
+        if (!hash) continue;
+        entry.sharedBack = hash;
+        await store.addIssued(entry);
+      }
+      return issued;
+    },
+
+    /** The attestation tree as text, for handing to the claim's owner. */
+    async exportIssued(id) {
+      const issued = (await store.listIssued()).find((entry) => entry.id === id);
+      if (!issued) throw new Error('Attestation not found');
+      return JSON.stringify(issued.tree, null, 2);
+    },
+
+    async dnsInstructions(id) {
+      const record = await store.get(id);
+      if (!record || record.type !== 'domain') throw new Error('Not a domain claim');
+      requireThisService(record, 'check');
+      return client.dnsInstructions(record.address, record.tip);
+    },
+
+    async verifyDns(id) {
+      const record = await store.get(id);
+      if (!record || record.type !== 'domain') throw new Error('Not a domain claim');
+      requireThisService(record, 'check');
+      const result = await client.verifyDns(record.address, record.tip);
+      // The service answers `dns_status` (verified | mismatch | not_found |
+      // error) with a sentence, the record name and the expected value.
+      record.domainVerification = result?.dns_status || result?.verification_status || (result?.verified ? 'verified' : 'pending');
+      record.dnsCheck = {
+        status: record.domainVerification,
+        message: typeof result?.message === 'string' ? result.message : '',
+        txtName: typeof result?.txt_name === 'string' ? result.txt_name : '',
+        txtExpected: typeof result?.txt_expected === 'string' ? result.txt_expected : '',
+        checkedAt: now().toISOString(),
+      };
+      if (result?.attestation_tip && !record.attestations.some((a) => a.tip === result.attestation_tip)) {
+        record.attestations.push(await attestationRecord(record.address, result.attestation_tip, record.tree));
+        record.serverTips.attestation = result.attestation_tip;
+      }
+      await store.upsert(record);
+      return record;
+    },
+  };
+}
+
+module.exports = {
+  createClaimsService,
+  validateClaimInput,
+  ClaimInputError,
+  claimTipsNamedBy,
+  attestationContext,
+  chainWithTip,
+  payloadOf,
+  signerDidOf,
+  genesisOf,
+  E164,
+  EMAIL,
+  DOMAIN,
+};

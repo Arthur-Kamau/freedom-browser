@@ -1116,6 +1116,64 @@ contextBridge.exposeInMainWorld('freedomAPI', {
   ),
   clearPayments: guardInternal('clearPayments', () => ipcRenderer.invoke('payments:clear')),
 
+  // Aqua identity claims (freedom://identity page). Creating a claim ends
+  // in a wallet signature, which main routes to the sidebar's approval
+  // screen; the page only ever sees the stored result.
+  aquaStatus: guardInternal('aquaStatus', () => ipcRenderer.invoke('aqua:status')),
+  // Settings → Identity checks a service before saving its address.
+  aquaProbeService: guardInternal('aquaProbeService', (url) => ipcRenderer.invoke('aqua:service:probe', url)),
+  // One wallet signature, confirmed in the sidebar; resolves once the service holds a session.
+  aquaSignIn: guardInternal('aquaSignIn', () => ipcRenderer.invoke('aqua:service:sign-in')),
+  aquaListClaims: guardInternal('aquaListClaims', () => ipcRenderer.invoke('aqua:claims:list')),
+  aquaCreateClaim: guardInternal('aquaCreateClaim', (request) =>
+    ipcRenderer.invoke('aqua:claims:create', request)
+  ),
+  aquaRemoveClaim: guardInternal('aquaRemoveClaim', (id) => ipcRenderer.invoke('aqua:claims:remove', id)),
+  // Settings → Identity: main shows the save dialog itself.
+  aquaExportAllClaims: guardInternal('aquaExportAllClaims', () => ipcRenderer.invoke('aqua:claims:export-all')),
+  aquaRemoveAllClaims: guardInternal('aquaRemoveAllClaims', () => ipcRenderer.invoke('aqua:claims:remove-all')),
+  aquaRefreshClaim: guardInternal('aquaRefreshClaim', (id) =>
+    ipcRenderer.invoke('aqua:claims:refresh', id)
+  ),
+  aquaSendCode: guardInternal('aquaSendCode', (request) =>
+    ipcRenderer.invoke('aqua:claims:send-code', request)
+  ),
+  aquaVerifyCode: guardInternal('aquaVerifyCode', (request) =>
+    ipcRenderer.invoke('aqua:claims:verify-code', request)
+  ),
+  aquaDnsInstructions: guardInternal('aquaDnsInstructions', (id) =>
+    ipcRenderer.invoke('aqua:claims:dns-instructions', id)
+  ),
+  aquaVerifyDns: guardInternal('aquaVerifyDns', (id) => ipcRenderer.invoke('aqua:claims:verify-dns', id)),
+  aquaShareClaim: guardInternal('aquaShareClaim', (id, recipient) =>
+    ipcRenderer.invoke('aqua:claims:share', id, recipient)
+  ),
+  aquaPullAttestations: guardInternal('aquaPullAttestations', (id) =>
+    ipcRenderer.invoke('aqua:claims:pull-attestations', id)
+  ),
+  aquaImportAttestation: guardInternal('aquaImportAttestation', (id, tree) =>
+    ipcRenderer.invoke('aqua:claims:import-attestation', id, tree)
+  ),
+  aquaListShared: guardInternal('aquaListShared', () => ipcRenderer.invoke('aqua:shared:list')),
+  aquaAttestShared: guardInternal('aquaAttestShared', (request) =>
+    ipcRenderer.invoke('aqua:shared:attest', request)
+  ),
+  aquaListIssued: guardInternal('aquaListIssued', () => ipcRenderer.invoke('aqua:issued:list')),
+  aquaExportIssued: guardInternal('aquaExportIssued', (id) =>
+    ipcRenderer.invoke('aqua:issued:export', id)
+  ),
+  aquaListTrust: guardInternal('aquaListTrust', () => ipcRenderer.invoke('aqua:trust:list')),
+  aquaSetTrust: guardInternal('aquaSetTrust', (did, state) =>
+    ipcRenderer.invoke('aqua:trust:set', { did, state })
+  ),
+  // A disclosure request the user pasted; main shows the consent screen in
+  // the sidebar and resolves with the response once the user decides.
+  aquaRespondToRequest: guardInternal('aquaRespondToRequest', (requestText) =>
+    ipcRenderer.invoke('aqua:disclosure:manual', requestText)
+  ),
+  // Opens the sidebar's unlock screen; resolves once the vault is open.
+  aquaUnlock: guardInternal('aquaUnlock', () => ipcRenderer.invoke('aqua:unlock')),
+
   // Token registry — used by the payments page to resolve asset
   // metadata (symbol, decimals) per chainId:address.
   getTokens: guardInternal('getTokens', (chainId) =>
@@ -1333,6 +1391,8 @@ contextBridge.exposeInMainWorld('freedomAPI', {
   // freedom://downloads uses this for live progress — the row is already
   // written when it fires, so the page just re-queries.
   onDownloadsChanged: guardInternalSubscription('onDownloadsChanged', 'downloads:changed'),
+  // freedom://identity re-reads its claims when main stores or removes one.
+  onAquaClaimsChanged: guardInternalSubscription('onAquaClaimsChanged', 'aqua:claims-changed'),
   // freedom://payments uses this for live refresh on settlements (no
   // user-driven event for a server-acknowledged paid request).
   onPaymentRecorded: guardInternalSubscription('onPaymentRecorded', 'payments:tx-recorded'),

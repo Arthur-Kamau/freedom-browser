@@ -847,11 +847,112 @@
         text-decoration: underline;
       }
 
-      .profile-name-control {
+      .profile-name-control,
+      .identity-service-control {
         display: flex;
         align-items: center;
         gap: 8px;
         min-width: 280px;
+      }
+
+      .identity-service-current {
+        display: block;
+        margin-top: 6px;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--text);
+        word-break: break-all;
+      }
+
+      /* The one modal on this page, for the identity service address: the
+         same native <dialog> freedom://identity uses, painted from the page
+         tokens so the field inside matches the page. */
+      dialog.modal {
+        width: min(520px, calc(100vw - 32px));
+        padding: 0;
+        background: var(--bg-elev);
+        color: var(--text);
+        border: 1px solid var(--border-strong);
+        border-radius: 12px;
+        /* theme-literal: a drop shadow, not a surface */
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+      }
+
+      dialog.modal::backdrop {
+        background: var(--modal-backdrop);
+      }
+
+      .modal-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 18px 20px 0;
+      }
+
+      .modal-head h2 {
+        flex: 1;
+        margin: 0;
+        font-size: 17px;
+        font-weight: 600;
+        color: var(--text);
+      }
+
+      .modal-close {
+        width: 30px;
+        height: 30px;
+        border: 0;
+        border-radius: 50%;
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .modal-close:hover {
+        background: var(--bg-raised);
+        color: var(--text);
+      }
+
+      .modal-body {
+        padding: 14px 20px 4px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .modal-body .row-help {
+        margin: 0;
+      }
+
+      .modal-foot {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 16px 20px 20px;
+      }
+
+      /* The address field fills the modal; its label sits above it. */
+      .identity-service-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .identity-service-field label {
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+
+      .identity-service-field .rpc-input {
+        font-family: var(--font-mono);
+      }
+
+      /* The Identity page shows either its controls or the line that says
+         where the Beta switch is; the page has no `.hidden` class, so these
+         go by the attribute like the other gated blocks. */
+      #identity-controls[hidden] {
+        display: none;
       }
 
       .profile-node {
@@ -1251,6 +1352,27 @@
               <line x1="6" y1="18" x2="6.01" y2="18"></line>
             </svg>
             Nodes
+          </button>
+          <button type="button" class="nav-item" data-target="identity">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M3 7V5a2 2 0 0 1 2-2h2"></path>
+              <path d="M17 3h2a2 2 0 0 1 2 2v2"></path>
+              <path d="M21 17v2a2 2 0 0 1-2 2h-2"></path>
+              <path d="M7 21H5a2 2 0 0 1-2-2v-2"></path>
+              <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+              <path d="M9 9h.01"></path>
+              <path d="M15 9h.01"></path>
+            </svg>
+            Identity
           </button>
           <div class="nav-rule" role="separator"></div>
           <button type="button" class="nav-item" data-target="ai">
@@ -2018,15 +2140,22 @@
           </div>
         </section>
 
-        <!-- Advanced (was Experimental): the Beta features. -->
-        <section class="section" id="experimental" data-nav="advanced">
-          <h2 class="section-title">Advanced</h2>
+        <!-- Identity (Beta): the switch that turns the feature on, the
+             service behind freedom://identity, and the claims it keeps in
+             this profile. Its own entry, added at the maintainer's request;
+             the switch sits here rather than under Advanced so the page that
+             configures the feature is also the one that turns it off. -->
+        <section class="section" id="identity" data-nav="identity">
+          <h2 class="section-title">Identity</h2>
           <div class="card">
             <div class="row">
               <div class="row-body">
                 <p class="row-label">
                   Enable Identity &amp; Wallet
                   <span class="resolver-badge">Beta</span>
+                </p>
+                <p class="row-help">
+                  Identity claims at <code>freedom://identity</code>, and the wallet in the sidebar.
                 </p>
               </div>
               <div class="row-control">
@@ -2036,6 +2165,84 @@
                 </label>
               </div>
             </div>
+          </div>
+          <div id="identity-controls">
+            <div class="card">
+              <div class="row">
+                <div class="row-body">
+                  <p class="row-label">Identity service</p>
+                  <p class="row-help">The Aqua service that builds and attests your claims.</p>
+                  <code class="identity-service-current" id="aqua-node-url-current"></code>
+                </div>
+                <div class="row-control">
+                  <button type="button" class="btn" id="aqua-node-url-edit">Edit</button>
+                </div>
+              </div>
+            </div>
+            <p class="rpc-status" id="aqua-node-url-status"></p>
+            <div class="card">
+              <div class="row">
+                <div class="row-body">
+                  <p class="row-label">Export your claims</p>
+                  <p class="row-help">Every claim with its attestations, as one JSON file.</p>
+                </div>
+                <div class="row-control">
+                  <button type="button" class="btn" id="aqua-claims-export">Export all</button>
+                </div>
+              </div>
+              <div class="row">
+                <div class="row-body">
+                  <p class="row-label">Remove your claims</p>
+                  <p class="row-help">Removes every claim from this profile. The identity service keeps its copies.</p>
+                </div>
+                <div class="row-control">
+                  <button type="button" class="btn danger" id="aqua-claims-remove-all">Remove all</button>
+                </div>
+              </div>
+            </div>
+            <p class="rpc-status" id="aqua-claims-status"></p>
+          </div>
+        </section>
+
+        <!-- Change the identity service: the address is checked before it is
+             saved, so the editing happens in a modal rather than on the row. -->
+        <dialog class="modal" id="aqua-node-url-dialog" aria-labelledby="aqua-node-url-title">
+          <div class="modal-head">
+            <h2 id="aqua-node-url-title">Identity service</h2>
+            <button type="button" class="modal-close" id="aqua-node-url-close" aria-label="Close">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 6 6 18"></path>
+                <path d="M6 6l12 12"></path>
+              </svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p class="row-help">
+              A new address is saved only once an Aqua identity service answers there. Changing it does
+              not move claims already made.
+            </p>
+            <div class="identity-service-field">
+              <label for="aqua-node-url">Service address</label>
+              <input
+                type="url"
+                id="aqua-node-url"
+                class="rpc-input"
+                spellcheck="false"
+                placeholder="https://dev.aquafire.inblock.io"
+              />
+            </div>
+            <p class="rpc-status" id="aqua-node-url-check"></p>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="btn" id="aqua-node-url-cancel">Cancel</button>
+            <button type="button" class="btn primary" id="aqua-node-url-save">Save</button>
+          </div>
+        </dialog>
+
+        <!-- Advanced (was Experimental): the Beta features. -->
+        <section class="section" id="experimental" data-nav="advanced">
+          <h2 class="section-title">Advanced</h2>
+          <div class="card">
             <div class="row" data-tor>
               <div class="row-body">
                 <p class="row-label">

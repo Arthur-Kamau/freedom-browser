@@ -110,7 +110,7 @@ describe('settings.html section headings match their nav label (#276)', () => {
   test('every nav entry carries exactly one page heading, and it is the nav label', () => {
     const titles = entryTitles();
     const items = navItems();
-    expect(items.length).toBe(11);
+    expect(items.length).toBe(12);
     // One `<h2>` per entry however many panels it owns (#268) — a second
     // would put two page headings on one route.
     const mismatches = items
@@ -317,16 +317,35 @@ describe('settings.html Advanced holds only the experiments (#275)', () => {
   const rowLabels = (html) =>
     [...html.matchAll(/<p class="row-label">([\s\S]*?)<\/p>/g)].map(([, body]) => textOf(body));
 
-  test('the two Beta features are all that is left, each badged rather than parenthesised', () => {
+  test('Tor is all that is left in Advanced, badged rather than parenthesised', () => {
     const advanced = section('experimental');
-    expect(rowLabels(advanced)).toEqual([
-      'Enable Identity &amp; Wallet Beta',
-      'Enable Tor (.onion access) Beta',
-    ]);
-    for (const label of ['Enable Identity &amp; Wallet', 'Enable Tor \\(\\.onion access\\)']) {
-      expect(advanced).toMatch(new RegExp(`${label}\\s*<span class="resolver-badge">Beta</span>`));
-    }
+    expect(rowLabels(advanced)).toEqual(['Enable Tor (.onion access) Beta']);
+    expect(advanced).toMatch(/Enable Tor \(\.onion access\)\s*<span class="resolver-badge">Beta<\/span>/);
     expect(SOURCE).not.toContain('(Beta)</span>');
+  });
+
+  test('Identity is its own entry below Nodes, and its Beta switch is its first row', () => {
+    const identity = section('identity');
+    expect(SOURCE).toMatch(/<section class="section" id="identity" data-nav="identity">/);
+    expect(identity).toMatch(/<h2 class="section-title">Identity<\/h2>/);
+    expect(identity).toMatch(/Enable Identity &amp; Wallet\s*<span class="resolver-badge">Beta<\/span>/);
+    expect(identity).toContain('id="enable-identity-wallet"');
+    expect(rowLabels(identity)).toEqual(['Enable Identity &amp; Wallet Beta', 'Identity service', 'Export your claims', 'Remove your claims']);
+    expect(SOURCE).toContain('id="aqua-node-url"');
+    // The row shows the address and one Edit button; the editing happens in
+    // a modal whose Save checks the service first and whose Cancel restores.
+    expect(identity).toContain('id="aqua-node-url-current"');
+    expect(identity).toMatch(/<button type="button" class="btn" id="aqua-node-url-edit">Edit<\/button>/);
+    expect(SOURCE).toMatch(/<dialog class="modal" id="aqua-node-url-dialog"/);
+    expect(SOURCE).toMatch(/<button type="button" class="btn primary" id="aqua-node-url-save">Save<\/button>/);
+    expect(SOURCE).toMatch(/<button type="button" class="btn" id="aqua-node-url-cancel">Cancel<\/button>/);
+    expect(SOURCE).toContain('freedomAPI.aquaProbeService?.(value)');
+    // Remove all is destructive (#284): danger, filled light red, and it says its verb.
+    expect(identity).toMatch(/<button type="button" class="btn danger" id="aqua-claims-remove-all">\s*Remove all\s*<\/button>/);
+    expect(identity).toMatch(/<button type="button" class="btn" id="aqua-claims-export">\s*Export all\s*<\/button>/);
+    // The nav lists it right after Nodes.
+    const targets = [...SOURCE.matchAll(/class="nav-item" data-target="([a-z]+)"/g)].map(([, t]) => t);
+    expect(targets.indexOf('identity')).toBe(targets.indexOf('nodes') + 1);
   });
 
   test('the three rows that were not experiments moved where they belong', () => {
@@ -340,7 +359,7 @@ describe('settings.html Advanced holds only the experiments (#275)', () => {
     expect(section('nodes')).toContain('id="swarm-publishing-row"');
     // Its "turn this on first" line points at where the toggle is now.
     expect(SOURCE).not.toContain('in Experimental, above');
-    expect(SOURCE).toContain('Enable Identity & Wallet under Advanced to publish on Swarm.');
+    expect(SOURCE).toContain('Enable Identity & Wallet under Identity to publish on Swarm.');
   });
 });
 

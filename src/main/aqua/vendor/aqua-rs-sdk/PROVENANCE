@@ -1,0 +1,19 @@
+# Vendored build of aqua-rs-sdk for Freedom Browser (main process, worker thread)
+source_repo: https://github.com/inblockio/aqua-rs-sdk
+source_tag: v7.0.0
+source_commit: bb33fe056a1e57658d772ad2edd2ffcb9d89098d
+crate_version: 7.0.0
+protocol_version: 4.0.0
+built_on: 2026-10-22
+wasm_pack: 0.15.0
+rustc: 1.95.0
+target: wasm32-unknown-unknown
+command: wasm-pack build --release --target nodejs --out-dir <out> --features wasm
+sha256_wasm: 66f987ef040bd941a052d6ee32945032ce94f164c537779c08822e3b26126c8b
+sha256_js: ef757a305747a1274b5c992c1d768e16cb4b67c54b338fa7e9d0b4a05a82c4b8
+reproduce: scripts/build-aqua-wasm.sh v7.0.0
+# Known upstream defect at this tag: verifyAquaTree panics on wasm32
+# ("time not implemented on this platform", core/verify_common.rs
+# current_time_secs has no wasm32 shim). applyDisclosure, pseudonymousPolicy
+# and fullPolicy are unaffected. Tree verification therefore goes through
+# the Aqua service until a tag with the fix is vendored.
