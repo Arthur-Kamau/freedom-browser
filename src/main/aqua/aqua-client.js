@@ -204,10 +204,12 @@ function createAquaClient({ baseUrl = DEFAULT_NODE_URL, signMessage, fetchImpl, 
     login,
 
     // ── Out-of-band verification (email, phone) ───────────────────────
-    sendCode: (address, { target, channel }) =>
-      withSession(address, (s) => request('POST', '/api/claims/send-code', { body: { target, channel }, session: s })),
-    verifyCode: (address, { target, code }) =>
-      withSession(address, (s) => request('POST', '/api/claims/verify-code', { body: { target, code }, session: s })),
+    // `tip` is the caller's signed claim, on a service that checks the
+    // address or number after the claim exists (see `capabilities().claimFirst`).
+    sendCode: (address, { target, channel, tip }) =>
+      withSession(address, (s) => request('POST', '/api/claims/send-code', { body: tip ? { target, channel, tip } : { target, channel }, session: s })),
+    verifyCode: (address, { target, code, tip }) =>
+      withSession(address, (s) => request('POST', '/api/claims/verify-code', { body: tip ? { target, code, tip } : { target, code }, session: s })),
 
     // ── Claim creation (unsigned; the service builds the tree) ─────────
     createNameClaim: authed('POST', '/api/claims/name/create'),
@@ -296,14 +298,21 @@ function createAquaClient({ baseUrl = DEFAULT_NODE_URL, signMessage, fetchImpl, 
       const { attesters, claimTypes } = attestersOf(identity?.did || null, wellKnown);
       // The status route is unauthenticated on aquafier; a bare node answers
       // 404 and an unreachable service answers nothing. Either way: absent.
+      // The same answer says which kinds the service checks only after the
+      // claim is created and signed: the code is then sent for that claim's
+      // tip, and the service attests it, instead of a token before creation.
       let outOfBand;
+      let claimFirst = { email: false, phone: false };
       try {
         const status = await request('GET', '/api/claims/twilio-status');
         outOfBand = Boolean(status) && typeof status === 'object';
+        if (outOfBand) {
+          claimFirst = { email: status.email_via_identity_service === true, phone: status.phone_via_identity_service === true };
+        }
       } catch {
         outOfBand = false;
       }
-      return { reachable: identity !== null, serviceDid: identity?.did || null, attesters, claimTypes, outOfBandVerification: outOfBand };
+      return { reachable: identity !== null, serviceDid: identity?.did || null, attesters, claimTypes, outOfBandVerification: outOfBand, claimFirst };
     },
 
     // ── Trees ──────────────────────────────────────────────────────────

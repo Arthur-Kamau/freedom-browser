@@ -205,7 +205,7 @@ describe('registerAquaIpc attestation channels', () => {
   test('the default probe builds a real client that needs no signer and reports a dead host as unreachable', async () => {
     // Nothing listens on port 1; the connection is refused at once.
     expect(await probeService('http://127.0.0.1:1')).toEqual({
-      url: 'http://127.0.0.1:1', reachable: false, serviceDid: null, attesters: [], claimTypes: {}, outOfBandVerification: false, compatible: false,
+      url: 'http://127.0.0.1:1', reachable: false, serviceDid: null, attesters: [], claimTypes: {}, outOfBandVerification: false, claimFirst: { email: false, phone: false }, compatible: false,
     });
   });
 

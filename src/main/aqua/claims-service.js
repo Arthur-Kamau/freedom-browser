@@ -69,7 +69,7 @@ function validateClaimInput(type, fields = {}) {
       if (!EMAIL.test(email)) throw new ClaimInputError('Enter a valid email address', 'email');
       return {
         email,
-        verification_token: text(fields.verification_token, 'verification_token', { required: true, max: 1024 }),
+        verification_token: text(fields.verification_token, 'verification_token', { max: 1024 }),
         display_name: text(fields.display_name, 'display_name'),
       };
     }
@@ -80,7 +80,7 @@ function validateClaimInput(type, fields = {}) {
       }
       return {
         phone_number: phone,
-        verification_token: text(fields.verification_token, 'verification_token', { required: true, max: 1024 }),
+        verification_token: text(fields.verification_token, 'verification_token', { max: 1024 }),
         display_name: text(fields.display_name, 'display_name'),
       };
     }
@@ -287,6 +287,32 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
     return capabilities;
   }
 
+  // Whether the service checks this kind (email | phone) only after the
+  // claim is created and signed, sending the code for the claim's tip.
+  async function claimFirst(kind) {
+    const caps = await serviceCapabilities().catch(() => null);
+    return Boolean(caps?.claimFirst?.[kind]);
+  }
+
+  // A claim of this wallet, on this service, for the same address or number,
+  // that the service has not attested yet: the one a new code is sent for.
+  async function waitingForCheck(address, kind, value) {
+    const caps = await serviceCapabilities();
+    const field = kind === 'email' ? 'email' : 'phone_number';
+    const same = (a, b) => (kind === 'email' ? String(a).toLowerCase() === String(b).toLowerCase() : a === b);
+    return (
+      (await store.list()).find(
+        (r) =>
+          r.type === kind &&
+          r.address.toLowerCase() === address.toLowerCase() &&
+          !madeElsewhere(r) &&
+          typeof r.payload?.[field] === 'string' &&
+          same(r.payload[field], value) &&
+          !(r.attestations || []).some((a) => !a.pending && sourceOf(a.attesterDid, caps) === 'service')
+      ) || null
+    );
+  }
+
   /**
    * `service` when the attester is one the service vouches with: its node DID
    * or any attester its `/.well-known/aqua-identity` names (read once per
@@ -443,22 +469,66 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
 
     removeAllClaims: () => store.removeAll(),
 
-    /** One-time code for an email or phone claim; the service sends it. */
+    /**
+     * One-time code for an email or phone claim; the service sends it.
+     *
+     * A service that checks the address after the claim exists (claim-first)
+     * is sent the code for a signed claim: the claim is created, signed and
+     * stored here first, and `claimId` comes back for `verifyCode`. A claim
+     * for the same value still waiting for its check is used again, so a
+     * code that was never entered does not leave a second claim behind.
+     */
     async sendCode({ channel, target }) {
       const wallet = await activeWalletOrThrow();
       if (channel !== 'email' && channel !== 'phone') throw new ClaimInputError('Unknown channel', 'channel');
-      const body = channel === 'email' ? validateClaimInput('email', { email: target, verification_token: 'x' }) : validateClaimInput('phone', { phone_number: target, verification_token: 'x' });
+      const body = channel === 'email' ? validateClaimInput('email', { email: target }) : validateClaimInput('phone', { phone_number: target });
       const normalized = channel === 'email' ? body.email : body.phone_number;
-      const result = await client.sendCode(wallet.address, { target: normalized, channel });
-      return { target: normalized, message: result?.message || 'Code sent' };
+      if (!(await claimFirst(channel))) {
+        const result = await client.sendCode(wallet.address, { target: normalized, channel });
+        return { target: normalized, message: result?.message || 'Code sent' };
+      }
+      const record =
+        (await waitingForCheck(wallet.address, channel, normalized)) ||
+        (await this.createClaim({ type: channel, fields: channel === 'email' ? { email: normalized } : { phone_number: normalized } }));
+      const result = await client.sendCode(wallet.address, { target: normalized, channel, tip: record.tip });
+      return { target: normalized, message: result?.message || 'Code sent', claimId: record.id };
     },
 
-    async verifyCode({ target, code }) {
+    /**
+     * Check the code. Before creation it buys the token the create call
+     * needs; with `claimId` (claim-first) the service attests that claim, and
+     * the claim comes back with the attestation on it.
+     */
+    async verifyCode({ target, code, claimId }) {
       const wallet = await activeWalletOrThrow();
       const cleanCode = text(code, 'code', { required: true, max: 16 });
-      const result = await client.verifyCode(wallet.address, { target: text(target, 'target', { required: true }), code: cleanCode });
-      if (!result?.verification_token) throw new Error(result?.message || 'The code was not accepted');
-      return { verificationToken: result.verification_token };
+      const cleanTarget = text(target, 'target', { required: true });
+      if (!claimId) {
+        const result = await client.verifyCode(wallet.address, { target: cleanTarget, code: cleanCode });
+        if (!result?.verification_token) throw new Error(result?.message || 'The code was not accepted');
+        return { verificationToken: result.verification_token };
+      }
+      const record = await store.get(claimId);
+      if (!record) throw new Error('Claim not found');
+      requireThisService(record, 'check');
+      const result = await client.verifyCode(record.address, { target: cleanTarget, code: cleanCode, tip: record.tip });
+      if (!result?.success || !result.attestation_tip) {
+        const left = Number.isInteger(result?.attempts_left) ? `, ${result.attempts_left} ${result.attempts_left === 1 ? 'try' : 'tries'} left` : '';
+        throw new Error(`${result?.message || 'The code was not accepted'}${left}`);
+      }
+      if (!record.attestations.some((a) => a.tip === result.attestation_tip)) {
+        try {
+          const attestation = await attestationRecord(record.address, result.attestation_tip, record.tree);
+          attestation.source = sourceOf(attestation.attesterDid, await serviceCapabilities());
+          record.attestations.push(attestation);
+          record.serverTips = { ...(record.serverTips || {}), attestation: result.attestation_tip };
+          await store.upsert(record);
+        } catch (err) {
+          // The check held on the service; the tree is fetched by the next pull.
+          log.error('[AquaClaims] attestation download failed:', err?.message || err);
+        }
+      }
+      return { claim: record };
     },
 
     /**
@@ -469,6 +539,9 @@ function createClaimsService({ store, client, getActiveWallet, signer, now = () 
       if (!CLAIM_TYPES.includes(type)) throw new ClaimInputError(`Unknown claim type: ${type}`, 'type');
       const body = stripUndefined(validateClaimInput(type, fields));
       const wallet = await activeWalletOrThrow();
+      if ((type === 'email' || type === 'phone') && !body.verification_token && !(await claimFirst(type))) {
+        throw new ClaimInputError('verification_token is required', 'verification_token');
+      }
 
       const create = {
         name: client.createNameClaim,

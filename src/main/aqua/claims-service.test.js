@@ -188,6 +188,50 @@ describe('codes, refresh, removal, domains', () => {
     await expect(service.verifyCode({ target: 'a@b.c', code: '000000' })).rejects.toThrow('wrong code');
   });
 
+  test('an email or phone claim without a token is refused unless the service is claim-first', async () => {
+    const { service, client } = setup();
+    await expect(service.createClaim({ type: 'email', fields: { email: 'a@b.c' } })).rejects.toThrow('verification_token is required');
+    expect(client.createEmailClaim).not.toHaveBeenCalled();
+  });
+
+  test('on a claim-first service the claim is created and signed, then the code is sent for its tip, and the code attests it', async () => {
+    const { service, client, signer, store } = setup();
+    client.capabilities = jest.fn(async () => ({ reachable: true, serviceDid: 'did:x', attesters: ['did:pkh:eip155:1:0x7c52cdefe1c9b99e16d2baa52a18e894382738a0'], claimTypes: {}, outOfBandVerification: true, claimFirst: { email: true, phone: false } }));
+    // The stored payload comes from the downloaded tree; name the address in it.
+    const withEmail = JSON.parse(JSON.stringify(FIXTURE));
+    for (const rev of Object.values(withEmail.revisions)) if (rev.payloads) rev.payloads.email = 'a@b.c';
+    client.downloadTree = jest.fn(async (_address, tip) =>
+      tip === ATTESTATION_TIP ? writeAquaArtifact({ attestation: ATTESTATION_TREE }) : writeAquaArtifact({ email_claim: withEmail }));
+
+    const sent = await service.sendCode({ channel: 'email', target: ' a@b.c ' });
+    expect(client.createEmailClaim).toHaveBeenCalledWith(ADDRESS, { email: 'a@b.c' });
+    expect(signer.sign).toHaveBeenCalledTimes(1);
+    expect(client.sendCode).toHaveBeenCalledWith(ADDRESS, { target: 'a@b.c', channel: 'email', tip: TIP });
+    const [stored] = await store.list();
+    expect(sent).toEqual({ target: 'a@b.c', message: 'sent', claimId: stored.id });
+    expect(stored.attestations).toEqual([]);
+
+    // A second code for the same address uses the claim that is waiting.
+    const again = await service.sendCode({ channel: 'email', target: 'A@b.c' });
+    expect(again.claimId).toBe(stored.id);
+    expect(client.createEmailClaim).toHaveBeenCalledTimes(1);
+    expect(signer.sign).toHaveBeenCalledTimes(1);
+
+    client.verifyCode.mockResolvedValueOnce({ success: false, message: 'Invalid or expired code', attempts_left: 2 });
+    await expect(service.verifyCode({ target: 'a@b.c', code: '000000', claimId: stored.id })).rejects.toThrow('Invalid or expired code, 2 tries left');
+
+    client.verifyCode.mockResolvedValueOnce({ success: true, message: 'ok', attestation_tip: ATTESTATION_TIP });
+    const { claim } = await service.verifyCode({ target: 'a@b.c', code: ' 123456 ', claimId: stored.id });
+    expect(client.verifyCode).toHaveBeenLastCalledWith(ADDRESS, { target: 'a@b.c', code: '123456', tip: TIP });
+    expect(claim.attestations).toHaveLength(1);
+    expect(claim.attestations[0]).toMatchObject({ tip: ATTESTATION_TIP, source: 'service' });
+    expect((await store.get(stored.id)).attestations).toHaveLength(1);
+
+    // Checked now: a new code for this address would start a new claim.
+    await service.sendCode({ channel: 'email', target: 'a@b.c' });
+    expect(client.createEmailClaim).toHaveBeenCalledTimes(2);
+  });
+
   test('refreshClaim re-verifies and removeClaim removes', async () => {
     const { service, client } = setup();
     const record = await service.createClaim({ type: 'name', fields: { given_name: 'A', family_name: 'B' } });
