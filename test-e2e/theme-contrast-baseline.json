@@ -235,14 +235,6 @@
       "bar": 4.5
     },
     {
-      "surface": "page identity",
-      "theme": "light",
-      "el": "button#nav-claims.nav-item.active",
-      "text": "Your claims",
-      "ratio": 4.32,
-      "bar": 4.5
-    },
-    {
       "surface": "page links",
       "theme": "dark",
       "el": "div.info",
