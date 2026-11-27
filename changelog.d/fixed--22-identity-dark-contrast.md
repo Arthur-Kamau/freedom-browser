@@ -1,0 +1,3 @@
+- Identity page text in the dark theme is readable again ([#22](https://github.com/Arthur-Kamau/freedom-browser/pull/22))
+  - The node state, the identity service address and its status line under "Your node" read at 3.97:1 on their grey box; they now use the body text colour
+  - The number on the current Getting ready step was white on the light blue accent at 2.53:1; it now takes the page background colour, as filled accent marks in Settings do
