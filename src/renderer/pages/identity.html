@@ -241,7 +241,8 @@
       }
       .tone-muted {
         background: var(--bg-raised);
-        color: var(--text-muted);
+        /* --text-muted on --bg-raised is 3.97:1 in dark; --text keeps 4.5:1 in both themes */
+        color: var(--text);
       }
       .tone-dashed {
         border: 1px dashed var(--border);
@@ -559,12 +560,13 @@
       .node-item .nu {
         font-family: var(--font-mono);
         font-size: 12px;
-        color: var(--text-muted);
+        /* on --bg-raised: --text-muted falls to 3.97:1 in dark */
+        color: var(--text);
         word-break: break-all;
       }
       .node-item .nc {
         font-size: 12px;
-        color: var(--text-muted);
+        color: var(--text);
         margin-top: 4px;
       }
       .menu .sep {
@@ -727,8 +729,8 @@
       }
       .step.current .step-mark {
         background: var(--accent);
-        /* theme-literal: the fixed contrast pair on a filled accent mark */
-        color: #ffffff;
+        /* --bg on --accent holds 4.5:1 in both themes; white on the dark accent is 2.53:1 */
+        color: var(--bg);
         border-color: transparent;
       }
       .step-title {
